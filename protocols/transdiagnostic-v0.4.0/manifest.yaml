@@ -8,7 +8,7 @@ reviewers: []
 next_review: null
 skills:
   - path: skills/build-shared-formulation/SKILL.md
-    sha256: 4760cf032cbb0168ae70870e15fb01f6078b1c61f97bd7d0cf1fea45f4ec9f00
+    sha256: eeffc72e0fa8d41337dc556de5d315fb8dd50015b756688c051102080877bc32
   - path: skills/increase-psychological-flexibility/SKILL.md
     sha256: e9698788f37f9322780026fe10d1c1bd2a5b33f46ccd8600c773c782f0deb9bb
   - path: skills/change-avoidance-behavior/SKILL.md

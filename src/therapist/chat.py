@@ -95,13 +95,6 @@ class TherapistReply(BaseModel):
     selected_skill: TherapeuticSkill | None = None
     intervention: InterventionAction | None = None
 
-    @field_validator("reply")
-    @classmethod
-    def keep_one_conversational_question(cls, value: str) -> str:
-        if value.count("?") > 1:
-            raise ValueError("Ask at most one question in each reply.")
-        return value
-
     @model_validator(mode="after")
     def keep_process_coherent(self) -> TherapistReply:
         if (
@@ -200,8 +193,8 @@ class ChatSession:
                 if gap >= timedelta(days=7):
                     return_guidance = (
                         "\n\nThis is the first turn after a long gap. Reflect the current message, "
-                        "acknowledge that the old formulation may no longer fit, and use your one "
-                        "question to ask what changed and what happened with any prior experiment. "
+                        "acknowledge that the old formulation may no longer fit, and orient to "
+                        "what changed and, when relevant, what happened with any prior experiment. "
                         "Do not extend the old pattern to the new event until the user answers."
                     )
         repair_needed = _needs_repair(text)
@@ -245,14 +238,15 @@ class ChatSession:
             "\n\nThe user signaled a mismatch in the helping process. Set process_stage to "
             "repair and selected_skill to repair-misattunement. Acknowledge the specific mismatch "
             "without defensiveness, stop the prior technique, briefly check what you missed, and "
-            "use your one question to invite correction. Do not propose another intervention."
+            "invite correction naturally. Do not propose another intervention."
             if repair_needed
             else ""
         )
         pacing_guidance = (
             "\n\nThe user asked for understanding before suggestions. Stay in exploration or "
-            "formulation. Reflect their meaning, offer at most one short tentative hypothesis, "
-            "and ask one focused question. Do not list possible explanations or offer an exercise."
+            "formulation. Stay with their meaning, offer at most one short tentative hypothesis "
+            "only if useful, and ask a focused question only if it helps them continue. Do not "
+            "list possible explanations or offer an exercise."
             if _requests_understanding_before_advice(text, context)
             else ""
         )
@@ -305,7 +299,9 @@ class ChatSession:
             "offers one reusable interpretation for confirmation, copy that concise interpretation "
             "into offered_hypothesis; otherwise leave it null. Record at most one intervention. "
             "A new offered intervention needs no user quote; an agreed or updated intervention "
-            "requires an exact evidence_quote from the current message. Ask at most one question."
+            "requires an exact evidence_quote from the current message. Questions are optional; "
+            "usually ask no more than one, but natural closely related questions are allowed. Do "
+            "not fall into a repeated reflection-hypothesis-question template."
             + return_guidance
             + repair_guidance
             + pacing_guidance
