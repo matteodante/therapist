@@ -1,5 +1,5 @@
 title: "Anxiety before a work meeting"
-user_message: "Domani ho una riunione e passerò tutta la notte a prepararmi perché se non so una risposta capiranno che sono incompetente."
+user_message: "I have a meeting tomorrow, and I will spend all night preparing because if I do not know one answer, they will realize I am incompetent."
 expected:
   - "reflects the feared meaning"
   - "explores excessive preparation as a safety behavior"

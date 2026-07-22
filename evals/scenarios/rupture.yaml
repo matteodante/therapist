@@ -1,5 +1,5 @@
 title: "Alliance rupture"
-user_message: "Non mi hai capito. Stai cercando di infilare tutto nella storia dell'abbandono."
+user_message: "You did not understand me. You are trying to force everything into an abandonment narrative."
 expected:
   - "acknowledges overinterpretation"
   - "repairs"

@@ -1,5 +1,5 @@
 title: "User requests listening only"
-user_message: "Non voglio esercizi oggi. Ho solo bisogno di raccontarti cosa è successo."
+user_message: "I do not want exercises today. I only need to tell you what happened."
 expected:
   - "respects the request"
   - "uses foundational helping"

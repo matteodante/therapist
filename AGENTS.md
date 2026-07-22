@@ -1,63 +1,62 @@
-# Istruzioni per gli agenti di sviluppo
+# Development agent instructions
 
-## Lingua e stile
+## Language and style
 
-- Rispondi sempre in italiano, in modo conciso ma completo.
-- Mantieni nomi, API e termini tecnici di Flue nella forma usata dalla documentazione ufficiale.
+- Always respond to the user in Italian, concisely but completely.
+- Write all repository documentation, comments, examples, fixtures, and evaluation scenarios in English.
+- Keep Flue names, APIs, and technical terms in the form used by the official documentation.
 
-## Documentazione Flue obbligatoria
+## Required Flue documentation
 
-Prima di creare o modificare codice che coinvolge Flue, recupera e consulta sempre le guide ufficiali correnti su <https://flueframework.com/docs/>. Non affidarti soltanto alla memoria, a esempi locali o a API presunte.
+Before creating or modifying code involving Flue, always retrieve and consult the current official guides at <https://flueframework.com/docs/>. Do not rely only on memory, local examples, or assumed APIs.
 
-Consulta almeno la guida pertinente alla modifica:
+Consult at least the guide relevant to the change:
 
-- struttura del progetto: <https://flueframework.com/docs/guide/project-layout/>
-- agenti: <https://flueframework.com/docs/guide/building-agents/>
-- skill: <https://flueframework.com/docs/guide/skills/>
-- tool: <https://flueframework.com/docs/guide/tools/>
-- sandbox: <https://flueframework.com/docs/guide/sandboxes/>
-- routing e `app.ts`: <https://flueframework.com/docs/guide/routing/>
-- API degli agenti: <https://flueframework.com/docs/api/agent-api/>
+- project structure: <https://flueframework.com/docs/guide/project-layout/>
+- agents: <https://flueframework.com/docs/guide/building-agents/>
+- skills: <https://flueframework.com/docs/guide/skills/>
+- tools: <https://flueframework.com/docs/guide/tools/>
+- sandboxes: <https://flueframework.com/docs/guide/sandboxes/>
+- routing and `app.ts`: <https://flueframework.com/docs/guide/routing/>
+- agent API: <https://flueframework.com/docs/api/agent-api/>
 
-Se la documentazione corrente e la versione di Flue fissata in `package.json` non coincidono, verifica anche i tipi e le API effettivamente installati. Non aggiornare Flue o altre dipendenze senza una richiesta esplicita.
+When the current documentation differs from the Flue version pinned in `package.json`, also verify the installed types and effective APIs. Do not upgrade Flue or any other dependency without an explicit request.
 
-## Struttura Flue da rispettare
+## Required Flue structure
 
-- Usa `src/` come source directory canonica.
-- Mantieni gli agenti direttamente in `src/agents/`, senza agenti annidati. Usa file `lower-kebab-case.ts` e un `default export` creato con `defineAgent(...)`.
-- Mantieni `src/app.ts` come composizione Hono per middleware, health check e mount di `flue()`.
-- Mantieni i channel direttamente in `src/channels/`; ogni channel scoperto da Flue deve esportare il binding nominato `channel`.
-- Usa `src/workflows/` soltanto per operazioni finite con input e risultato, non per conversazioni persistenti.
-- Conserva istruzioni lunghe in file Markdown dedicati e importale con l'attributo previsto dalla versione Flue in uso.
-- Conserva le Agent Skills applicative in `src/skills/<nome-skill>/SKILL.md`. Il nome della directory deve coincidere con il campo `name` del frontmatter. Importa le skill con `with { type: 'skill' }` e registrale nella configurazione dell'agente.
-- Usa un tool per capacità eseguibili e limitate; usa una skill per istruzioni e procedure riutilizzabili; usa un workflow per lavoro finito controllato dall'applicazione.
+- Use `src/` as the canonical source directory.
+- Keep agents directly in `src/agents/`, without nested agents. Use `lower-kebab-case.ts` filenames and a `default export` created with `defineAgent(...)`.
+- Keep `src/app.ts` as the Hono composition point for middleware, health checks, and the `flue()` mount.
+- Keep channels directly in `src/channels/`; every channel discovered by Flue must export the named `channel` binding.
+- Use `src/workflows/` only for finite operations with an input and result, not for persistent conversations.
+- Store long instructions in dedicated Markdown files and import them with the attribute supported by the installed Flue version.
+- Store application Agent Skills in `src/skills/<skill-name>/SKILL.md`. The directory name must match the frontmatter `name`. Import skills with `with { type: 'skill' }` and register them in the agent configuration.
+- Use a tool for bounded executable capabilities, a skill for reusable instructions and procedures, and a workflow for finite application-controlled work.
 
-## Sicurezza e confini
+## Security boundaries
 
-- Definisci i tool con `defineTool`, nomi chiari, input e output Valibot e `run({ input, signal })` secondo le API correnti.
-- Considera ogni input scelto dal modello non attendibile. Credenziali, identità utente, tenant, destinazioni e limiti di autorizzazione devono essere determinati dal codice fidato.
-- Mantieni il principio del minimo privilegio. Non ampliare sandbox, accesso a shell, filesystem, rete o credenziali senza una necessità esplicita e documentata.
-- Per questo progetto preserva il sandbox ristretto e il vincolo single-user di Telegram, salvo richiesta esplicita accompagnata da una revisione di sicurezza.
-- Mantieni separate la memoria personale dichiarata dall'utente e le note di processo generate dall'assistente.
+- Define tools with `defineTool`, clear names, Valibot input and output schemas, and `run({ input, signal })` according to the current APIs.
+- Treat every model-selected input as untrusted. Trusted code must determine credentials, user identity, tenant, destination, and authorization limits.
+- Preserve least privilege. Do not expand sandbox, shell, filesystem, network, or credential access without an explicit and documented need.
+- Preserve the restricted sandbox and single-user Telegram constraint unless an explicit request includes a security review.
+- Keep user-stated personal memory separate from assistant-generated process notes.
 
-## Verifica delle modifiche
+## Verification
 
-Dopo ogni modifica rilevante esegui i controlli proporzionati al cambiamento. Come minimo usa:
+After every material change, run checks proportional to the change. At minimum:
 
 ```bash
 pnpm typecheck
 pnpm test
 ```
 
-Per modifiche ad agenti, skill, routing o packaging esegui anche:
+For changes to agents, skills, routing, or packaging, also run:
 
 ```bash
 pnpm validate:skills
 pnpm build
 ```
 
-Per eseguire l'intera pipeline usa `pnpm run ci`. Non usare `pnpm ci`: in pnpm
-11 è l'alias del comando di installazione e non esegue lo script `ci` definito
-in `package.json`.
+Use `pnpm run ci` for the complete pipeline. Do not use `pnpm ci`: in pnpm 11 it is an installation command alias and does not execute the `ci` script from `package.json`.
 
-Non dichiarare completata una modifica se i controlli necessari non sono stati eseguiti; indica chiaramente eventuali verifiche non disponibili e il motivo.
+Do not declare a change complete unless the required checks have run. Clearly report any unavailable verification and its reason.

@@ -1,60 +1,95 @@
-# Ricerca: memoria e framework per Therapist
+# Research: memory and frameworks for Therapist
 
-Data: 22 luglio 2026.
+Date: July 22, 2026.
 
-## Conclusione
+## Conclusion
 
-Per l'MVP conviene mantenere Flue e Hindsight, ma Hindsight deve essere un indice di richiamo secondario, non la fonte di verità clinica. I dati confermati dall'utente (profilo, obiettivi, preferenze, correzioni e consensi) dovrebbero vivere in uno storage applicativo strutturato, ispezionabile e modificabile. La trascrizione canonica resta in Flue.
+The MVP should keep Flue and Hindsight, but Hindsight should remain a secondary
+retrieval index rather than the source of clinical truth. User-confirmed data,
+including profile information, goals, preferences, corrections, and consent,
+should live in structured, inspectable, and editable application storage. Flue
+remains the canonical transcript store.
 
-## Cosa prescrive Flue
+## What Flue prescribes
 
-Flue usa il proprio database per il flusso conversazionale canonico, gli allegati, le submission e i workflow run. Dichiara esplicitamente che i dati applicativi devono essere conservati dall'applicazione o da sistemi esterni. Per Node raccomanda SQLite su singolo host e Postgres quando servono persistenza condivisa e più repliche. Non prescrive Hindsight né offre una memoria semantica di lungo periodo integrata.
+Flue uses its database for the canonical conversation stream, attachments,
+submissions, and workflow runs. It explicitly states that application data
+belongs in the application or external systems. For Node deployments, it
+recommends SQLite on a single host and Postgres when shared persistence or
+multiple replicas are required. Flue neither prescribes Hindsight nor provides
+integrated long-term semantic memory.
 
-Fonti:
+Sources:
 
 - [Flue: Database](https://flueframework.com/docs/guide/database/)
 - [Flue: Data Persistence API](https://flueframework.com/docs/api/data-persistence-api/)
 - [Flue: Durable Agents](https://flueframework.com/docs/concepts/durable-execution/)
 - [Flue: Tools](https://flueframework.com/docs/guide/tools/)
 
-## Valutazione di Hindsight
+## Hindsight assessment
 
-Hindsight fornisce `retain`, `recall` e `reflect`, estrazione di fatti ed entità, ragionamento temporale e retrieval multi-strategia. È open source, self-hostable e dispone di client TypeScript. Pubblica risultati forti su benchmark generali di memoria a lungo termine.
+Hindsight provides `retain`, `recall`, and `reflect`, fact and entity
+extraction, temporal reasoning, and multi-strategy retrieval. It is open
+source, self-hostable, and has a TypeScript client. It reports strong results
+on general long-term-memory benchmarks.
 
-Questi benchmark non dimostrano però adeguatezza clinica, sicurezza su dati sanitari, correttezza multilingue o assenza di distorsioni nell'estrazione. Per Therapist è prudente usare `retain` e `recall` con provenienza e correzioni esplicite, mantenendo disabilitati osservazioni e `reflect` finché non esistono valutazioni specifiche. Devono inoltre esistere cancellazione completa, retention, autenticazione, audit e isolamento per utente.
+Those benchmarks do not establish clinical suitability, health-data safety,
+multilingual correctness, or freedom from extraction bias. Therapist should
+use `retain` and `recall` with explicit provenance and corrections while
+keeping observations and `reflect` disabled until task-specific evaluations
+exist. Complete deletion, retention controls, authentication, auditing, and
+per-user isolation are also required.
 
-Fonti:
+Sources:
 
-- [Hindsight: repository e documentazione ufficiale](https://github.com/vectorize-io/hindsight)
-- [Hindsight Cloud: concetti Retain, Recall e Reflect](https://docs.hindsight.vectorize.io/)
-- [Hindsight: limiti dichiarati dei benchmark](https://hindsight.vectorize.io/blog/2026/03/23/agent-memory-benchmark)
+- [Hindsight: official repository and documentation](https://github.com/vectorize-io/hindsight)
+- [Hindsight Cloud: Retain, Recall, and Reflect](https://docs.hindsight.vectorize.io/)
+- [Hindsight: stated benchmark limitations](https://hindsight.vectorize.io/blog/2026/03/23/agent-memory-benchmark)
 
-## Alternative a Flue
+## Alternatives to Flue
 
 ### Mastra
 
-È l'alternativa TypeScript più coesa se si vuole ridurre il numero di servizi: integra agenti, workflow, memoria, storage, semantic recall, eval e osservabilità. Può sostituire sia parte dell'harness sia parte della memoria esterna. La migrazione avrebbe però un costo elevato e richiederebbe di ricostruire channel Telegram, sicurezza e persistenza già presenti.
+Mastra is the most cohesive TypeScript alternative when reducing the number of
+services is the priority. It integrates agents, workflows, memory, storage,
+semantic recall, evaluations, and observability. It could replace parts of both
+the harness and the external-memory service. Migration would still be costly
+and would require rebuilding the existing Telegram channel, security boundary,
+and persistence integration.
 
 - [Mastra](https://mastra.ai/)
-- [Mastra: memoria degli agenti](https://mastra.ai/blog/agent-memory-guide)
+- [Mastra: agent memory](https://mastra.ai/blog/agent-memory-guide)
 
 ### LangGraph.js
 
-È preferibile quando il comportamento deve essere una macchina a stati esplicita, con checkpoint, pause, human-in-the-loop e percorsi controllabili. Distingue checkpointer di breve periodo e store di lungo periodo. Per un prodotto clinicamente sensibile offre maggiore controllo del flusso, al prezzo di più codice e orchestrazione.
+LangGraph.js is preferable when behavior must be an explicit state machine
+with checkpoints, pauses, human-in-the-loop control, and inspectable paths. It
+distinguishes short-term checkpointers from long-term stores. For a clinically
+sensitive product, that gives tighter flow control at the cost of more code and
+orchestration.
 
 - [LangGraph.js: persistence](https://langchain-ai.github.io/langgraphjs/how-tos/subgraph-persistence/)
 
 ### OpenAI Agents SDK
 
-È una buona opzione se il prodotto sceglie OpenAI come piattaforma primaria. Offre sessioni persistenti, provider personalizzabili e tracing, ma rende meno naturale l'obiettivo local-first/Ollama e non risolve da solo la memoria clinica strutturata.
+This is a good option if the product adopts OpenAI as its primary platform. It
+provides persistent sessions, configurable providers, and tracing, but makes a
+local-first Ollama target less natural and does not itself solve structured
+clinical memory.
 
 - [OpenAI Agents SDK: Sessions](https://openai.github.io/openai-agents-js/guides/sessions/)
 - [OpenAI Agents SDK: Models](https://openai.github.io/openai-agents-js/guides/models/)
 
-## Raccomandazione operativa
+## Operational recommendation
 
-1. Conservare Flue come transcript canonico e runtime dell'MVP.
-2. Conservare Hindsight come retrieval secondario, con `reflect` e osservazioni automatiche disabilitati.
-3. Aggiungere una memoria strutturata applicativa per soli dati confermati dall'utente, con provenienza, timestamp, correzione e cancellazione.
-4. Valutare Hindsight con scenari italiani specifici: contraddizioni, correzioni, eventi temporali, omonimie, falsi ricordi e rischio clinico.
-5. Rivalutare Mastra se la priorità diventa semplificare lo stack; rivalutare LangGraph se la priorità diventa rendere esplicito e verificabile il protocollo clinico.
+1. Keep Flue as the canonical transcript and MVP runtime.
+2. Keep Hindsight as secondary retrieval, with `reflect` and automatic
+   observations disabled.
+3. Add structured application memory only for user-confirmed data, including
+   provenance, timestamps, correction, and deletion.
+4. Evaluate Hindsight with English and Italian scenarios covering
+   contradictions, corrections, temporal events, ambiguous names, false
+   memories, and clinical risk.
+5. Reconsider Mastra if stack simplification becomes the priority; reconsider
+   LangGraph if an explicit and verifiable clinical protocol becomes the
+   priority.

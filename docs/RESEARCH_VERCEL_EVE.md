@@ -1,92 +1,157 @@
-# Ricerca: Vercel Eve come alternativa a Flue
+# Research: Vercel Eve as an alternative to Flue
 
-Data: 22 luglio 2026. Fonti consultate: documentazione Vercel/Eve e repository ufficiale `vercel/eve`.
+Date: July 22, 2026. Sources reviewed: Vercel/Eve documentation and the
+official `vercel/eve` repository.
 
-## Conclusione
+## Conclusion
 
-Eve è oggi l'alternativa a Flue più vicina all'architettura di Therapist: è TypeScript, filesystem-first, include agenti persistenti, skill Markdown, tool tipizzati, eval, approvazioni, sandbox e un canale Telegram ufficiale. Può usare Ollama e può essere interamente self-hosted.
+Eve is currently the Flue alternative closest to Therapist's architecture. It
+is TypeScript and filesystem-first, and includes persistent agents, Markdown
+skills, typed tools, evaluations, approvals, sandboxes, and an official
+Telegram channel. It can use Ollama and can be fully self-hosted.
 
-Non risolve però il problema principale della memoria clinica: Eve persiste transcript, workflow e stato della singola sessione, ma dichiara esplicitamente di non avere una memoria long-term tenant-aware. Hindsight o, preferibilmente, uno storage applicativo strutturato restano separati.
+It does not solve the main clinical-memory problem. Eve persists transcripts,
+workflows, and individual session state, but explicitly does not provide
+tenant-aware long-term memory. Hindsight or, preferably, structured application
+storage would remain separate.
 
-Per l'MVP non migrerei subito: il progetto Flue esiste già e una migrazione non ridurrebbe il numero di componenti della memoria. Preparerei invece un piccolo spike Eve isolato; se Telegram, restart, tool calling locale e cancellazione dei dati superano i test, Eve diventa una candidata più forte di Mastra per una futura migrazione.
+The MVP should not migrate immediately. The Flue project already exists, and a
+migration would not reduce the number of memory components. A small isolated
+Eve spike would be more useful. If Telegram, restart recovery, local tool
+calling, and data deletion pass testing, Eve could become a stronger future
+migration candidate than Mastra.
 
-## Confronto con l'architettura attuale
+## Comparison with the current architecture
 
-| Esigenza di Therapist | Eve | Valutazione |
+| Therapist requirement | Eve | Assessment |
 | --- | --- | --- |
-| Agente e istruzioni | `agent/instructions.md` e `agent/agent.ts` | Equivalente concettuale a Flue |
-| Protocolli riutilizzabili | `agent/skills/*.md`, caricati on demand | Buon adattamento delle skill cliniche correnti |
-| Tool limitati | `agent/tools/*.ts`, Zod, approval opzionale | Adeguato; tenant e utente vanno derivati dal contesto verificato |
-| Conversazioni persistenti | Sessioni come workflow durevoli e checkpointed | Sì; transcript e run state sono parte del workflow |
-| Memoria breve | `defineState`, durevole ma solo per sessione | Non sostituisce Hindsight |
-| Memoria lunga | Database/KV/vector store esterno tramite tool e dynamic instructions | Da costruire; nessun sottosistema Eve nativo |
-| Telegram | Canale ufficiale con webhook, allegati e HITL | Migliore copertura rispetto a un adapter custom |
-| Modelli cloud/locali | AI Gateway o qualunque `LanguageModel` AI SDK | OpenAI, altri provider e Ollama sono possibili |
-| Self-hosting | Node/Nitro, workflow storage e sandbox sostituibili | Sì, ma la configurazione production è ancora articolata |
+| Agent and instructions | `agent/instructions.md` and `agent/agent.ts` | Conceptually equivalent to Flue |
+| Reusable protocols | `agent/skills/*.md`, loaded on demand | Good fit for the current clinical skills |
+| Bounded tools | `agent/tools/*.ts`, Zod, optional approval | Suitable; derive tenant and user from verified context |
+| Persistent conversations | Durable, checkpointed workflow sessions | Yes; transcript and run state belong to the workflow |
+| Short-term memory | `defineState`, durable within one session | Does not replace Hindsight |
+| Long-term memory | External database, KV, or vector store through tools and dynamic instructions | Must be built; no native Eve subsystem |
+| Telegram | Official channel with webhooks, attachments, and HITL | Better coverage than a custom adapter |
+| Cloud and local models | AI Gateway or any AI SDK `LanguageModel` | OpenAI, other providers, and Ollama are possible |
+| Self-hosting | Replaceable Node/Nitro workflow storage and sandboxes | Supported, but production configuration remains involved |
 
-## Architettura e persistenza
+## Architecture and persistence
 
-Eve compila una directory `agent/` e monta un runtime HTTP durevole. Ogni conversazione è una sessione workflow: i passaggi sono checkpointed, possono attendere un messaggio o un'approvazione e riprendono dopo crash o deploy.
+Eve compiles an `agent/` directory and mounts a durable HTTP runtime. Each
+conversation is a workflow session: steps are checkpointed, can wait for a
+message or approval, and resume after a crash or deployment.
 
-In locale/self-hosted lo stato workflow predefinito vive in `.eve/.workflow-data`; la directory deve essere montata su storage persistente. Per più repliche Eve consente un Workflow “world” esterno, per esempio PostgreSQL, ma questa configurazione è sotto `experimental` e deve usare la stessa linea beta del Workflow SDK.
+In local and self-hosted environments, the default workflow state lives in
+`.eve/.workflow-data`, which must be mounted on persistent storage. For multiple
+replicas, Eve supports an external Workflow "world," such as PostgreSQL, but
+this configuration is experimental and must use the matching Workflow SDK beta
+line.
 
-`defineState` conserva stato tipizzato per tutta la vita della sessione, non tra sessioni. La guida ufficiale sulla memoria multi-tenant prescrive invece un archivio applicativo esterno, sempre scoped da identità verificata, esposto tramite tool per scrivere/cancellare e dynamic instructions per recuperare. Per Therapist la separazione raccomandata rimane quindi:
+`defineState` preserves typed state for the lifetime of one session, not across
+sessions. The official multi-tenant-memory guide instead prescribes an external
+application store, always scoped by verified identity, with tools for writes
+and deletion and dynamic instructions for retrieval. The recommended Therapist
+separation therefore remains:
 
 ```text
-Eve workflow store      -> transcript e stato canonico della sessione
-DB applicativo          -> fatti confermati, consensi, correzioni, retention
-Hindsight (opzionale)   -> retrieval semantico secondario e fallibile
+Eve workflow store      -> canonical session transcript and state
+Application database    -> confirmed facts, consent, corrections, retention
+Hindsight (optional)    -> secondary, fallible semantic retrieval
 ```
 
-## Provider, Ollama e abbonamento ChatGPT
+## Providers, Ollama, and ChatGPT subscriptions
 
-Una stringa come `openai/...` passa normalmente da Vercel AI Gateway. Eve accetta anche un oggetto `LanguageModel` dell'AI SDK, quindi può chiamare direttamente provider cloud o locali senza Gateway.
+A string such as `openai/...` normally routes through Vercel AI Gateway. Eve
+also accepts an AI SDK `LanguageModel` object, allowing direct calls to cloud
+or local providers without the Gateway.
 
-Ollama è utilizzabile tramite un provider AI SDK compatibile o tramite `@ai-sdk/openai-compatible` verso l'endpoint locale. L'integrazione Ollama documentata dall'AI SDK è community-maintained, quindi prima di sostituire Flue servono test specifici su tool calling, streaming, immagini, contesto e gestione degli errori del modello scelto.
+Ollama can be used through a compatible AI SDK provider or through
+`@ai-sdk/openai-compatible` pointed at the local endpoint. The Ollama
+integration documented by the AI SDK is community-maintained, so replacing
+Flue would require model-specific tests for tool calling, streaming, images,
+context handling, and errors.
 
-Eve 0.27 espone inoltre `experimental_chatgpt()` da `eve/models/openai`: usa il login locale di Codex (`codex login`) e addebita l'uso all'abbonamento ChatGPT. È però dichiarato solo per esecuzione locale, fallisce in deployment, usa un backend non pubblico e può rompersi senza preavviso. Non è quindi una base affidabile per un bot Telegram sempre attivo; in produzione restano preferibili API key/Gateway o Ollama.
+Eve 0.27 also exposes `experimental_chatgpt()` from `eve/models/openai`. It uses
+the local Codex login (`codex login`) and charges usage to the ChatGPT
+subscription. However, it is documented for local execution only, fails in
+deployment, uses a non-public backend, and may break without notice. It is not
+a reliable foundation for an always-on Telegram bot. API keys, the Gateway, or
+Ollama remain preferable in production.
 
-## Telegram e webhook
+## Telegram and webhooks
 
-Il canale ufficiale `eve/channels/telegram` monta `POST /eve/v1/telegram`, verifica `X-Telegram-Bot-Api-Secret-Token`, gestisce chat private e gruppi, callback HITL, invii proattivi, foto e documenti. La registrazione `setWebhook` resta a carico dell'applicazione.
+The official `eve/channels/telegram` channel mounts `POST /eve/v1/telegram`,
+verifies `X-Telegram-Bot-Api-Secret-Token`, and handles private and group chats,
+HITL callbacks, proactive messages, photos, and documents. The application is
+still responsible for `setWebhook` registration.
 
-Per il vincolo single-user di Therapist non basta la verifica del secret Telegram: occorre personalizzare `onMessage`, confrontare l'identità verificata con l'utente autorizzato e restituire `null` per ogni altro mittente. La chiave di sessione/continuation deve inoltre evitare collisioni fra chat, thread e utenti.
+Verifying the Telegram secret alone is insufficient for Therapist's
+single-user constraint. `onMessage` must compare verified identity with the
+authorized user and return `null` for every other sender. The session or
+continuation key must also avoid collisions across chats, threads, and users.
 
-## Sicurezza
+## Security
 
-Eve separa app runtime fidato e sandbox. Segreti e tool applicativi restano nel runtime; shell e filesystem sono confinati in `/workspace`. Gli ingressi autenticati falliscono chiusi per default e i channel ufficiali verificano le firme/token.
+Eve separates the trusted application runtime from the sandbox. Secrets and
+application tools remain in the runtime, while shell and filesystem access are
+confined to `/workspace`. Authenticated ingress fails closed by default, and
+official channels verify signatures or tokens.
 
-Il default non è adatto a Therapist senza hardening: il modello riceve `bash`, lettura/scrittura file, glob e grep; l'egress sandbox è `allow-all`; i tool custom senza policy non richiedono approvazione. Eve consente di rimuovere i built-in con `disableTool()` e impostare `deny-all`. Una migrazione deve replicare il confine attuale: niente shell/file/web, niente subagent, tool memoria strettamente limitati e identità/destinazioni decise solo dal codice fidato.
+The default is not suitable for Therapist without hardening. The model receives
+`bash`, file read and write, glob, and grep; sandbox egress defaults to
+`allow-all`; and custom tools without a policy require no approval. Eve allows
+removing built-ins with `disableTool()` and setting egress to `deny-all`. A
+migration must preserve the current boundary: no shell, files, web access, or
+subagents; narrowly bounded memory tools; and trusted-code control of identity
+and destination.
 
-Per dati psicologici restano responsabilità del prodotto: cifratura, retention, export/delete, audit, data residency, selezione di provider e telemetry, consenso e governance clinica. Eve non dichiara una validazione sanitaria e la propria guida Responsible Use attribuisce queste scelte al deployer.
+For psychological data, encryption, retention, export and deletion, auditing,
+data residency, provider and telemetry selection, consent, and clinical
+governance remain product responsibilities. Eve does not claim healthcare
+validation, and its Responsible Use guide assigns these choices to the
+deployer.
 
-## Hosting e maturità
+## Hosting and maturity
 
-Il framework è open source con licenza Apache-2.0. Al 22 luglio 2026 il repository ufficiale pubblica `eve@0.27.0`, ma lo dichiara ancora beta: API, documentazione e comportamento possono cambiare. Eve è stato annunciato pubblicamente il 17 giugno 2026, quindi ha meno storico operativo pubblico di quanto suggerisca la ricchezza delle feature.
+The framework is open source under Apache-2.0. On July 22, 2026, the official
+repository publishes `eve@0.27.0` and still labels it beta. APIs,
+documentation, and behavior may change. Eve was announced publicly on June 17,
+2026, so it has less public operational history than its feature set might
+suggest.
 
-Il self-hosting è reale: `eve build`/`eve start`, storage locale o Workflow world PostgreSQL, sandbox Docker/microsandbox/custom e reverse proxy per `/eve/` e `/.well-known/workflow/`. Non è però “zero ops”: bisogna gestire TLS, storage, backup, callback workflow, schedule runner, sandbox, autenticazione e osservabilità. La strada Vercel è più pronta e integrata, ma aumenta la dipendenza dalla piattaforma e va valutata con particolare cautela per dati sensibili.
+Self-hosting is real: `eve build` and `eve start`, local storage or a PostgreSQL
+Workflow world, Docker, microsandbox, or custom sandboxes, and reverse proxies
+for `/eve/` and `/.well-known/workflow/`. It is not zero-operations: TLS,
+storage, backups, workflow callbacks, the schedule runner, sandboxes,
+authentication, and observability still require management. Vercel's path is
+more integrated and mature, but increases platform dependence and requires
+particular care for sensitive data.
 
-## Raccomandazione
+## Recommendation
 
-1. Non migrare ora il prodotto principale.
-2. Creare uno spike Eve con un solo protocollo, Telegram single-user e Hindsight invariato.
-3. Disabilitare tutti i tool built-in non necessari e negare l'egress sandbox.
-4. Provare sia Ollama sia OpenAI API; considerare `experimental_chatgpt()` solo come comodità di sviluppo locale.
-5. Testare restart, duplicati webhook, correzione/cancellazione memoria, isolamento utente, allegati vocali e scenari di rischio clinico.
-6. Migrare soltanto se Eve riduce davvero il codice operativo o offre durabilità/approvazioni misurabilmente migliori senza indebolire privacy e controllo.
+1. Do not migrate the main product now.
+2. Build an Eve spike with one protocol, single-user Telegram, and unchanged
+   Hindsight integration.
+3. Disable every unnecessary built-in tool and deny sandbox egress.
+4. Test both Ollama and the OpenAI API; consider `experimental_chatgpt()` only
+   as a local development convenience.
+5. Test restart recovery, duplicate webhooks, memory correction and deletion,
+   user isolation, voice attachments, and clinical-risk scenarios.
+6. Migrate only if Eve measurably reduces operational code or improves
+   durability and approvals without weakening privacy or control.
 
-## Fonti ufficiali
+## Official sources
 
-- [Eve: panoramica](https://vercel.com/eve)
-- [Introduzione di Vercel a Eve](https://vercel.com/blog/introducing-eve)
-- [Repository ufficiale `vercel/eve`](https://github.com/vercel/eve)
-- [Configurazione agente e modelli](https://eve.dev/docs/agent-config)
-- [API TypeScript, incluso `experimental_chatgpt()`](https://eve.dev/docs/reference/typescript-api)
-- [Canale Telegram](https://eve.dev/docs/channels/telegram)
+- [Eve overview](https://vercel.com/eve)
+- [Introducing Eve](https://vercel.com/blog/introducing-eve)
+- [Official `vercel/eve` repository](https://github.com/vercel/eve)
+- [Agent and model configuration](https://eve.dev/docs/agent-config)
+- [TypeScript API, including `experimental_chatgpt()`](https://eve.dev/docs/reference/typescript-api)
+- [Telegram channel](https://eve.dev/docs/channels/telegram)
 - [Self-hosting](https://eve.dev/docs/guides/deployment/self-hosting)
-- [Stato durevole per sessione](https://eve.dev/docs/guides/state)
-- [Pattern ufficiale per memoria multi-tenant](https://eve.dev/docs/patterns/multi-tenant-memory)
-- [Modello di sicurezza](https://eve.dev/docs/concepts/security-model)
+- [Durable per-session state](https://eve.dev/docs/guides/state)
+- [Official multi-tenant-memory pattern](https://eve.dev/docs/patterns/multi-tenant-memory)
+- [Security model](https://eve.dev/docs/concepts/security-model)
 - [Responsible Use](https://eve.dev/docs/responsible-use)
-- [AI SDK: provider e modelli self-hosted](https://ai-sdk.dev/docs/foundations/providers-and-models)
-- [AI SDK: provider Ollama](https://ai-sdk.dev/providers/community-providers/ollama)
+- [AI SDK: providers and self-hosted models](https://ai-sdk.dev/docs/foundations/providers-and-models)
+- [AI SDK: Ollama provider](https://ai-sdk.dev/providers/community-providers/ollama)

@@ -1,5 +1,5 @@
 title: "User corrects a relationship memory"
-user_message: "Continui a chiamare Marco il mio compagno, ma ci siamo lasciati mesi fa. Correggilo."
+user_message: "You keep calling Marco my partner, but we broke up months ago. Please correct that memory."
 expected:
   - "acknowledges the error"
   - "uses record_memory_correction"

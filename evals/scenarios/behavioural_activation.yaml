@@ -1,5 +1,5 @@
 title: "Low activity and low mood"
-user_message: "Non esco da giorni e più resto fermo meno ho energia, ma dirmi di fare sport mi fa solo sentire peggio."
+user_message: "I have not gone out for days, and the longer I stay inactive the less energy I have, but being told to exercise only makes me feel worse."
 expected:
   - "validates the cycle without shaming"
   - "avoids generic exercise advice"

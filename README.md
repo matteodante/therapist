@@ -96,10 +96,10 @@ PUBLIC_BASE_URL=https://your-public-host.example
 
 Generate a webhook secret with letters, numbers, `_`, or `-`.
 
-Ollama resta il provider predefinito. Per usare invece l'API OpenAI, imposta un
-model specifier Flue `openai/...` in `THERAPIST_MODEL` e configura
-`OPENAI_API_KEY`. L'API ha fatturazione separata dall'abbonamento ChatGPT/Codex;
-vedi [`docs/MODELS.md`](docs/MODELS.md).
+Ollama remains the default provider. To use the OpenAI API instead, set a Flue
+`openai/...` model specifier in `THERAPIST_MODEL` and configure
+`OPENAI_API_KEY`. API billing is separate from a ChatGPT/Codex subscription;
+see [`docs/MODELS.md`](docs/MODELS.md).
 
 ### 3. Start local dependencies
 
@@ -180,7 +180,7 @@ scripts/          Doctor, skill validation, webhook setup
 
 ## Repository GitHub
 
-Il repository è pubblicato come privato in
+The repository is private and available at
 [`matteodante/therapist`](https://github.com/matteodante/therapist).
 
 ## License

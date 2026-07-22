@@ -1,41 +1,43 @@
-# Audit di conformità Flue
+# Flue compliance audit
 
-Data: 22 luglio 2026. Versione verificata: `@flue/runtime@1.0.0-beta.9` e
+Date: July 22, 2026. Verified versions: `@flue/runtime@1.0.0-beta.9` and
 `@flue/telegram@1.0.0-beta.1`.
 
-## Esito
+## Result
 
-- `src/` è la source directory canonica.
-- L'agente è un default export `defineAgent(...)` direttamente in
+- `src/` is the canonical source directory.
+- The agent is a `defineAgent(...)` default export directly under
   `src/agents/`.
-- Il channel espone il binding nominato `channel` direttamente in
+- The channel exports the named `channel` binding directly under
   `src/channels/`.
-- `src/app.ts` compone Hono, health check e `flue()` e registra il solo provider
-  custom Ollama.
-- Le istruzioni Markdown usano `with { type: 'markdown' }`; le Agent Skills
-  usano `with { type: 'skill' }`.
-- I tool usano `defineTool`, schemi Valibot `input`/`output` e
+- `src/app.ts` composes Hono, health checks, and `flue()`, and registers only
+  the custom Ollama provider.
+- Markdown instructions use `with { type: 'markdown' }`; Agent Skills use
+  `with { type: 'skill' }`.
+- Tools use `defineTool`, Valibot `input` and `output` schemas, and
   `run({ input, signal })`.
-- Identità Telegram, destinazione, bank ID e credenziali sono determinate dal
-  codice fidato, non dal modello.
-- Il sandbox applicativo non espone shell o filesystem.
-- Flue SQLite conserva la conversazione canonica; Hindsight è memoria
-  applicativa esterna richiamata con tool limitati.
+- Trusted code determines Telegram identity, destination, bank IDs, and
+  credentials rather than the model.
+- The application sandbox exposes no shell or filesystem access.
+- Flue SQLite stores the canonical conversation; Hindsight is external
+  application memory accessed through bounded tools.
 
-## Correzioni applicate
+## Applied corrections
 
-- Il channel ora usa la forma Flue beta.9 `dispatch(agent, { id, input })`.
-- I tipi dei messaggi derivano dall'`Update` esportato da `@flue/telegram`,
-  evitando il conflitto tra le versioni `@grammyjs/types` di Flue e grammY.
-- I tool memoria propagano l'`AbortSignal` al client Hindsight.
-- Le bank Hindsight usano le proprietà correnti `retainMission`,
-  `reflectMission` e i campi di disposition espliciti.
-- Il lockfile e la policy pnpm autorizzano soltanto il build script necessario
-  di `esbuild`; i build script opzionali restano negati.
+- The channel now uses the Flue beta.9 form
+  `dispatch(agent, { id, input })`.
+- Message types derive from the `Update` exported by `@flue/telegram`, avoiding
+  the version conflict between the `@grammyjs/types` packages used by Flue and
+  grammY.
+- Memory tools propagate the `AbortSignal` to the Hindsight client.
+- Hindsight banks use the current `retainMission`, `reflectMission`, and
+  explicit disposition properties.
+- The lockfile and pnpm policy authorize only the required `esbuild` build
+  script; optional build scripts remain denied.
 
-## Verifiche
+## Verification
 
-Eseguite con esito positivo:
+Completed successfully:
 
 ```text
 pnpm validate:skills
@@ -44,7 +46,7 @@ pnpm test
 pnpm build
 ```
 
-Guide di riferimento:
+Reference guides:
 
 - [Project Layout](https://flueframework.com/docs/guide/project-layout/)
 - [Agents](https://flueframework.com/docs/guide/building-agents/)
