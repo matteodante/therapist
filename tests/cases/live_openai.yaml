@@ -21,3 +21,26 @@ cases:
       minimum_sessions: 2
       require_confirmed_memory: true
       require_confirmed_hypothesis: true
+      require_repair: false
+
+  - name: LIVE-002
+    metadata:
+      description: English process rupture must be repaired before more advice.
+      locale: en-US
+    inputs:
+      model: openai:gpt-5.2
+      locale: en-US
+      started_at: "2026-02-15T15:00:00+00:00"
+      return_after_days: 14
+      initial_messages:
+        - I feel tense whenever my sister calls, but I am not ready to turn this into homework.
+        - You didn't understand me. I wanted space to explain, and you gave me too much advice.
+        - What I wanted you to understand is that I feel guilty before I even answer her.
+      return_messages:
+        - Two weeks later, the guilt still shows up before her calls. Please help me understand it before suggesting anything.
+    expected_output:
+      context_term: sister
+      minimum_sessions: 2
+      require_confirmed_memory: true
+      require_confirmed_hypothesis: false
+      require_repair: true

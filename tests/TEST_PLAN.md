@@ -11,9 +11,16 @@ contracts.
 | LM-003 | Deterministic | Forget one event, wait nine months, and restart | Event stays out of active context; export retains only an `archived` audit record |
 | LM-004 | Deterministic | Build hundreds of sessions and memory items | Working context remains capped at 30 confirmed items, 10 hypotheses, 3 sessions, and 5 excerpts |
 | LM-005 | Deterministic | Inspect SQLite after longitudinal use | User messages, observations, summaries, and formulation are not stored as plaintext |
-| SKILL-001..005 | Deterministic Pydantic Evals | Audit each versioned therapeutic skill | Required workflow, consent, review, and boundary clauses remain present |
-| SKILL-006 | Deterministic Pydantic Evals | Audit the root skill router | One intervention at a time; uncertainty routes back to formulation |
+| LM-006 | Deterministic | Correct a remembered fact in natural chat | Existing claim becomes `user_corrected`; contradicted wording cannot return |
+| LM-007 | Deterministic | Offer and accept one experiment | One intervention record advances state without duplication |
+| LM-008 | Deterministic | End a session with an unaccepted focus | Proposed focus expires while accepted focus remains longitudinal |
+| LM-009 | Deterministic | Add similar, numbered, and negated claims | Paraphrases merge; distinct numbers and opposite statements remain separate |
+| MEMORY-006 | Deterministic | Link, correct, and forget a formulation claim | Every formulation field resolves to active evidence and follows correction/deletion |
+| INTERVENTION-001 | Deterministic | Offer and accept one behavioral experiment | Consent and valid state transition persist encrypted for later review |
+| PROCESS-001..003 | Deterministic Pydantic Evals | Execute supported fact, unsupported fact, and Italian rupture cases | Evidence gates and repair stage operate in the real harness |
+| SKILL-001..008 | Deterministic Pydantic Evals | Audit every versioned skill and progressive formulation contract | Required workflow, evidence, repair, consent, and boundaries remain present |
 | LIVE-001 | Real provider + LLM judge | Complete a synthetic avoidance case, consolidate, restart, and return after four months | Storage gates pass and the transcript demonstrates listening, shared formulation, pacing, a small agreed intervention, outcome review, and accurate continuity |
+| LIVE-002 | Real provider + LLM judge | User rejects advice in English and returns after two weeks | The agent repairs the mismatch before more technique and retains the corrected helping preference |
 
 Run deterministic tests on every change:
 
@@ -27,5 +34,6 @@ Run the real-provider case explicitly when credentials and network access are av
 THERA_RUN_LIVE_TESTS=1 OPENAI_API_KEY=... uv run pytest -m live
 ```
 
-The live test intentionally avoids assertions about exact prose because model wording is
-non-deterministic. Pydantic Evals verifies observable persistence and continuity contracts instead.
+The live test repeats every case three times in an isolated database and avoids assertions about
+exact prose because model wording is non-deterministic. Critical deterministic assertions must pass
+on every repeat; Pydantic Evals judges observable process, persistence, repair, and continuity.

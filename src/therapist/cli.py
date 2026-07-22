@@ -1,12 +1,15 @@
 """Minimal command-line interface for chat and user-controlled memory."""
 
 import argparse
-import getpass
 import json
 import os
+import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.request import urlopen
+
+import questionary
 
 from therapist.auth import (
     AuthError,
@@ -21,8 +24,17 @@ from therapist.protocol import ProtocolError, ProtocolPack
 from therapist.telegram import TelegramBot, TelegramChannel, TelegramError
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic-v0.3.0"
+DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic-v0.4.0"
 TELEGRAM_SECRET = "telegram_bot_token"
+DEFAULT_CODEX_MODEL = "codex:gpt-5.6-sol"
+CUSTOM_MODEL = "__custom__"
+LOCAL_OLLAMA = "__local_ollama__"
+PROVIDER_SECRETS = {
+    "openai:": ("openai_api_key", "OPENAI_API_KEY", "OpenAI API key"),
+    "anthropic:": ("anthropic_api_key", "ANTHROPIC_API_KEY", "Anthropic API key"),
+    "google:": ("google_api_key", "GOOGLE_API_KEY", "Google API key"),
+    "openrouter:": ("openrouter_api_key", "OPENROUTER_API_KEY", "OpenRouter API key"),
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -63,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     memory_commands.add_parser("show")
     memory_commands.add_parser("case")
     memory_commands.add_parser("sessions")
+    memory_commands.add_parser("interventions")
     confirm = memory_commands.add_parser("confirm")
     confirm.add_argument("id")
     correct = memory_commands.add_parser("correct")
@@ -124,10 +137,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         state = store.load_app_state()
         selected_model = args.model or state.default_model
         if not selected_model and load_credential(store):
-            selected_model = "codex:gpt-5.5"
+            selected_model = DEFAULT_CODEX_MODEL
         if not selected_model:
             print("Missing model. Run `thera setup` or pass --model.")
             return 2
+        _load_provider_secret(store, selected_model)
         locale = args.locale or state.default_locale or "en-US"
         try:
             model = (
@@ -135,6 +149,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 if selected_model.startswith("codex:")
                 else selected_model
             )
+            if selected_model.startswith("ollama:"):
+                os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:11434/v1")
         except AuthError as error:
             print(f"Authentication error: {error}")
             return 2
@@ -186,37 +202,52 @@ def main(argv: Sequence[str] | None = None) -> int:
 def _setup(store: MemoryStore) -> int:
     state = store.load_app_state()
     try:
-        model = input(f"Model [{state.default_model or 'required'}]: ").strip()
-        model = model or state.default_model
-        if not model:
-            print("A model is required, for example ollama:qwen3:8b or codex:gpt-5.5.")
+        model = _select_model(state.default_model)
+        if not _configure_provider_secret(store, model):
             return 2
-
-        current_locale = state.default_locale or "en-US"
-        locale = input(f"Locale (it-IT/en-US) [{current_locale}]: ").strip() or current_locale
-        if locale not in {"it-IT", "en-US"}:
-            print("Locale must be it-IT or en-US.")
-            return 2
+        locale = _ask(
+            questionary.select(
+                "Conversation language",
+                choices=[
+                    questionary.Choice("Italiano", value="it-IT"),
+                    questionary.Choice("English", value="en-US"),
+                ],
+                default=state.default_locale or "it-IT",
+            )
+        )
 
         has_telegram = _telegram_config(store)
-        default_choice = "Y/n" if has_telegram else "y/N"
-        choice = input(f"Configure Telegram? [{default_choice}]: ").strip().lower()
-        configure_telegram = choice in {"y", "yes"} or (not choice and has_telegram)
+        configure_telegram = _ask(
+            questionary.select(
+                "Configure Telegram?",
+                choices=[
+                    questionary.Choice("Yes", value=True),
+                    questionary.Choice("No", value=False),
+                ],
+                default=has_telegram,
+            )
+        )
         if configure_telegram:
-            token = getpass.getpass("Telegram bot token (hidden; blank keeps current): ").strip()
+            token = _ask(
+                questionary.password(
+                    "Telegram bot token",
+                    instruction="Leave blank to keep the current token",
+                )
+            ).strip()
             token_payload = token.encode() if token else store.load_secret(TELEGRAM_SECRET)
             if not token_payload:
                 print("A Telegram bot token is required.")
                 return 2
             current_id = state.telegram_allowed_user_id
-            raw_user_id = input(f"Allowed Telegram user ID [{current_id or 'required'}]: ").strip()
-            try:
-                user_id = int(raw_user_id) if raw_user_id else current_id
-            except ValueError:
-                user_id = None
-            if not user_id or user_id <= 0:
-                print("Telegram user ID must be a positive integer.")
-                return 2
+            if token or not current_id:
+                try:
+                    user_id, update_offset = _pair_telegram_user(token_payload.decode())
+                except TelegramError as error:
+                    print(f"Telegram setup error: {error}")
+                    return 2
+                state.telegram_update_offset = update_offset
+            else:
+                user_id = current_id
             store.save_secret(TELEGRAM_SECRET, token_payload)
             state.telegram_allowed_user_id = user_id
 
@@ -224,8 +255,17 @@ def _setup(store: MemoryStore) -> int:
         state.default_locale = locale
         store.save_app_state(state)
         if model.startswith("codex:") and not load_credential(store):
-            login_now = input("Log in with ChatGPT now? [Y/n]: ").strip().lower()
-            if login_now not in {"n", "no"}:
+            login_now = _ask(
+                questionary.select(
+                    "Log in with ChatGPT now?",
+                    choices=[
+                        questionary.Choice("Yes", value=True),
+                        questionary.Choice("No", value=False),
+                    ],
+                    default=True,
+                )
+            )
+            if login_now:
                 try:
                     login_codex(store)
                 except AuthError as error:
@@ -241,6 +281,157 @@ def _setup(store: MemoryStore) -> int:
     if model.startswith("codex:") and not load_credential(store):
         print("Next: run `thera auth login` for ChatGPT Codex access.")
     return 0
+
+
+def _select_model(current: str | None) -> str:
+    choices = [
+        questionary.Choice("ChatGPT Plus/Pro — GPT-5.6 Sol", value=DEFAULT_CODEX_MODEL),
+        questionary.Choice("OpenAI API", value="openai:gpt-5.6-sol"),
+        questionary.Choice("Anthropic API", value="anthropic:claude-sonnet-4-6"),
+        questionary.Choice("Google Gemini API", value="google:gemini-3-pro-preview"),
+        questionary.Choice(
+            "OpenRouter API", value="openrouter:anthropic/claude-sonnet-4.6"
+        ),
+        questionary.Choice("Ollama on this computer", value=LOCAL_OLLAMA),
+        questionary.Choice("Other PydanticAI model", value=CUSTOM_MODEL),
+    ]
+    if current:
+        choices.insert(0, questionary.Choice(f"Keep current ({current})", value=current))
+
+    while True:
+        selected = _ask(
+            questionary.select(
+                "Model provider",
+                choices=choices,
+                default=current or DEFAULT_CODEX_MODEL,
+            )
+        )
+        if selected == LOCAL_OLLAMA:
+            models = _ollama_models()
+            if not models:
+                print(
+                    "No installed Ollama models found. "
+                    "Start Ollama and run `ollama pull <model>`."
+                )
+                continue
+            name = _ask(questionary.select("Ollama model", choices=models))
+            return f"ollama:{name}"
+        if selected == CUSTOM_MODEL:
+            return _ask(
+                questionary.text(
+                    "PydanticAI model ID",
+                    instruction="For example: openai:gpt-5.6-sol",
+                    validate=lambda value: bool(value.strip() and ":" in value),
+                )
+            ).strip()
+        return selected
+
+
+def _configure_provider_secret(store: MemoryStore, model: str) -> bool:
+    config = _provider_secret_config(model)
+    if config is None:
+        return True
+    secret_name, _, label = config
+    current = store.load_secret(secret_name)
+    value = _ask(
+        questionary.password(
+            label,
+            instruction="Leave blank to keep the saved key" if current else None,
+        )
+    ).strip()
+    payload = value.encode() if value else current
+    if not payload:
+        print(f"{label} is required.")
+        return False
+    store.save_secret(secret_name, payload)
+    return True
+
+
+def _load_provider_secret(store: MemoryStore, model: str) -> None:
+    config = _provider_secret_config(model)
+    if config is None:
+        return
+    secret_name, environment_name, _ = config
+    payload = store.load_secret(secret_name)
+    if payload:
+        os.environ[environment_name] = payload.decode()
+
+
+def _provider_secret_config(model: str) -> tuple[str, str, str] | None:
+    return next(
+        (config for prefix, config in PROVIDER_SECRETS.items() if model.startswith(prefix)),
+        None,
+    )
+
+
+def _ollama_models() -> list[str]:
+    try:
+        with urlopen("http://localhost:11434/api/tags", timeout=1) as response:
+            payload = json.load(response)
+    except (OSError, ValueError, TypeError):
+        return []
+    return sorted(
+        model["name"]
+        for model in payload.get("models", [])
+        if isinstance(model, dict) and isinstance(model.get("name"), str)
+    )
+
+
+def _pair_telegram_user(token: str) -> tuple[int, int]:
+    bot = TelegramBot(token)
+    identity = bot.get_me()
+    username = identity.get("username")
+    if not isinstance(username, str) or not username:
+        raise TelegramError("Telegram returned a bot without a username.")
+    bot.delete_webhook()
+    pending = bot.get_updates(-1, timeout=0)
+    offset = max(
+        (update["update_id"] for update in pending if isinstance(update.get("update_id"), int)),
+        default=-1,
+    ) + 1
+    code = secrets.token_urlsafe(6)
+    print(f"Open https://t.me/{username}?start={code} and press Start.")
+    print("Waiting for your private Telegram message (Ctrl-C to cancel)...")
+
+    while True:
+        for update in bot.get_updates(offset or None):
+            update_id = update.get("update_id")
+            if not isinstance(update_id, int):
+                continue
+            offset = update_id + 1
+            message = update.get("message")
+            if not isinstance(message, dict) or message.get("text") != f"/start {code}":
+                continue
+            sender = message.get("from")
+            chat = message.get("chat")
+            if (
+                not isinstance(sender, dict)
+                or not isinstance(chat, dict)
+                or chat.get("type") != "private"
+                or sender.get("is_bot") is True
+                or not isinstance(sender.get("id"), int)
+            ):
+                continue
+            label = sender.get("username") or sender.get("first_name") or sender["id"]
+            confirmed = _ask(
+                questionary.select(
+                    f"Connect Telegram account {label}?",
+                    choices=[
+                        questionary.Choice("Yes", value=True),
+                        questionary.Choice("No", value=False),
+                    ],
+                    default=True,
+                )
+            )
+            if confirmed:
+                return sender["id"], offset
+
+
+def _ask(question: questionary.Question):
+    answer = question.ask()
+    if answer is None:
+        raise KeyboardInterrupt
+    return answer
 
 
 def _telegram_config(store: MemoryStore) -> bool:
@@ -278,6 +469,8 @@ def _memory(args: argparse.Namespace, store: MemoryStore) -> int:
             print(store.load_formulation().model_dump_json(indent=2))
         elif args.memory_command == "sessions":
             print(_json([session.model_dump() for session in store.list_sessions()]))
+        elif args.memory_command == "interventions":
+            print(_json([item.model_dump(mode="json") for item in store.list_interventions()]))
         elif args.memory_command == "confirm":
             print(store.confirm_memory(args.id).model_dump_json(indent=2))
         elif args.memory_command == "correct":
@@ -308,7 +501,8 @@ def _chat(session: ChatSession, store: MemoryStore, locale: str) -> int:
         state.consent_version = "alpha-1"
         store.save_app_state(state)
 
-    print("Commands: /case, /memory, /sessions [id], /confirm <id>, /correct <id> <text>,")
+    print("Commands: /case, /memory, /sessions [id], /interventions, /confirm <id>,")
+    print("          /correct <id> <text>,")
     print("          /forget <id>, /end, /help, /quit")
     while True:
         try:
@@ -339,7 +533,7 @@ def _chat_command(command: str, session: ChatSession, store: MemoryStore) -> boo
     try:
         if name == "/help":
             print("/case /memory /sessions [id] /confirm <id> /correct <id> <text>")
-            print("/forget <id> /end /quit")
+            print("/interventions /forget <id> /end /quit")
         elif name == "/case":
             print(store.load_formulation().model_dump_json(indent=2))
         elif name == "/memory":
@@ -351,6 +545,8 @@ def _chat_command(command: str, session: ChatSession, store: MemoryStore) -> boo
             else:
                 found = next((item for item in sessions if item.id == parts[1]), None)
                 print("Session not found." if found is None else found.model_dump_json(indent=2))
+        elif name == "/interventions":
+            print(_json([item.model_dump(mode="json") for item in store.list_interventions()]))
         elif name == "/confirm" and len(parts) >= 2:
             print(store.confirm_memory(parts[1]).model_dump_json(indent=2))
         elif name == "/correct" and len(parts) == 3:

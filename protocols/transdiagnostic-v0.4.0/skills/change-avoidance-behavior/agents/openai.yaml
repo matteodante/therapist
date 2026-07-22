@@ -1,0 +1,4 @@
+interface:
+  display_name: "Change Avoidance Behavior"
+  short_description: "Choose one small behavior change experiment"
+  default_prompt: "Use $change-avoidance-behavior to design one small, agreed experiment that interrupts avoidance."

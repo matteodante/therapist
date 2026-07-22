@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 from datetime import UTC, datetime, timedelta
+from difflib import SequenceMatcher
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,28 @@ class MemoryStatus(StrEnum):
     ARCHIVED = "archived"
 
 
+class InterventionState(StrEnum):
+    OFFERED = "offered"
+    AGREED = "agreed"
+    TRIED = "tried"
+    NOT_TRIED = "not_tried"
+    STOPPED = "stopped"
+
+
+def valid_intervention_transition(
+    current: InterventionState, target: InterventionState
+) -> bool:
+    allowed = {
+        InterventionState.OFFERED: {InterventionState.AGREED, InterventionState.STOPPED},
+        InterventionState.AGREED: {
+            InterventionState.TRIED,
+            InterventionState.NOT_TRIED,
+            InterventionState.STOPPED,
+        },
+    }
+    return target in allowed.get(current, set())
+
+
 class AppState(BaseModel):
     consent_version: str | None = None
     telegram_consent_version: str | None = None
@@ -49,6 +72,8 @@ class AppState(BaseModel):
     default_model: str | None = None
     default_locale: str | None = None
     telegram_allowed_user_id: int | None = Field(default=None, gt=0)
+    pending_hypothesis_id: str | None = None
+    pending_intervention_id: str | None = None
 
 
 class CaseFormulation(BaseModel):
@@ -59,14 +84,30 @@ class CaseFormulation(BaseModel):
     relationship_patterns: list[str] = Field(default_factory=list)
     maintaining_factors: list[str] = Field(default_factory=list)
     strengths_and_protective_factors: list[str] = Field(default_factory=list)
+    course_and_duration: list[str] = Field(default_factory=list)
+    functioning_impact: list[str] = Field(default_factory=list)
+    user_explanation: list[str] = Field(default_factory=list)
+    prior_helpful_or_harmful_support: list[str] = Field(default_factory=list)
+    preferred_help: list[str] = Field(default_factory=list)
     open_hypotheses: list[str] = Field(default_factory=list)
     current_focus: str | None = None
+    proposed_focus: str | None = None
+    evidence: dict[str, list[str]] = Field(default_factory=dict)
     last_reviewed_at: str | None = None
 
 
 class MemoryObservation(BaseModel):
     kind: MemoryKind
-    content: str
+    content: str = Field(min_length=1, max_length=500)
+    evidence_quote: str | None = Field(default=None, max_length=500)
+    aliases: list[str] = Field(default_factory=list, max_length=5)
+    merge_into_id: str | None = None
+
+
+class MemoryCorrection(BaseModel):
+    memory_id: str
+    replacement: str = Field(min_length=1, max_length=500)
+    evidence_quote: str = Field(min_length=1, max_length=500)
 
 
 class MemoryItem(BaseModel):
@@ -75,6 +116,7 @@ class MemoryItem(BaseModel):
     content: str
     status: MemoryStatus
     evidence_message_ids: list[int] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list, max_length=5)
     superseded_content: list[str] = Field(default_factory=list)
     first_seen_at: str
     last_seen_at: str
@@ -90,6 +132,22 @@ class SessionRecord(BaseModel):
     interventions: list[str] = Field(default_factory=list)
     user_response: str = ""
     open_questions: list[str] = Field(default_factory=list)
+    consolidation_error: str | None = None
+
+
+class InterventionRecord(BaseModel):
+    id: str
+    skill: str
+    description: str = Field(min_length=1, max_length=500)
+    prediction: str | None = Field(default=None, max_length=500)
+    state: InterventionState
+    linked_memory_ids: list[str] = Field(default_factory=list, max_length=5)
+    evidence_message_ids: list[int] = Field(default_factory=list)
+    outcome: str | None = Field(default=None, max_length=500)
+    user_appraisal: str | None = Field(default=None, max_length=500)
+    follow_up_at: str | None = None
+    created_at: str
+    updated_at: str
 
 
 class ContextMemoryItem(BaseModel):
@@ -105,7 +163,16 @@ class WorkingContext(BaseModel):
     confirmed_memory: list[ContextMemoryItem]
     hypotheses: list[ContextMemoryItem]
     recent_sessions: list[SessionRecord]
+    active_interventions: list[InterventionRecord]
     relevant_excerpts: list[str]
+
+
+FORMULATION_FIELDS = tuple(
+    name
+    for name, field in CaseFormulation.model_fields.items()
+    if name not in {"current_focus", "proposed_focus", "evidence", "last_reviewed_at"}
+    and field.annotation == list[str]
+)
 
 
 class MemoryError(RuntimeError):
@@ -140,6 +207,10 @@ class MemoryStore:
                     first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
                     payload BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS interventions (
+                    id TEXT PRIMARY KEY, state TEXT NOT NULL,
+                    updated_at TEXT NOT NULL, payload BLOB NOT NULL
+                );
                 """
             )
         self._migrate_legacy_state()
@@ -162,6 +233,27 @@ class MemoryStore:
     ) -> None:
         formulation.last_reviewed_at = _iso(now)
         self._write_state("formulation", formulation.model_dump_json().encode())
+
+    def save_formulation_links(
+        self,
+        links: dict[str, list[str]],
+        *,
+        proposed_focus: str | None = None,
+        current_focus: str | None = None,
+        now: datetime | None = None,
+    ) -> CaseFormulation:
+        active = {item.id: item for item in self.list_memory()}
+        formulation = CaseFormulation(
+            current_focus=current_focus,
+            proposed_focus=proposed_focus,
+        )
+        for field_name in FORMULATION_FIELDS:
+            ids = [item_id for item_id in links.get(field_name, []) if item_id in active]
+            if ids:
+                setattr(formulation, field_name, [active[item_id].content for item_id in ids])
+                formulation.evidence[field_name] = ids
+        self.save_formulation(formulation, now)
+        return formulation
 
     def start_session(self, now: datetime | None = None) -> SessionRecord:
         timestamp = _iso(now)
@@ -208,6 +300,7 @@ class MemoryStore:
         interventions: list[str] | None = None,
         user_response: str = "",
         open_questions: list[str] | None = None,
+        consolidation_error: str | None = None,
         now: datetime | None = None,
     ) -> SessionRecord:
         session.ended_at = _iso(now)
@@ -217,6 +310,7 @@ class MemoryStore:
         session.interventions = interventions or []
         session.user_response = user_response
         session.open_questions = open_questions or []
+        session.consolidation_error = consolidation_error
         self.save_session(session)
         return session
 
@@ -270,31 +364,56 @@ class MemoryStore:
             rows = database.execute(
                 "SELECT payload FROM messages WHERE session_id = ? AND role = 'assistant' "
                 "ORDER BY id DESC LIMIT ?",
-                (session_id, limit // 2),
+                (session_id, limit),
             ).fetchall()
-        history: list[ModelMessage] = []
+        groups: list[list[ModelMessage]] = []
         for row in reversed(rows):
             payload = self._decrypt_json(row[0])
-            history.extend(
+            groups.append(
                 ModelMessagesTypeAdapter.validate_python(payload.get("model_messages", []))
             )
-        return history[-limit:]
+        selected: list[list[ModelMessage]] = []
+        used = 0
+        for group in reversed(groups):
+            if selected and used + len(group) > limit:
+                break
+            if len(group) > limit:
+                continue
+            selected.append(group)
+            used += len(group)
+        return [message for group in reversed(selected) for message in group]
 
-    def session_transcript(self, session_id: str) -> str:
+    def session_transcript(self, session_id: str, limit_chars: int | None = None) -> str:
         with self._connect() as database:
             rows = database.execute(
                 "SELECT role, payload FROM messages WHERE session_id = ? ORDER BY id",
                 (session_id,),
             ).fetchall()
-        return "\n".join(
-            f"{role}: {self._decrypt_json(payload).get('content', '')}" for role, payload in rows
-        )
+        lines = [
+            f"{role}: {self._decrypt_json(payload).get('content', '')}"
+            for role, payload in rows
+        ]
+        if limit_chars is None:
+            return "\n".join(lines)
+        turns = ["\n".join(lines[index : index + 2]) for index in range(0, len(lines), 2)]
+        selected: list[str] = []
+        used = 0
+        for turn in reversed(turns):
+            if selected and used + len(turn) + 1 > limit_chars:
+                break
+            if len(turn) > limit_chars:
+                continue
+            selected.append(turn)
+            used += len(turn) + 1
+        return "\n".join(reversed(selected))
 
     def add_observations(
         self,
         observations: list[MemoryObservation],
         evidence_message_id: int,
         now: datetime | None = None,
+        *,
+        evidence_text: str | None = None,
     ) -> list[MemoryItem]:
         saved: list[MemoryItem] = []
         existing = self.list_memory(include_archived=True)
@@ -302,13 +421,24 @@ class MemoryStore:
             content = " ".join(observation.content.split()).strip()
             if not content:
                 continue
+            if (
+                evidence_text is not None
+                and observation.kind
+                in {MemoryKind.FACT, MemoryKind.PREFERENCE, MemoryKind.EVENT}
+                and not _supported_quote(observation.evidence_quote, evidence_text)
+            ):
+                continue
             duplicate = next(
                 (
                     item
                     for item in existing
                     if item.kind == observation.kind
-                    and item.content.casefold() == content.casefold()
                     and item.status is not MemoryStatus.ARCHIVED
+                    and (
+                        item.id == observation.merge_into_id
+                        or item.content.casefold() == content.casefold()
+                        or _near_duplicate(item.content, content)
+                    )
                 ),
                 None,
             )
@@ -316,6 +446,9 @@ class MemoryStore:
                 duplicate.last_seen_at = _iso(now)
                 if evidence_message_id not in duplicate.evidence_message_ids:
                     duplicate.evidence_message_ids.append(evidence_message_id)
+                duplicate.aliases = list(
+                    dict.fromkeys([*duplicate.aliases, *observation.aliases])
+                )[:5]
                 self._save_memory_item(duplicate)
                 saved.append(duplicate)
                 continue
@@ -331,6 +464,7 @@ class MemoryStore:
                 content=content,
                 status=status,
                 evidence_message_ids=[evidence_message_id],
+                aliases=observation.aliases,
                 first_seen_at=timestamp,
                 last_seen_at=timestamp,
             )
@@ -357,7 +491,13 @@ class MemoryStore:
         self._save_memory_item(item)
         return item
 
-    def correct_memory(self, item_id: str, content: str) -> MemoryItem:
+    def correct_memory(
+        self,
+        item_id: str,
+        content: str,
+        evidence_message_id: int | None = None,
+        now: datetime | None = None,
+    ) -> MemoryItem:
         content = " ".join(content.split()).strip()
         if not content:
             raise ValueError("Correction cannot be empty.")
@@ -366,8 +506,12 @@ class MemoryStore:
         item.superseded_content.append(old)
         item.content = content
         item.status = MemoryStatus.USER_CORRECTED
-        item.last_seen_at = _iso()
+        item.aliases = []
+        if evidence_message_id is not None and evidence_message_id not in item.evidence_message_ids:
+            item.evidence_message_ids.append(evidence_message_id)
+        item.last_seen_at = _iso(now)
         self._save_memory_item(item)
+        self._refresh_formulation_links()
         self._replace_derived_text(old, content)
         return item
 
@@ -376,11 +520,83 @@ class MemoryStore:
         item.status = MemoryStatus.ARCHIVED
         item.last_seen_at = _iso()
         self._save_memory_item(item)
+        self._refresh_formulation_links()
         self._replace_derived_text(item.content, "")
         return item
 
+    def create_intervention(
+        self,
+        *,
+        skill: str,
+        description: str,
+        prediction: str | None,
+        state: InterventionState,
+        linked_memory_ids: list[str],
+        evidence_message_id: int,
+        follow_up_at: str | None = None,
+        now: datetime | None = None,
+    ) -> InterventionRecord:
+        if state not in {InterventionState.OFFERED, InterventionState.AGREED}:
+            raise ValueError("A new intervention must be offered or agreed.")
+        timestamp = _iso(now)
+        active_memory_ids = {item.id for item in self.list_memory()}
+        record = InterventionRecord(
+            id=uuid4().hex[:12],
+            skill=skill,
+            description=" ".join(description.split()),
+            prediction=" ".join(prediction.split()) if prediction else None,
+            state=state,
+            linked_memory_ids=[
+                item_id for item_id in linked_memory_ids if item_id in active_memory_ids
+            ][:5],
+            evidence_message_ids=[evidence_message_id],
+            follow_up_at=follow_up_at,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self._save_intervention(record)
+        return record
+
+    def update_intervention(
+        self,
+        record_id: str,
+        *,
+        state: InterventionState,
+        evidence_message_id: int,
+        outcome: str | None = None,
+        user_appraisal: str | None = None,
+        now: datetime | None = None,
+    ) -> InterventionRecord:
+        record = self._get_intervention(record_id)
+        if not valid_intervention_transition(record.state, state):
+            raise ValueError(f"Invalid intervention transition: {record.state} -> {state}")
+        record.state = state
+        record.outcome = " ".join(outcome.split()) if outcome else record.outcome
+        record.user_appraisal = (
+            " ".join(user_appraisal.split()) if user_appraisal else record.user_appraisal
+        )
+        if evidence_message_id not in record.evidence_message_ids:
+            record.evidence_message_ids.append(evidence_message_id)
+        record.updated_at = _iso(now)
+        self._save_intervention(record)
+        return record
+
+    def list_interventions(self, active_only: bool = False) -> list[InterventionRecord]:
+        sql = "SELECT payload FROM interventions"
+        parameters: tuple[str, ...] = ()
+        if active_only:
+            sql += " WHERE state IN (?, ?)"
+            parameters = (InterventionState.OFFERED.value, InterventionState.AGREED.value)
+        sql += " ORDER BY updated_at DESC"
+        with self._connect() as database:
+            rows = database.execute(sql, parameters).fetchall()
+        return [self._decrypt_model(row[0], InterventionRecord) for row in rows]
+
     def working_context(self, query: str) -> WorkingContext:
         memories = self.list_memory()
+        memories.sort(
+            key=lambda item: (_memory_score(query, item), item.last_seen_at), reverse=True
+        )
         confirmed = [
             ContextMemoryItem.model_validate(item, from_attributes=True)
             for item in memories
@@ -392,6 +608,21 @@ class MemoryStore:
             if item.status is MemoryStatus.AGENT_HYPOTHESIS
         ][:10]
         recent_sessions = [session for session in self.list_sessions() if session.ended_at][:3]
+        interventions = self.list_interventions(active_only=True)
+        interventions.sort(
+            key=lambda item: (
+                _lexical_score(
+                    query,
+                    " ".join(
+                        value
+                        for value in (item.description, item.prediction, item.outcome)
+                        if value
+                    ),
+                ),
+                item.updated_at,
+            ),
+            reverse=True,
+        )
         all_memory = self.list_memory(include_archived=True)
         excluded = {
             text.casefold()
@@ -422,6 +653,7 @@ class MemoryStore:
             confirmed_memory=confirmed,
             hypotheses=hypotheses,
             recent_sessions=recent_sessions,
+            active_interventions=interventions[:5],
             relevant_excerpts=excerpts,
         )
 
@@ -444,6 +676,9 @@ class MemoryStore:
             "app": self.load_app_state().model_dump(),
             "case_formulation": self.load_formulation().model_dump(),
             "memory": [item.model_dump(mode="json") for item in self.list_memory(True)],
+            "interventions": [
+                item.model_dump(mode="json") for item in self.list_interventions()
+            ],
             "sessions": [session.model_dump() for session in self.list_sessions()],
             "messages": messages,
         }
@@ -463,6 +698,7 @@ class MemoryStore:
             database.execute("DELETE FROM messages")
             database.execute("DELETE FROM sessions")
             database.execute("DELETE FROM memory_items")
+            database.execute("DELETE FROM interventions")
             database.execute("DELETE FROM state")
 
     def _save_memory_item(self, item: MemoryItem) -> None:
@@ -481,6 +717,24 @@ class MemoryStore:
                     self._encrypt_model(item),
                 ),
             )
+
+    def _save_intervention(self, item: InterventionRecord) -> None:
+        with self._connect() as database:
+            database.execute(
+                "INSERT INTO interventions(id, state, updated_at, payload) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET state = excluded.state, "
+                "updated_at = excluded.updated_at, payload = excluded.payload",
+                (item.id, item.state.value, item.updated_at, self._encrypt_model(item)),
+            )
+
+    def _get_intervention(self, record_id: str) -> InterventionRecord:
+        with self._connect() as database:
+            row = database.execute(
+                "SELECT payload FROM interventions WHERE id = ?", (record_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown intervention: {record_id}")
+        return self._decrypt_model(row[0], InterventionRecord)
 
     def _get_memory(self, item_id: str) -> MemoryItem:
         with self._connect() as database:
@@ -505,18 +759,19 @@ class MemoryStore:
     def _replace_derived_text(self, old: str, new: str) -> None:
         formulation = self.load_formulation()
         changed = False
-        for field_name, value in formulation:
-            if isinstance(value, list):
-                replaced = [_replace_derived(value_item, old, new) for value_item in value]
-                replaced = [value_item for value_item in replaced if value_item]
-                if replaced != value:
-                    setattr(formulation, field_name, replaced)
-                    changed = True
-            elif isinstance(value, str):
-                replaced = _replace_derived(value, old, new)
-                if replaced != value:
-                    setattr(formulation, field_name, replaced or None)
-                    changed = True
+        if not formulation.evidence:
+            for field_name, value in formulation:
+                if isinstance(value, list):
+                    replaced = [_replace_derived(value_item, old, new) for value_item in value]
+                    replaced = [value_item for value_item in replaced if value_item]
+                    if replaced != value:
+                        setattr(formulation, field_name, replaced)
+                        changed = True
+                elif isinstance(value, str):
+                    replaced = _replace_derived(value, old, new)
+                    if replaced != value:
+                        setattr(formulation, field_name, replaced or None)
+                        changed = True
         if changed:
             self.save_formulation(formulation)
         for session in self.list_sessions():
@@ -540,6 +795,16 @@ class MemoryStore:
             ]
             if session.model_dump() != before:
                 self.save_session(session)
+
+    def _refresh_formulation_links(self) -> None:
+        formulation = self.load_formulation()
+        if not formulation.evidence:
+            return
+        self.save_formulation_links(
+            formulation.evidence,
+            proposed_focus=formulation.proposed_focus,
+            current_focus=formulation.current_focus,
+        )
 
     def _migrate_legacy_state(self) -> None:
         if self._read_state("schema_version") is not None:
@@ -627,6 +892,30 @@ def _tokens(text: str) -> set[str]:
 
 def _lexical_score(query: str, text: str) -> int:
     return len(_tokens(query) & _tokens(text))
+
+
+def _memory_score(query: str, item: MemoryItem) -> int:
+    return _lexical_score(query, " ".join([item.content, *item.aliases]))
+
+
+def _near_duplicate(left: str, right: str) -> bool:
+    # ponytail: a linear fuzzy scan is enough for one local user; add an index only if measured.
+    if set(re.findall(r"\d+", left)) != set(re.findall(r"\d+", right)):
+        return False
+    negation = re.compile(r"\b(non|not|never|cannot|can't|isn't|doesn't|didn't|no)\b")
+    if bool(negation.search(left.casefold())) != bool(negation.search(right.casefold())):
+        return False
+    normalized_left = " ".join(re.findall(r"\w+", left.casefold()))
+    normalized_right = " ".join(re.findall(r"\w+", right.casefold()))
+    return SequenceMatcher(None, normalized_left, normalized_right).ratio() >= 0.9
+
+
+def _supported_quote(quote: str | None, evidence: str) -> bool:
+    if not quote:
+        return False
+    normalized_quote = " ".join(quote.split()).casefold()
+    normalized_evidence = " ".join(evidence.split()).casefold()
+    return bool(normalized_quote) and normalized_quote in normalized_evidence
 
 
 def _replace(value: str, old: str, new: str) -> str:

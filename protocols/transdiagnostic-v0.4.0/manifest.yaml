@@ -1,0 +1,57 @@
+id: therapist.transdiagnostic
+version: 0.4.0
+status: experimental
+locales: [it-IT, en-US]
+population: adults-18-plus
+crisis_policy: explicit-disclosure-v1
+reviewers: []
+next_review: null
+skills:
+  - path: skills/build-shared-formulation/SKILL.md
+    sha256: 4760cf032cbb0168ae70870e15fb01f6078b1c61f97bd7d0cf1fea45f4ec9f00
+  - path: skills/increase-psychological-flexibility/SKILL.md
+    sha256: e9698788f37f9322780026fe10d1c1bd2a5b33f46ccd8600c773c782f0deb9bb
+  - path: skills/change-avoidance-behavior/SKILL.md
+    sha256: 0342ef156c0de822d41aedaf204a4bc1d4d347643e433c269ea13af312d6aec1
+  - path: skills/solve-practical-problems/SKILL.md
+    sha256: 07880d1fdbc37a1aa5d65ad6e42094702f442d69443a0066bc89a67ea82e9bf9
+  - path: skills/review-and-maintain-change/SKILL.md
+    sha256: 781e23466c56ed9f8638413e53f8306248137e21768c1f662e6f101e027b8002
+  - path: skills/repair-misattunement/SKILL.md
+    sha256: 38798fa56ea82aa17dc2f812f6d75e2a8347640bcf3973f62d0989208e10b700
+references:
+  - path: references/sources.md
+    sha256: 78ee19c432853b9503eb8e7836fadf69934ae51032c8e9022e9a80442f504f46
+    url: https://www.who.int/publications/i/item/9789240120785
+    revision: "2026-07-22"
+    license: links-and-original-summary-only
+  - path: skills/build-shared-formulation/references/basis.md
+    sha256: 149c747fa25e69bf3c37be9398f55d91ea1a5b375892755e5b0abfecaa003db2
+    url: https://www.nice.org.uk/guidance/ng222/chapter/Recommendations
+    revision: "2026-01-30"
+    license: links-and-original-summary-only
+  - path: skills/increase-psychological-flexibility/references/basis.md
+    sha256: e9757ff57e5a915f8194e72e0191e05445d902c949c7a7b019dfe2b3e1251a53
+    url: https://www.who.int/publications/i/item/9789240003927
+    revision: "2026-07-22"
+    license: links-and-original-summary-only
+  - path: skills/change-avoidance-behavior/references/basis.md
+    sha256: 0c5e10cb832e4c771da159d4526c999b925a61c98d26b5ab113ce6287b823c17
+    url: https://www.who.int/publications/i/item/B09738
+    revision: "2026-06-01"
+    license: links-and-original-summary-only
+  - path: skills/solve-practical-problems/references/basis.md
+    sha256: 1f1ef03411510fca4ad4bf4f303fc25c9e37062fb6ffd88a50e161d96c4d5435
+    url: https://www.who.int/publications/b/78058
+    revision: "2025-11-19"
+    license: links-and-original-summary-only
+  - path: skills/review-and-maintain-change/references/basis.md
+    sha256: 708f8ffb274780dfe2df165b6340fbdef538588867e81dd7df9e3910c6b2857c
+    url: https://www.nice.org.uk/guidance/ng222/chapter/Recommendations
+    revision: "2026-01-30"
+    license: links-and-original-summary-only
+  - path: skills/repair-misattunement/references/basis.md
+    sha256: 56c80edebdd0d8a535991fb99b2ae3c3ff2537d1bf87ed3d7df4563c71c3e7fd
+    url: https://www.who.int/publications/b/82490
+    revision: "2026-07-22"
+    license: links-and-original-summary-only

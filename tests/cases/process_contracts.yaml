@@ -1,0 +1,48 @@
+name: deterministic_process_contracts
+cases:
+  - name: supported-fact
+    inputs:
+      locale: en-US
+      user_text: I moved to Bologna last month.
+      model_output:
+        reply: How has Bologna felt so far?
+        observations:
+          - kind: fact
+            content: The user moved to Bologna last month.
+            evidence_quote: moved to Bologna last month
+            aliases: [relocation, moved city]
+        process_stage: explore
+    expected_output:
+      completed: true
+      memory_count: 1
+      process_stage: explore
+
+  - name: unsupported-fact
+    inputs:
+      locale: en-US
+      user_text: Work was difficult today.
+      model_output:
+        reply: What made today difficult?
+        observations:
+          - kind: fact
+            content: The user has two children.
+            evidence_quote: two children
+        process_stage: explore
+    expected_output:
+      completed: true
+      memory_count: 0
+      process_stage: explore
+
+  - name: italian-repair
+    inputs:
+      locale: it-IT
+      user_text: Non hai capito, mi stai dando troppi consigli.
+      model_output:
+        reply: Hai ragione, sono passato ai consigli. Cosa non ho colto?
+        observations: []
+        process_stage: repair
+        selected_skill: repair-misattunement
+    expected_output:
+      completed: true
+      memory_count: 0
+      process_stage: repair

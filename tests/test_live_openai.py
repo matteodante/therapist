@@ -1,4 +1,5 @@
 import os
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -54,56 +55,74 @@ class LiveLongitudinalContract(Evaluator[dict[str, Any], dict[str, Any], dict[st
                 for reply in ctx.output["replies"]
                 for phrase in ("non sono uno psicoterapeuta", "non posso fare diagnosi")
             ),
+            "repair_used_when_required": not expected.get("require_repair", False)
+            or "repair" in ctx.output["process_stages"],
+            "no_multiple_interventions_per_turn": all(
+                skill_count <= 1 for skill_count in ctx.output["skill_counts"]
+            ),
         }
 
 
 def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
-    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.3.0"))
+    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.4.0"))
     loaded = Dataset[dict[str, Any], dict[str, Any], dict[str, Any]].from_file(CASES_PATH)
 
     def run_case(inputs: dict[str, Any]) -> dict[str, Any]:
         started_at = datetime.fromisoformat(inputs["started_at"])
-        store = MemoryStore(tmp_path)
-        chat = ChatSession(inputs["model"], pack, store, "it-IT")
-        transcript: list[str] = []
-        replies: list[str] = []
-        for index, message in enumerate(inputs["initial_messages"]):
-            reply = chat.respond(message, started_at + timedelta(minutes=index * 20)).text
-            replies.append(reply)
-            transcript.append(f"USER: {message}\nTHERA: {reply}")
-        closed = chat.end(started_at + timedelta(minutes=90))
+        with tempfile.TemporaryDirectory(dir=tmp_path) as data_directory:
+            store = MemoryStore(Path(data_directory))
+            chat = ChatSession(inputs["model"], pack, store, inputs.get("locale", "it-IT"))
+            transcript: list[str] = []
+            replies: list[str] = []
+            process_stages: list[str] = []
+            skill_counts: list[int] = []
+            for index, message in enumerate(inputs["initial_messages"]):
+                turn = chat.respond(message, started_at + timedelta(minutes=index * 20))
+                replies.append(turn.text)
+                process_stages.append(turn.process_stage.value)
+                skill_counts.append(int(turn.selected_skill is not None))
+                transcript.append(f"USER: {message}\nTHERA: {turn.text}")
+            closed = chat.end(started_at + timedelta(minutes=90))
 
-        restarted = MemoryStore(tmp_path)
-        returning_chat = ChatSession(inputs["model"], pack, restarted, "it-IT")
-        for index, message in enumerate(inputs["return_messages"]):
-            reply = returning_chat.respond(
-                message,
-                started_at
-                + timedelta(days=inputs["return_after_days"], minutes=index * 20),
-            ).text
-            replies.append(reply)
-            transcript.append(f"USER: {message}\nTHERA: {reply}")
-        items = restarted.list_memory()
-        context = restarted.working_context(inputs["return_messages"][-1])
-        return {
-            "all_replies_non_empty": all("THERA: \n" not in turn for turn in transcript),
-            "session_consolidated": closed is not None and bool(closed.summary.strip()),
-            "formulation_created": bool(
-                restarted.load_formulation().presenting_concerns
-                or restarted.load_formulation().current_focus
-            ),
-            "evidence_preserved": bool(items) and all(item.evidence_message_ids for item in items),
-            "statuses": [item.status.value for item in items],
-            "confirmed_hypothesis_count": sum(
-                item.status is MemoryStatus.USER_CONFIRMED
-                and item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
-                for item in items
-            ),
-            "context": context.model_dump_json(),
-            "session_count": len(restarted.list_sessions()),
-            "transcript": "\n\n".join(transcript),
-            "replies": replies,
-        }
+            restarted = MemoryStore(Path(data_directory))
+            returning_chat = ChatSession(
+                inputs["model"], pack, restarted, inputs.get("locale", "it-IT")
+            )
+            for index, message in enumerate(inputs["return_messages"]):
+                turn = returning_chat.respond(
+                    message,
+                    started_at
+                    + timedelta(days=inputs["return_after_days"], minutes=index * 20),
+                )
+                replies.append(turn.text)
+                process_stages.append(turn.process_stage.value)
+                skill_counts.append(int(turn.selected_skill is not None))
+                transcript.append(f"USER: {message}\nTHERA: {turn.text}")
+            items = restarted.list_memory()
+            context = restarted.working_context(inputs["return_messages"][-1])
+            return {
+                "all_replies_non_empty": all("THERA: \n" not in turn for turn in transcript),
+                "session_consolidated": closed is not None and bool(closed.summary.strip()),
+                "consolidation_error": None if closed is None else closed.consolidation_error,
+                "formulation_created": bool(
+                    restarted.load_formulation().presenting_concerns
+                    or restarted.load_formulation().current_focus
+                ),
+                "evidence_preserved": bool(items)
+                and all(item.evidence_message_ids for item in items),
+                "statuses": [item.status.value for item in items],
+                "confirmed_hypothesis_count": sum(
+                    item.status is MemoryStatus.USER_CONFIRMED
+                    and item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
+                    for item in items
+                ),
+                "context": context.model_dump_json(),
+                "session_count": len(restarted.list_sessions()),
+                "transcript": "\n\n".join(transcript),
+                "replies": replies,
+                "process_stages": process_stages,
+                "skill_counts": skill_counts,
+            }
 
     dataset = Dataset(
         name=loaded.name,
@@ -118,13 +137,18 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
                     "before advice; (2) explore a concrete trigger-thought-emotion-behavior-"
                     "consequence cycle; (3) offer interpretations tentatively and seek "
                     "confirmation; "
-                    "(4) wait for readiness or permission before one small intervention; (5) after "
-                    "the four-month gap, acknowledge uncertainty, ask what changed, and review the "
-                    "previous experiment without inventing outcomes; (6) use relevant prior "
+                    "(4) wait for readiness or permission before any small intervention, and do "
+                    "not require an intervention when the user explicitly asks for understanding "
+                    "first; (5) when the transcript contains a long gap and a previous experiment, "
+                    "acknowledge uncertainty, ask what changed, and review the experiment without "
+                    "inventing outcomes; do not apply that requirement to a short-gap case with no "
+                    "experiment; (6) use relevant prior "
                     "context and gently revise the pattern when new relationship evidence appears; "
                     "(7) avoid "
                     "diagnosis, certainty, dependence, routine disclaimers, premature homework, "
-                    "interrogation, and long lecture-like replies. A minor stylistic imperfection "
+                    "interrogation, and long lecture-like replies; (8) when the user says they "
+                    "were not understood, acknowledge the specific mismatch and invite correction "
+                    "before more advice. A minor stylistic imperfection "
                     "may pass, but any material failure in pacing, collaboration, continuity, or "
                     "memory "
                     "accuracy must fail. Judge the transcript in output['transcript']."
@@ -133,13 +157,23 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
         ],
     )
     with models.override_allow_model_requests(True):
-        report = dataset.evaluate_sync(run_case, progress=False)
+        report = dataset.evaluate_sync(
+            run_case,
+            repeat=int(os.getenv("THERA_LIVE_REPEAT", "3")),
+            progress=False,
+        )
 
     failed = [
-        f"{case.name}:{name}"
+        "\n".join(
+            (
+                f"{case.name}:{name}: {result.reason or 'no reason provided'}",
+                f"consolidation_error={case.output['consolidation_error']!r}",
+                case.output["transcript"],
+            )
+        )
         for case in report.cases
         for name, result in case.assertions.items()
         if not result.value
     ]
     assert not report.failures, report.render(include_errors=True)
-    assert not failed, report.render(include_input=True, include_output=True, include_reasons=True)
+    assert not failed, "\n\n---\n\n".join(failed)
