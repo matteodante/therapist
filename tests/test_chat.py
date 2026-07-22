@@ -190,9 +190,11 @@ def test_offered_hypothesis_becomes_pending_and_is_cleared_on_confirmation(
     assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
 
 
-def test_therapeutic_reply_rejects_interrogation() -> None:
-    with pytest.raises(ValidationError, match="at most one question"):
-        TherapistReply(reply="What happened? And what did you feel?")
+def test_therapeutic_reply_allows_natural_question_count() -> None:
+    assert TherapistReply(reply="That sounds painful.").reply == "That sounds painful."
+    assert TherapistReply(
+        reply="What happened just before it? What did you notice in your body?"
+    ).reply.endswith("body?")
 
 
 def test_therapeutic_reply_limits_durable_memory_writes() -> None:

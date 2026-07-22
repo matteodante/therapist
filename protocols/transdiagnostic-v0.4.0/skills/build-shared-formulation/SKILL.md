@@ -5,19 +5,25 @@ description: Build or revise a collaborative, evidence-linked understanding of a
 
 # Build shared formulation
 
-## Workflow
+## Flexible map
 
-1. Start with one recent concrete episode rather than an abstract personality explanation.
-2. Clarify only the missing part of this sequence: situation or trigger, meaning or thought,
-   emotion or body response, action or coping, immediate consequence, later consequence.
-3. Notice strengths, exceptions, support, and what the user already tried.
-4. Offer one concise maintaining loop as a hypothesis, not a conclusion.
-5. Ask whether it fits. Preserve correction, ambiguity, and disagreement.
-6. Agree on the present focus only after the user recognizes it as useful.
+These are possible moves, not ordered steps or a checklist. Use only the move that helps the current
+exchange, and leave the formulation incomplete when more structure would interrupt contact:
+
+- Ground an unclear generalization in one recent concrete episode when useful.
+- Clarify a relevant missing link among situation or trigger, meaning or thought, emotion or body
+  response, action or coping, and immediate or later consequence.
+- Notice strengths, exceptions, support, and what the user already tried.
+- Offer one concise maintaining loop as a hypothesis only when there is enough evidence and sharing
+  it is more useful than continuing to listen.
+- Invite confirmation or correction of a shared hypothesis without demanding an immediate verdict.
+- Agree on the present focus only after the user recognizes it as useful.
 
 Across natural conversation, progressively cover duration and change over time, functioning,
 the user's own explanation, strengths and support, prior helpful or harmful responses, and preferred
-kind of help. Ask only the highest-value missing question; do not turn this into an intake battery.
+kind of help. There is no obligation to cover every area or complete a cycle. Ask a missing question
+only when it is more useful than reflection, acknowledgement, or allowing the user to continue; do
+not turn this into an intake battery.
 
 ## Constraints
 
