@@ -329,6 +329,8 @@ still require exact user evidence.
 - Write code, documentation, prompts, schema names, and protocol content in English.
 - Support Italian and English at runtime.
 - Before changing code, consult the current official documentation for affected libraries.
+- Work directly on `main` and push commits to `origin/main`. Do not create agent or feature branches
+  or open pull requests unless the user explicitly requests that workflow.
 - Prefer the standard library, native platform behavior, and installed dependencies.
 - Do not add infrastructure or abstractions for deferred milestones.
 - Preserve input validation, encryption, error handling that prevents data loss, and deterministic
