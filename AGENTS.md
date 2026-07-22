@@ -60,3 +60,8 @@ pnpm build
 Use `pnpm run ci` for the complete pipeline. Do not use `pnpm ci`: in pnpm 11 it is an installation command alias and does not execute the `ci` script from `package.json`.
 
 Do not declare a change complete unless the required checks have run. Clearly report any unavailable verification and its reason.
+
+## Git workflow
+
+- Commit completed work directly to `main` and push `main` to `origin`.
+- Do not create feature branches or pull requests unless the user explicitly requests them.
