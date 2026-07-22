@@ -29,7 +29,7 @@
     "@vectorize-io/hindsight-client": "0.8.5",
     "grammy": "1.45.1",
     "hono": "4.12.22",
-    "js-yaml": "4.1.1",
+    "js-yaml": "5.2.1",
     "just-bash": "3.0.1",
     "valibot": "1.1.0"
   },
