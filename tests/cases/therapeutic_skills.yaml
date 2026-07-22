@@ -77,3 +77,30 @@ cases:
         - If it is unclear which skill fits, continue formulation
     expected_output:
       all_required_terms_present: true
+
+  - name: SKILL-007
+    metadata:
+      description: Misattunement is acknowledged and repaired before more technique.
+    inputs:
+      path: skills/repair-misattunement/SKILL.md
+      required_terms:
+        - Acknowledge the specific mismatch
+        - Stop the rejected interpretation
+        - ask one concrete question
+        - Do not propose a new technique
+    expected_output:
+      all_required_terms_present: true
+
+  - name: SKILL-008
+    metadata:
+      description: Formulation progressively covers context without becoming an intake battery.
+    inputs:
+      path: skills/build-shared-formulation/SKILL.md
+      required_terms:
+        - duration and change over time
+        - user's own explanation
+        - prior helpful or harmful responses
+        - do not turn this into an intake battery
+        - link to active memory IDs
+    expected_output:
+      all_required_terms_present: true

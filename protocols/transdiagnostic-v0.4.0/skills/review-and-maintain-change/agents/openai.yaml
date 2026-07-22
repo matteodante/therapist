@@ -1,0 +1,4 @@
+interface:
+  display_name: "Review And Maintain Change"
+  short_description: "Review outcomes and consolidate useful change"
+  default_prompt: "Use $review-and-maintain-change to review what happened, update the formulation, and plan maintenance."

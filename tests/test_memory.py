@@ -7,6 +7,7 @@ from cryptography.fernet import Fernet
 
 from therapist.memory import (
     CaseFormulation,
+    InterventionState,
     MemoryKind,
     MemoryObservation,
     MemoryStatus,
@@ -131,6 +132,56 @@ def test_observation_uses_the_session_timestamp(tmp_path: Path) -> None:
     assert item.last_seen_at == occurred_at.isoformat()
 
 
+def test_near_duplicate_memory_merges_but_distinct_numbers_do_not(
+    tmp_path: Path,
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    first_id = store.save_turn(session, "First", "Reply", [])
+    first = store.add_observations(
+        [
+            MemoryObservation(
+                kind=MemoryKind.HYPOTHESIS,
+                content="Avoidance may protect against anticipated criticism.",
+            )
+        ],
+        first_id,
+    )[0]
+    second_id = store.save_turn(session, "Second", "Reply", [])
+    merged = store.add_observations(
+        [
+            MemoryObservation(
+                kind=MemoryKind.HYPOTHESIS,
+                content="Avoidance may protect them against anticipated criticism.",
+                merge_into_id=first.id,
+            ),
+            MemoryObservation(kind=MemoryKind.EVENT, content="Completed 2 visits"),
+            MemoryObservation(kind=MemoryKind.EVENT, content="Completed 6 visits"),
+        ],
+        second_id,
+    )
+
+    assert merged[0].id == first.id
+    assert len(store.list_memory()) == 3
+
+
+def test_near_duplicate_memory_never_merges_opposite_negation(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    first_id = store.save_turn(session, "First", "Reply", [])
+    store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="The mother lives alone")],
+        first_id,
+    )
+    second_id = store.save_turn(session, "Correction", "Reply", [])
+    store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="The mother does not live alone")],
+        second_id,
+    )
+
+    assert len(store.list_memory()) == 2
+
+
 def test_delete_all_clears_archive_memory_and_formulation(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
@@ -173,3 +224,60 @@ def test_legacy_goals_are_migrated_as_historical_events(tmp_path: Path) -> None:
     assert store.load_app_state().consent_version == "alpha-1"
     assert store.list_memory()[0].content == "Sleep better"
     assert store.list_memory()[0].kind is MemoryKind.EVENT
+
+
+def test_formulation_is_derived_from_active_claims_and_tracks_corrections(
+    tmp_path: Path,
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "Work calls feel threatening", "Tell me more", [])
+    claim = store.add_observations(
+        [MemoryObservation(kind=MemoryKind.PATTERN, content="Work calls may trigger avoidance")],
+        message_id,
+    )[0]
+
+    store.save_formulation_links({"maintaining_factors": [claim.id, "invented-id"]})
+    assert store.load_formulation().maintaining_factors == [claim.content]
+    assert store.load_formulation().evidence == {"maintaining_factors": [claim.id]}
+
+    store.correct_memory(claim.id, "Some work calls may trigger avoidance")
+    assert store.load_formulation().maintaining_factors == [
+        "Some work calls may trigger avoidance"
+    ]
+
+    store.forget_memory(claim.id)
+    assert store.load_formulation().maintaining_factors == []
+    assert store.load_formulation().evidence == {}
+
+
+def test_intervention_and_alias_retrieval_survive_restart_encrypted(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "Rimando le chiamate al capo", "Capisco", [])
+    claim = store.add_observations(
+        [
+            MemoryObservation(
+                kind=MemoryKind.PATTERN,
+                content="Avoiding calls brings short-term relief",
+                aliases=["responsabile", "rimandare", "work calls"],
+            )
+        ],
+        message_id,
+    )[0]
+    intervention = store.create_intervention(
+        skill="change-avoidance-behavior",
+        description="Prepare one sentence and make the call",
+        prediction="Anxiety rises briefly",
+        state=InterventionState.AGREED,
+        linked_memory_ids=[claim.id],
+        evidence_message_id=message_id,
+    )
+
+    restarted = MemoryStore(tmp_path)
+    context = restarted.working_context("parlare con il responsabile")
+
+    assert context.hypotheses[0].id == claim.id
+    assert context.active_interventions[0].id == intervention.id
+    database = store.database_path.read_bytes()
+    assert b"Prepare one sentence" not in database

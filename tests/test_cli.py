@@ -48,6 +48,7 @@ def test_export_outputs_all_user_owned_layers(tmp_path: Path, capsys: object) ->
     assert exported["messages"][0]["content"] == "Busy month"
     assert exported["sessions"][0]["id"] == session.id
     assert "case_formulation" in exported
+    assert "interventions" in exported
 
 
 def test_doctor_does_not_create_memory(tmp_path: Path) -> None:
@@ -73,11 +74,44 @@ def test_telegram_fails_closed_without_channel_credentials(
 def test_setup_saves_encrypted_defaults_used_by_telegram(
     tmp_path: Path, monkeypatch: object, capsys: object
 ) -> None:
-    answers = iter(["test", "it-IT", "y", "42"])
-    monkeypatch.setattr("builtins.input", lambda _: next(answers))  # type: ignore[attr-defined]
+    selections = iter(["test", "it-IT", True, True])
     monkeypatch.setattr(  # type: ignore[attr-defined]
-        "therapist.cli.getpass.getpass", lambda _: "secret-bot-token"
+        "therapist.cli.questionary.select",
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: next(selections)})(),
     )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        "therapist.cli.questionary.password",
+        lambda *args, **kwargs: type(
+            "Prompt", (), {"ask": lambda _: "secret-bot-token"}
+        )(),
+    )
+    monkeypatch.setattr("therapist.cli.secrets.token_urlsafe", lambda _: "pair-code")  # type: ignore[attr-defined]
+
+    class PairingBot:
+        def __init__(self, token: str) -> None:
+            assert token == "secret-bot-token"
+
+        def get_me(self) -> dict[str, str]:
+            return {"username": "test_therapist_bot"}
+
+        def delete_webhook(self) -> None:
+            pass
+
+        def get_updates(self, offset: int | None, timeout: int = 30) -> list[dict]:
+            if offset == -1:
+                return []
+            return [
+                {
+                    "update_id": 7,
+                    "message": {
+                        "from": {"id": 42, "first_name": "Test", "is_bot": False},
+                        "chat": {"id": 42, "type": "private"},
+                        "text": "/start pair-code",
+                    },
+                }
+            ]
+
+    monkeypatch.setattr("therapist.cli.TelegramBot", PairingBot)  # type: ignore[attr-defined]
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.TelegramChannel.run", lambda _: None
     )
@@ -99,3 +133,24 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     assert main(["--data-dir", str(tmp_path), "telegram"]) == 0
     output = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "Configuration saved securely" in output
+
+
+def test_setup_stores_remote_provider_key_encrypted(
+    tmp_path: Path, monkeypatch: object
+) -> None:
+    selections = iter(["openai:gpt-5.6-sol", "it-IT", False])
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        "therapist.cli.questionary.select",
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: next(selections)})(),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        "therapist.cli.questionary.password",
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: "private-api-key"})(),
+    )
+
+    assert main(["--data-dir", str(tmp_path), "setup"]) == 0
+
+    store = MemoryStore(tmp_path)
+    assert store.load_secret("openai_api_key") == b"private-api-key"
+    assert "private-api-key" not in json.dumps(store.export())
+    assert b"private-api-key" not in store.database_path.read_bytes()

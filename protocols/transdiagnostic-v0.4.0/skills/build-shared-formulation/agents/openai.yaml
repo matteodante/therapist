@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Shared Formulation"
+  short_description: "Develop a tentative, shared case formulation"
+  default_prompt: "Use $build-shared-formulation to explore this episode and propose a tentative shared formulation."

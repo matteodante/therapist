@@ -73,9 +73,9 @@ def test_expired_token_is_refreshed_when_building_model(
 
     monkeypatch.setattr(auth, "_request_json", fake_request)  # type: ignore[attr-defined]
 
-    model = auth.codex_model(store, "gpt-5.5")
+    model = auth.codex_model(store, "gpt-5.6-sol")
 
-    assert model.model_name == "gpt-5.5"
+    assert model.model_name == "gpt-5.6-sol"
     assert auth.load_credential(store).account_id == "new-account"  # type: ignore[union-attr]
 
 

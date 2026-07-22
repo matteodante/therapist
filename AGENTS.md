@@ -2,8 +2,8 @@
 
 This file is the canonical source of truth for the project's purpose, scope, architecture, and
 working rules. Keep it updated in the same change whenever behavior, commands, storage, scope,
-architecture, dependencies, or milestones change. Do not create a `README.md`; public-facing
-documentation can be generated from this file when the project is prepared for release.
+architecture, dependencies, licensing, or milestones change. `README.md` is the concise public
+overview; keep it synchronized with this canonical guide when user-visible behavior changes.
 
 ## Project idea
 
@@ -18,8 +18,8 @@ The long-term product may support both self-hosted and SaaS distribution. The cu
 deliberately smaller: make the single-user conversation and long-term memory work well through the
 local CLI and one private Telegram transport before building broader infrastructure.
 
-The repository is intended to become open source. The exact code and content licenses remain TBD
-until the dedicated pre-release review.
+Original code and project content are open source under `AGPL-3.0-or-later`. Linked or referenced
+third-party materials remain under their owners' terms and are not relicensed by this repository.
 
 ## Current scope
 
@@ -28,12 +28,15 @@ Build a small bilingual, single-user agent that:
 - holds a warm, active, natural conversation in Italian or English;
 - identifies user-stated difficulties and recurring patterns without requiring predefined goals;
 - builds a visible, correctable, evidence-linked case formulation;
+- keeps direct facts tied to exact user evidence, mutates corrected claims in place, and keeps focus
+  proposed only within the current session until accepted;
 - remembers relevant context across weeks, months, and years;
 - keeps the complete archive and structured memory encrypted on the local machine;
 - works with local or remote model providers through PydanticAI;
 - optionally uses a personal ChatGPT Plus/Pro Codex subscription through experimental OAuth;
 - versions behavioral instructions and source references in a protocol pack;
 - lets the user inspect, confirm, correct, forget, export, and delete memory;
+- records offered, agreed, tried, stopped, and untried interventions for later review;
 - accepts the same therapeutic conversation through a private, allowlisted Telegram bot;
 - remains small enough for one maintainer to understand.
 
@@ -57,7 +60,7 @@ Explicitly deferred:
 - SaaS, accounts, billing, multi-tenancy, PostgreSQL, workers, and queues;
 - reminders, background jobs, MCP integrations, and external tools;
 - embeddings, vector databases, knowledge graphs, and multi-agent orchestration;
-- final code/content licensing, dual licensing, a CLA, and release packaging;
+- commercial dual licensing, a CLA, and formal release/PyPI publishing;
 - clinical ownership, clinical validation, efficacy studies, and formal risk management;
 - MDR, AI Act, FDA, GDPR/HIPAA compliance work;
 - formal threat modeling, penetration tests, audits, and certifications.
@@ -89,6 +92,8 @@ Behavioral rules:
 - identify recurring themes and inconsistencies with a gentle, collaborative tone;
 - label interpretations as hypotheses until the user confirms them;
 - ask permission before exercises;
+- when the user asks for understanding before suggestions, offer at most one brief hypothesis and
+  keep exploring instead of listing explanations or introducing an exercise;
 - do not force a goal, worksheet, or technique onto every exchange;
 - prefer the smallest useful intervention;
 - do not use diagnostic labels or claim knowledge unsupported by the archive;
@@ -113,16 +118,27 @@ Encrypted SQLite archive + structured longitudinal memory
 ```
 
 Use one conversational model call per normal turn. Its structured result contains the visible reply,
-candidate observations, and an optional current focus. When a session closes, use one additional
-structured model call to summarize the episode and revise the case formulation. If consolidation
-fails, preserve the transcript and leave the previous formulation intact.
+candidate observations with evidence quotes, process stage, selected skill, focus changes, and at
+most one intervention update. When a session closes, use one additional structured model call to
+summarize the episode and link existing claims into the case formulation. Consolidation cannot create
+a confirmed claim. If it fails, preserve the transcript, record a content-free error class, and leave
+the previous formulation intact.
 
-Structured turn and consolidation outputs allow two correction retries. This absorbs occasional
-schema or conversational-contract violations while retaining strict validation; provider transport
-retries remain a separate concern.
+Both model calls use PydanticAI's complete synchronous run API with an event stream handler so the
+experimental ChatGPT Codex backend can require `stream=true` without losing structured-output
+retries; the current CLI still prints only the validated final result.
 
-No network call is needed for memory retrieval. Relevant historical excerpts are selected locally
-using dates, structured types, and standard-library lexical matching after decryption.
+Structured turn and consolidation outputs allow two correction retries and at most three model
+requests. All model-written strings and collections have size limits. Accepted focus, confirmed
+hypotheses, and agreed or updated interventions require exact supporting text from the current user
+message. The IDs of the last explicitly offered hypothesis and active intervention remain pending
+so confirmation, agreement, and outcome update the original records instead of creating copies.
+Provider transport retries remain a separate concern.
+
+No network call is needed for memory retrieval. Relevant claims and interventions are ranked locally
+using encrypted aliases, lexical matching, dates, and status after decryption. Historical excerpts
+remain lexical. Context is reduced by complete structured items and serialized only as valid JSON;
+model history and consolidation retain complete turns instead of slicing messages mid-run.
 
 ## Memory model
 
@@ -132,11 +148,15 @@ model on every turn.
 - `Message`: complete encrypted user/assistant archive retained until deletion.
 - `Session`: time-bounded episode with summary, themes, interventions, user response, and open
   questions.
-- `MemoryItem`: a fact, preference, event, pattern, or hypothesis with provenance and timestamps.
-- `CaseFormulation`: current understanding of concerns, triggers, thoughts, behavior, coping,
-  relationships, maintaining factors, strengths, hypotheses, and current focus.
+- `MemoryItem`: a durable fact, preference, consequential event, pattern, or hypothesis with
+  provenance and timestamps; a turn may write at most two.
+- `CaseFormulation`: an evidence map that derives concerns, triggers, thoughts, behavior, coping,
+  relationships, course, functioning, explanatory model, preferences, maintaining factors,
+  strengths, hypotheses, and focus from active memory claim IDs.
+- `InterventionRecord`: one offered or agreed technique with consent state, linked claims,
+  prediction, outcome, user appraisal, and follow-up information. It is not a goal.
 - `WorkingContext`: formulation, bounded confirmed memory, unresolved hypotheses, the latest three
-  completed sessions, and at most five locally retrieved historical excerpts.
+  completed sessions, at most five active interventions, and five historical excerpts.
 
 Memory states:
 
@@ -150,6 +170,8 @@ removed from derived formulation and summaries and suppressed from future retrie
 model history is bounded; long-term continuity comes from structured context and relevant excerpts.
 When generated derived text paraphrases corrected or forgotten evidence, the overlapping derived
 field is conservatively invalidated instead of risking stale personal information returning.
+Explicit corrections from natural conversation target an existing claim ID, retain the old wording
+as superseded provenance, clear stale aliases, and cannot also create a replacement claim.
 
 SQLite comes from the Python standard library. Sensitive payloads are encrypted with Fernet using a
 separate local key with filesystem mode `0600`. This protects copied databases and casual backups;
@@ -169,6 +191,7 @@ thera auth logout
 thera memory show
 thera memory case
 thera memory sessions
+thera memory interventions
 thera memory confirm <id>
 thera memory correct <id> <text>
 thera memory forget <id>
@@ -178,14 +201,15 @@ thera doctor
 thera protocol validate [path]
 ```
 
-`thera setup` is the normal first-run path. It interactively stores the default model, locale,
-Telegram bot token, and numeric Telegram user ID in the existing encrypted local store. Secret input
-uses the terminal's no-echo password prompt. The token is never placed in process arguments, exports,
-or plaintext configuration files. Explicit `chat` and `telegram` options remain temporary overrides.
-When a `codex:` model is selected without an existing credential, setup offers to run the existing
-ChatGPT device-code login immediately.
+`thera setup` is the normal first-run path. Questionary arrow-key menus select a supported provider,
+current documented model preset, locale, Telegram, and confirmation choices. ChatGPT uses device-code
+OAuth; supported remote-provider API keys and the Telegram bot token use no-echo prompts and are
+stored in the encrypted local store. Ollama models are discovered from its local `/api/tags`
+endpoint and the standard local base URL is applied automatically. A custom PydanticAI model ID
+remains available as an escape hatch. Secrets are never placed in process arguments, exports, or
+plaintext configuration files. Explicit `chat` and `telegram` options remain temporary overrides.
 
-After `thera auth login`, omitting `--model` selects `codex:gpt-5.5`. An explicit model can be
+After `thera auth login`, omitting `--model` selects `codex:gpt-5.6-sol`. An explicit model can be
 selected with `--model codex:<model-id>`. Access and refresh tokens are encrypted in the same local
 store and are never included in exports.
 
@@ -201,6 +225,7 @@ Interactive chat commands:
 /case
 /memory
 /sessions [id]
+/interventions
 /confirm <id>
 /correct <id> <text>
 /forget <id>
@@ -213,6 +238,10 @@ Interactive chat commands:
 and consolidates the previous session if at least eight hours elapsed. `/end` closes it immediately.
 
 Telegram normally reads its token and user ID from the encrypted configuration written by `setup`.
+The user never needs to know or type that ID: setup validates the bot token, creates a random
+single-use deep link, waits for the matching private `/start` update, displays the detected account,
+and asks for confirmation before storing its ID. A phone number cannot be used to look up a Bot API
+user and is neither requested nor stored.
 Startup validates the token, removes any webhook without discarding pending updates, installs the
 `/start`, `/help`, and `/end` menu, then long-polls text messages sequentially. The runtime ignores
 groups, bots, media, and every sender except the configured numeric user ID. Telegram consent is
@@ -230,10 +259,10 @@ Minimal setup:
 
 1. Create a bot with Telegram's `@BotFather`, keep its token private, and disable group joins as
    defense in depth.
-2. Obtain the intended account's stable numeric Telegram user ID; do not authorize by username.
-3. Run `thera setup` and enter the model, locale, bot token, and allowed user ID when prompted.
+2. Run `thera setup`, choose the model and locale, then paste the bot token in the hidden prompt.
+3. Open the one-time `t.me` link printed by setup, press Start, and confirm the detected account.
 4. Run `thera doctor`, then `thera telegram`. Only one poller may use a bot token at a time.
-5. In the private bot chat, use `/start` and enter the exact consent command shown there.
+5. In the private bot chat, enter the exact consent command shown there.
 
 `export` returns decrypted user-owned application state, formulation, memory items, sessions, and
 messages. `delete-data` removes all of those records.
@@ -255,22 +284,33 @@ protocols/<id>-v<version>/
 The manifest contains the pack ID, SemVer, experimental/review status, locales, ordered therapeutic
 skills, source metadata, and SHA-256 hashes for every loaded skill and reference. Changed skill or
 reference files invalidate the pack. The pack contains original transdiagnostic abstractions
-informed by official WHO and NICE materials. It remains `experimental`; content licensing and
-clinical review are deferred until before public distribution or clinical claims.
+informed by official WHO and NICE materials. Original protocol text is licensed under the repository
+license; linked sources are not copied or relicensed. It remains `experimental`; clinical review is
+deferred and no clinical claims are permitted.
 
-The current default is `therapist.transdiagnostic` v0.3.0. Its five bounded skills cover shared
+The current default is `therapist.transdiagnostic` v0.4.0. Its six bounded skills cover shared
 formulation, psychological flexibility and emotional awareness, avoidance and behavioral change,
-practical problem solving, and review/maintenance. The root skill routes each turn and permits at
-most one intervention skill at a time. Older packs remain available so behavior changes are
-auditable.
+practical problem solving, review/maintenance, and explicit repair after misattunement. The root
+skill routes each turn and permits at most one intervention skill at a time. Older packs remain
+available so behavior changes are auditable.
 
 The structured turn output keeps the visible reply to 1,200 characters and at most one question,
 records a hypothesis offered for confirmation separately, and lets a later explicit user
-confirmation promote that exact memory item.
+confirmation promote that exact pending memory item.
+
+Memory output is intentionally sparse: at most two durable items total per turn, with no more than
+one hypothesis.
+Near-identical claims merge conservatively using the standard library, while differing numbers or
+negation always remain distinct. An unaccepted proposed focus expires when the session closes.
 
 On the first turn after at least seven days, the harness marks the old formulation as provisional
 and requires orientation to what changed and, when relevant, the outcome of the previous experiment
 before extending an old pattern to new material.
+
+Misattunement phrases such as “you did not understand” or “non hai capito” deterministically require
+the repair process stage. The reply must acknowledge the mismatch, stop the rejected technique, and
+invite one correction before further therapeutic work. Delivery preferences learned from the repair
+still require exact user evidence.
 
 ## Engineering rules
 
@@ -290,12 +330,23 @@ before extending an old pattern to new material.
 - Keep model-generated hypotheses distinct from user-confirmed facts.
 - Keep model context bounded regardless of archive size.
 - Update this file whenever the implementation changes any statement in it.
+- Keep `README.md` concise and update it when public commands, requirements, scope, or licensing
+  change.
 
 ## Acceptance checks
 
 - A return after several simulated months retrieves relevant prior events and patterns.
 - The agent does not claim a memory without archive evidence.
 - Facts and hypotheses remain visibly distinct and retain provenance.
+- Every direct model-written fact has an exact quote in its evidence message; unsupported facts are
+  rejected before persistence.
+- Natural-language corrections replace the targeted claim without leaving the contradicted version
+  active, and conservative deduplication never merges different numbers or opposite negation.
+- Every formulation statement resolves to an active memory ID; invented IDs and forgotten claims are
+  excluded, and only explicit user wording can accept a focus.
+- Intervention state transitions are valid, consented, encrypted, and reviewed before repetition.
+- Offered, agreed, tried, and reviewed states for one intervention remain on one record.
+- Bilingual misattunement signals force repair before another technique.
 - User correction wins over prior inference and no superseded wording returns via derived context.
 - Selective forgetting and full deletion work; sensitive plaintext is absent from SQLite.
 - Eight-hour segmentation, `/end`, interrupted consolidation, and session resumption preserve data.
@@ -312,8 +363,9 @@ before extending an old pattern to new material.
 
 The default suite is deterministic and must not require network access or provider credentials.
 Pydantic Evals loads the human-readable, versioned YAML datasets in `tests/cases/`; the scope and
-matrix live in `tests/TEST_PLAN.md`. The deterministic datasets audit longitudinal memory and every
-therapeutic-skill contract; the live dataset evaluates integrated conversation behavior. They use
+matrix live in `tests/TEST_PLAN.md`. Deterministic datasets execute evidence and repair contracts as
+well as auditing each therapeutic-skill file; live datasets evaluate integrated conversation
+behavior. They use
 synthetic people and events only; never put real user data, access tokens, or API keys in test files.
 
 Longitudinal tests must cover retrieval after several months, encrypted persistence across process
@@ -325,9 +377,11 @@ against a real OpenAI model. It is skipped unless explicitly enabled:
 THERA_RUN_LIVE_TESTS=1 OPENAI_API_KEY=... uv run pytest -m live
 ```
 
-The live case asserts storage and continuity contracts and uses a Pydantic Evals `LLMJudge` rubric
-for therapeutic process rather than exact wording. Run it manually before releases or after changing
-model integration; do not make ordinary local or CI runs depend on an external provider.
+Live evaluation runs each case three times in a fresh encrypted database, asserts storage and
+continuity contracts, and uses a Pydantic Evals `LLMJudge` rubric for therapeutic process rather than
+exact wording. It covers longitudinal avoidance and alliance repair. Run it manually before releases
+or after changing model integration; do not make ordinary local or CI runs depend on an external
+provider.
 
 Run before handing off a change:
 
