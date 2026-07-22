@@ -17,7 +17,7 @@ jobs:
       TELEGRAM_ALLOWED_USER_ID: "123456"
       THERAPIST_MODEL: "ollama/gemma4:12b"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: pnpm/action-setup@v4
         with:
