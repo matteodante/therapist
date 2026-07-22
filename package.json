@@ -26,7 +26,7 @@
     "@flue/runtime": "1.0.0-beta.9",
     "@flue/telegram": "1.0.0-beta.1",
     "grammy": "1.45.1",
-    "hono": "4.12.22",
+    "hono": "4.12.31",
     "just-bash": "3.0.1",
     "valibot": "1.1.0"
   },
