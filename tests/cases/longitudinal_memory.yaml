@@ -1,0 +1,78 @@
+name: longitudinal_memory
+cases:
+  - name: LM-001
+    metadata:
+      description: A recurring authority-call pattern remains relevant after four months and a process restart.
+      locale: it-IT
+    inputs:
+      started_at: "2026-01-10T09:00:00+00:00"
+      return_at: "2026-05-20T09:00:00+00:00"
+      user_message: Rimando spesso le telefonate con i dirigenti perché temo di essere giudicato.
+      assistant_message: Sembra che il timore del giudizio possa spingerti a rimandare.
+      summary: The user described postponing calls with senior managers when fearing judgment.
+      observations:
+        - kind: event
+          content: The user postpones calls with senior managers.
+        - kind: pattern
+          content: Fear of judgment may maintain avoidance of calls with senior managers.
+      query: Domani devo telefonare a un dirigente e temo di essere giudicato.
+    expected_output:
+      required_terms:
+        - senior managers
+        - fear of judgment
+      forbidden_terms: []
+      statuses:
+        - user_confirmed
+        - agent_hypothesis
+      export_status: null
+
+  - name: LM-002
+    metadata:
+      description: A correction supersedes an inaccurate place and suppresses the old evidence excerpt.
+      locale: en-US
+    inputs:
+      started_at: "2026-02-01T15:00:00+00:00"
+      return_at: "2026-08-15T15:00:00+00:00"
+      user_message: I moved to Turin for my new role.
+      assistant_message: How has the move to Turin affected you?
+      summary: The user moved to Turin for a new role.
+      observations:
+        - kind: fact
+          content: The user moved to Turin for a new role.
+      operation:
+        type: correct
+        target: The user moved to Turin for a new role.
+        replacement: The user moved to Milan for a new role.
+      query: How am I adapting to the new role and the move?
+    expected_output:
+      required_terms:
+        - moved to Milan
+      forbidden_terms:
+        - moved to Turin
+      statuses:
+        - user_corrected
+      export_status: null
+
+  - name: LM-003
+    metadata:
+      description: Selective forgetting suppresses active recall but retains an archived export record.
+      locale: en-US
+    inputs:
+      started_at: "2026-03-05T11:00:00+00:00"
+      return_at: "2026-12-05T11:00:00+00:00"
+      user_message: My private project called Cedar made me anxious last spring.
+      assistant_message: What about project Cedar felt most difficult?
+      summary: The user discussed anxiety related to private project Cedar.
+      observations:
+        - kind: event
+          content: Private project Cedar caused anxiety last spring.
+      operation:
+        type: forget
+        target: Private project Cedar caused anxiety last spring.
+      query: What was difficult about project Cedar?
+    expected_output:
+      required_terms: []
+      forbidden_terms:
+        - Cedar
+      statuses: []
+      export_status: archived

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Increase Psychological Flexibility"
+  short_description: "Use acceptance, defusion, values, and awareness"
+  default_prompt: "Use $increase-psychological-flexibility to help the user relate more flexibly to this difficult internal experience."

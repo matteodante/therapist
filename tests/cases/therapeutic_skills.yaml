@@ -1,0 +1,79 @@
+name: therapeutic_skill_contracts
+cases:
+  - name: SKILL-001
+    metadata:
+      description: Shared formulation stays concrete, tentative, and collaborative.
+    inputs:
+      path: skills/build-shared-formulation/SKILL.md
+      required_terms:
+        - one recent concrete episode
+        - Offer one concise maintaining loop as a hypothesis
+        - Ask whether it fits
+        - Do not infer childhood cause
+    expected_output:
+      all_required_terms_present: true
+
+  - name: SKILL-002
+    metadata:
+      description: Psychological flexibility uses one consented process without promising relief.
+    inputs:
+      path: skills/increase-psychological-flexibility/SKILL.md
+      required_terms:
+        - Select one process
+        - ask permission
+        - change the relationship to the experience
+        - Do not promise calm
+        - Stop if the exercise increases distress
+    expected_output:
+      all_required_terms_present: true
+
+  - name: SKILL-003
+    metadata:
+      description: Behavioral work is a small experiment whose outcome is reviewed.
+    inputs:
+      path: skills/change-avoidance-behavior/SKILL.md
+      required_terms:
+        - Confirm the maintaining loop and ask permission
+        - Make the action smaller
+        - State the prediction being tested
+        - Treat non-completion as information
+    expected_output:
+      all_required_terms_present: true
+
+  - name: SKILL-004
+    metadata:
+      description: Problem solving is bounded, chosen by the user, and not imposed on harm or loss.
+    inputs:
+      path: skills/solve-practical-problems/SKILL.md
+      required_terms:
+        - Separate the concrete solvable part
+        - Let the user choose
+        - smallest next action
+        - Do not turn grief
+    expected_output:
+      all_required_terms_present: true
+
+  - name: SKILL-005
+    metadata:
+      description: Review compares prediction and outcome before adapting the formulation.
+    inputs:
+      path: skills/review-and-maintain-change/SKILL.md
+      required_terms:
+        - what the user actually tried
+        - Compare the prediction with what happened
+        - Update the formulation
+        - Treat non-completion and setbacks as data
+    expected_output:
+      all_required_terms_present: true
+
+  - name: SKILL-006
+    metadata:
+      description: The root process routes to no more than one intervention per turn.
+    inputs:
+      path: SKILL.md
+      required_terms:
+        - Select at most one intervention skill per turn
+        - Do not combine several exercises
+        - If it is unclear which skill fits, continue formulation
+    expected_output:
+      all_required_terms_present: true
