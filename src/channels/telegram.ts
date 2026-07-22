@@ -1,7 +1,10 @@
 import { defineTool, dispatch } from '@flue/runtime';
-import { createTelegramChannel, type TelegramConversationRef } from '@flue/telegram';
+import {
+  createTelegramChannel,
+  type TelegramConversationRef,
+  type Update,
+} from '@flue/telegram';
 import { Api } from 'grammy';
-import type { Message } from 'grammy/types';
 import * as v from 'valibot';
 import therapist from '../agents/therapist.ts';
 import { retainAssistantResponse, retainUserMessage } from '../services/hindsight.ts';
@@ -10,6 +13,8 @@ import { requiredEnv } from '../shared/env.ts';
 import { logError, logEvent } from '../shared/log.ts';
 import { isAllowedPrivateMessage, splitTelegramText } from '../shared/telegram.ts';
 import { claimTelegramUpdate } from '../storage/app-db.ts';
+
+type TelegramMessage = NonNullable<Update['message']>;
 
 const botToken = requiredEnv('TELEGRAM_BOT_TOKEN');
 const webhookSecret = requiredEnv('TELEGRAM_WEBHOOK_SECRET_TOKEN');
@@ -67,8 +72,7 @@ export const channel = createTelegramChannel({
       const conversation = conversationFromMessage(incoming);
       await dispatch(therapist, {
         id: channel.conversationKey(conversation),
-        message: {
-          kind: 'signal',
+        input: {
           type: 'telegram.message',
           body,
           attributes: {
@@ -94,7 +98,7 @@ export const channel = createTelegramChannel({
   },
 });
 
-async function handleStaticCommand(message: Message): Promise<boolean> {
+async function handleStaticCommand(message: TelegramMessage): Promise<boolean> {
   const text = message.text?.trim();
   if (!text?.startsWith('/')) return false;
 
@@ -147,7 +151,7 @@ async function handleStaticCommand(message: Message): Promise<boolean> {
   return false;
 }
 
-async function messageBody(message: Message): Promise<string | null> {
+async function messageBody(message: TelegramMessage): Promise<string | null> {
   if (message.text !== undefined) return message.text.trim();
   if (message.caption !== undefined) return message.caption.trim();
   if (message.voice) {
@@ -161,7 +165,7 @@ async function messageBody(message: Message): Promise<string | null> {
   return null;
 }
 
-function conversationFromMessage(message: Message): TelegramConversationRef {
+function conversationFromMessage(message: TelegramMessage): TelegramConversationRef {
   return {
     type: 'chat',
     chatId: message.chat.id,

@@ -30,6 +30,7 @@ listen
 - **Flue 1.0 beta** — persistent agent harness and Agent Skills
 - **TypeScript** — application code and bounded tools
 - **Ollama + Gemma 4 12B** — default local model
+- **OpenAI Platform API** — optional Flue built-in provider
 - **Hindsight** — longitudinal memory
 - **Flue SQLite** — canonical conversation stream
 - **Telegram** — text and voice interface
@@ -94,6 +95,11 @@ PUBLIC_BASE_URL=https://your-public-host.example
 ```
 
 Generate a webhook secret with letters, numbers, `_`, or `-`.
+
+Ollama resta il provider predefinito. Per usare invece l'API OpenAI, imposta un
+model specifier Flue `openai/...` in `THERAPIST_MODEL` e configura
+`OPENAI_API_KEY`. L'API ha fatturazione separata dall'abbonamento ChatGPT/Codex;
+vedi [`docs/MODELS.md`](docs/MODELS.md).
 
 ### 3. Start local dependencies
 
@@ -172,17 +178,10 @@ scripts/          Doctor, skill validation, webhook setup
 - Hindsight and Flue are both pinned because their APIs are evolving.
 - `gemma4:12b` is a default, not a guarantee of adequate clinical quality.
 
-## Publish this prepared repository to GitHub
+## Repository GitHub
 
-The ChatGPT GitHub connector used to prepare this project cannot create a new
-repository. Once GitHub CLI is installed and authenticated:
-
-```bash
-./scripts/publish-github.sh
-```
-
-The script creates the public repository `matteodante/therapist` and pushes
-`main`.
+Il repository è pubblicato come privato in
+[`matteodante/therapist`](https://github.com/matteodante/therapist).
 
 ## License
 

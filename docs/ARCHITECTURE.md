@@ -13,11 +13,17 @@ Flue persistent agent instance
        └── restricted sandbox
               ↓
          Ollama / Gemma 4
+         oppure OpenAI Platform API
 
 Canonical transcript → Flue SQLite
 Long-term memory     → Hindsight
 Voice transcription → Speaches
 ```
+
+Flue orchestra l'agente e invoca Hindsight tramite tool applicativi. Hindsight
+rimane un servizio distinto e usa direttamente il proprio provider LLM per
+estrazione e retrieval; nel profilo locale quel provider è Ollama. Flue non è
+un gateway obbligatorio per le chiamate interne dei servizi esterni.
 
 ## Why Flue
 

@@ -32,6 +32,9 @@ model. Personal and process memory are separate.
 ## Provider
 
 `src/app.ts` registers Ollama as an OpenAI-compatible Flue provider.
+I provider inclusi in Flue, come `openai`, non richiedono registrazione:
+selezionare `openai/<model-id>` e fornire `OPENAI_API_KEY`. Vedi
+`docs/MODELS.md` per il confine tra API OpenAI e abbonamento ChatGPT/Codex.
 
 ## Adding a skill
 

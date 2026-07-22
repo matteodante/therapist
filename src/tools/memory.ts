@@ -29,8 +29,8 @@ export function memoryToolsFor(userKey: string) {
       personal: v.array(recalledItem),
       process: v.array(recalledItem),
     }),
-    async run({ input }) {
-      return recallPersonalMemory(userKey, input.query);
+    async run({ input, signal }) {
+      return recallPersonalMemory(userKey, input.query, signal);
     },
   });
 
@@ -45,8 +45,8 @@ export function memoryToolsFor(userKey: string) {
       enabled: v.boolean(),
       text: v.string(),
     }),
-    async run({ input }) {
-      return reflectPersonalHistory(userKey, input.query);
+    async run({ input, signal }) {
+      return reflectPersonalHistory(userKey, input.query, signal);
     },
   });
 
@@ -74,8 +74,8 @@ export function memoryToolsFor(userKey: string) {
       ),
     }),
     output: v.object({ stored: v.boolean() }),
-    async run({ input }) {
-      await retainProcessNote(userKey, input.kind, input.note, input.evidence);
+    async run({ input, signal }) {
+      await retainProcessNote(userKey, input.kind, input.note, input.evidence, signal);
       return { stored: true };
     },
   });
@@ -89,8 +89,8 @@ export function memoryToolsFor(userKey: string) {
       correction: v.pipe(v.string(), v.minLength(1), v.maxLength(1000)),
     }),
     output: v.object({ stored: v.boolean() }),
-    async run({ input }) {
-      await retainCorrection(userKey, input.incorrect, input.correction);
+    async run({ input, signal }) {
+      await retainCorrection(userKey, input.incorrect, input.correction, signal);
       return { stored: true };
     },
   });

@@ -56,4 +56,8 @@ pnpm validate:skills
 pnpm build
 ```
 
+Per eseguire l'intera pipeline usa `pnpm run ci`. Non usare `pnpm ci`: in pnpm
+11 è l'alias del comando di installazione e non esegue lo script `ci` definito
+in `package.json`.
+
 Non dichiarare completata una modifica se i controlli necessari non sono stati eseguiti; indica chiaramente eventuali verifiche non disponibili e il motivo.

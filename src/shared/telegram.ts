@@ -1,6 +1,11 @@
-import type { Message } from 'grammy/types';
+import type { Update } from '@flue/telegram';
 
-export function isAllowedPrivateMessage(message: Message, allowedUserId: number): boolean {
+type TelegramMessage = NonNullable<Update['message']>;
+
+export function isAllowedPrivateMessage(
+  message: TelegramMessage,
+  allowedUserId: number,
+): boolean {
   return (
     message.chat.type === 'private' &&
     message.from !== undefined &&

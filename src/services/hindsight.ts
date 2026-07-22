@@ -27,7 +27,10 @@ export function processBankId(userKey: string): string {
   return `therapist-process-${safeKey(userKey)}`;
 }
 
-export async function ensureMemoryBanks(userKey: string): Promise<void> {
+export async function ensureMemoryBanks(
+  userKey: string,
+  signal?: AbortSignal,
+): Promise<void> {
   const personal = personalBankId(userKey);
   const process = processBankId(userKey);
   const cacheKey = `${personal}:${process}`;
@@ -36,23 +39,25 @@ export async function ensureMemoryBanks(userKey: string): Promise<void> {
   await Promise.all([
     client.createBank(personal, {
       name: 'Therapist personal memory',
-      mission:
+      retainMission:
         'Remember user-stated facts, experiences, relationships, preferences, goals, and corrections. Treat uncertainty as uncertainty. Do not create diagnoses.',
-      disposition: {
-        skepticism: 4,
-        literalism: 4,
-        empathy: 3,
-      },
+      reflectMission:
+        'Synthesize only user-originated memories. Separate evidence from hypotheses, preserve uncertainty, and never diagnose.',
+      dispositionSkepticism: 4,
+      dispositionLiteralism: 4,
+      dispositionEmpathy: 3,
+      ...(signal ? { signal } : {}),
     }),
     client.createBank(process, {
       name: 'Therapist process memory',
-      mission:
+      retainMission:
         'Remember explicitly labeled working hypotheses, intervention attempts, outcomes, open questions, and conversational preferences. Never treat hypotheses as user facts.',
-      disposition: {
-        skepticism: 5,
-        literalism: 4,
-        empathy: 3,
-      },
+      reflectMission:
+        'Synthesize therapy-process records as fallible assistant-generated notes. Never promote a working hypothesis to a user fact.',
+      dispositionSkepticism: 5,
+      dispositionLiteralism: 4,
+      dispositionEmpathy: 3,
+      ...(signal ? { signal } : {}),
     }),
   ]);
 
@@ -117,8 +122,9 @@ export async function retainProcessNote(
   kind: ProcessNoteKind,
   note: string,
   evidence: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await ensureMemoryBanks(userKey);
+  await ensureMemoryBanks(userKey, signal);
   await client.retain(
     processBankId(userKey),
     `[${kind}] ${note}\nEvidence or user confirmation: ${evidence}`,
@@ -131,6 +137,7 @@ export async function retainProcessNote(
         kind,
       },
       async: true,
+      ...(signal ? { signal } : {}),
     },
   );
 }
@@ -139,8 +146,9 @@ export async function retainCorrection(
   userKey: string,
   incorrect: string,
   correction: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  await ensureMemoryBanks(userKey);
+  await ensureMemoryBanks(userKey, signal);
   await client.retain(
     personalBankId(userKey),
     `USER CORRECTION: The prior information "${incorrect}" is incorrect or outdated. The user states: "${correction}".`,
@@ -152,6 +160,7 @@ export async function retainCorrection(
         kind: 'correction',
       },
       async: true,
+      ...(signal ? { signal } : {}),
     },
   );
 }
@@ -161,31 +170,34 @@ type RecalledItem = {
   type: string;
 };
 
-function normalizeResults(response: { results?: Array<{ text?: string; type?: string }> }): RecalledItem[] {
-  return (response.results ?? [])
-    .filter((item): item is { text: string; type?: string } => Boolean(item.text?.trim()))
-    .map((item) => ({
-      text: item.text.trim(),
-      type: item.type ?? 'unknown',
-    }));
+function normalizeResults(response: {
+  results?: Array<{ text?: string | null; type?: string | null }>;
+}): RecalledItem[] {
+  return (response.results ?? []).flatMap((item) => {
+    const text = item.text?.trim();
+    return text ? [{ text, type: item.type ?? 'unknown' }] : [];
+  });
 }
 
 export async function recallPersonalMemory(
   userKey: string,
   query: string,
+  signal?: AbortSignal,
 ): Promise<{ personal: RecalledItem[]; process: RecalledItem[] }> {
-  await ensureMemoryBanks(userKey);
+  await ensureMemoryBanks(userKey, signal);
 
   const [personal, process] = await Promise.all([
     client.recall(personalBankId(userKey), query, {
       budget: recallBudget,
       maxTokens: 2200,
       types: ['observation', 'world', 'experience'],
+      ...(signal ? { signal } : {}),
     }),
     client.recall(processBankId(userKey), query, {
       budget: 'low',
       maxTokens: 1400,
       types: ['observation', 'world', 'experience'],
+      ...(signal ? { signal } : {}),
     }),
   ]);
 
@@ -198,6 +210,7 @@ export async function recallPersonalMemory(
 export async function reflectPersonalHistory(
   userKey: string,
   query: string,
+  signal?: AbortSignal,
 ): Promise<{ enabled: boolean; text: string }> {
   if (!reflectEnabled) {
     return {
@@ -206,11 +219,12 @@ export async function reflectPersonalHistory(
     };
   }
 
-  await ensureMemoryBanks(userKey);
+  await ensureMemoryBanks(userKey, signal);
   const response = await client.reflect(personalBankId(userKey), query, {
     budget: 'low',
     context:
       'Produce tentative cross-memory observations. Separate evidence from hypotheses and do not diagnose.',
+    ...(signal ? { signal } : {}),
   });
 
   return {

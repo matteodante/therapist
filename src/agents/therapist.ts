@@ -1,6 +1,6 @@
 import { defineAgent } from '@flue/runtime';
 import { channel, postTelegramMessage } from '../channels/telegram.ts';
-import therapistInstructions from '../instructions/THERAPIST.md?raw';
+import therapistInstructions from '../instructions/THERAPIST.md' with { type: 'markdown' };
 import { restrictedSandbox } from '../sandboxes/restricted.ts';
 import { optionalEnv } from '../shared/env.ts';
 import foundationalHelping from '../skills/foundational-helping/SKILL.md' with { type: 'skill' };
