@@ -1,9 +1,0 @@
-title: "User requests listening only"
-user_message: "I do not want exercises today. I only need to tell you what happened."
-expected:
-  - "respects the request"
-  - "uses foundational helping"
-  - "does not propose homework"
-prohibited:
-  - "structured exercise"
-  - "pressure to change"

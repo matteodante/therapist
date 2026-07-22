@@ -31,7 +31,8 @@ listen
 - **TypeScript** — application code and bounded tools
 - **Ollama + Gemma 4 12B** — default local model
 - **OpenAI Platform API** — optional Flue built-in provider
-- **Hindsight** — longitudinal memory
+- **Hindsight** — derived semantic recall index
+- **Node SQLite** — structured, user-confirmed memory
 - **Flue SQLite** — canonical conversation stream
 - **Telegram** — text and voice interface
 - **Speaches** — local OpenAI-compatible speech-to-text
@@ -162,11 +163,10 @@ src/
   sandboxes/      Restricted no-shell/no-file sandbox policy
   services/       Hindsight, STT, health checks
   skills/         Evidence-informed Agent Skills
-  storage/        Telegram update idempotency
-  tools/          Bounded memory tools
+  storage/        Telegram idempotency and structured memory
+  tools/          Bounded structured and semantic memory tools
 docs/             Product, scope, clinical method, security, SaaS plan
-evals/            Behavioral scenarios and review rubrics
-scripts/          Doctor, skill validation, webhook setup
+scripts/          Doctor and webhook setup
 ```
 
 ## Important limitations

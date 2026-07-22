@@ -9,14 +9,15 @@ Flue persistent agent instance
        ├── permanent instructions
        ├── Agent Skills
        ├── bounded Telegram post tool
-       ├── bounded Hindsight tools
+       ├── bounded memory tools
        └── restricted sandbox
               ↓
          Ollama / Gemma 4
          or OpenAI Platform API
 
 Canonical transcript → Flue SQLite
-Long-term memory     → Hindsight
+Confirmed memory     → application SQLite
+Semantic recall      → Hindsight
 Voice transcription → Speaches
 ```
 
@@ -55,13 +56,13 @@ Trusted code binds:
 
 - Telegram destination;
 - authorized user;
-- Hindsight bank IDs;
+- application memory scope and Hindsight bank IDs;
 - tokens and endpoints.
 
 The model controls only:
 
 - memory query text;
-- labeled process notes;
+- structured memory records;
 - final reply text.
 
 A custom Flue sandbox replaces default bash, read, write, edit, grep, and glob
@@ -78,19 +79,19 @@ revisited when Flue exposes a first-class single-agent mode.
 
 Canonical conversation and tool history. It answers: **what happened?**
 
-### Hindsight personal bank
+### Application SQLite
+
+User-confirmed goals, preferences, outcomes, repairs, tentative hypotheses, and
+corrections with their supporting evidence. It answers: **what has been
+explicitly recorded and confirmed?**
+
+### Hindsight personal index
 
 Only user-originated messages and corrections. It answers: **what did the user
 state or experience?**
 
-### Hindsight process bank
-
-Assistant replies and explicitly labeled working hypotheses, goals,
-interventions, outcomes, preferences, and open questions. It answers:
-**what has the process tentatively learned?**
-
-This separation reduces the risk that the model's own interpretation becomes a
-self-confirming personal fact.
+Assistant replies remain only in Flue's canonical conversation stream. This
+prevents the model's own output from becoming self-confirming semantic memory.
 
 ## Telegram idempotency
 
@@ -113,3 +114,7 @@ For SaaS:
 - Hindsight banks are tenant-isolated;
 - Telegram or first-party clients authenticate at the application edge;
 - secrets, encryption, retention, audit, and deletion become managed services.
+
+The hosted edition must preserve portable exports of the canonical transcript,
+structured memory, protocol versions, and derived-index source identifiers so a
+user can move between hosted and self-hosted deployments without data lock-in.

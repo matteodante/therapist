@@ -52,7 +52,6 @@ services:
       HINDSIGHT_BASE_URL: http://hindsight:8888
       HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY:-}
       HINDSIGHT_RECALL_BUDGET: ${HINDSIGHT_RECALL_BUDGET:-mid}
-      HINDSIGHT_REFLECT_ENABLED: ${HINDSIGHT_REFLECT_ENABLED:-false}
       STT_BASE_URL: http://speaches:8000
       STT_MODEL: ${STT_MODEL:-Systran/faster-whisper-small}
       STT_API_KEY: ${STT_API_KEY:-}

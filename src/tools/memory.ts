@@ -1,22 +1,31 @@
 import { defineTool } from '@flue/runtime';
 import * as v from 'valibot';
+import { indexCorrection, recallPersonalMemory } from '../services/hindsight.ts';
 import {
-  recallPersonalMemory,
-  reflectPersonalHistory,
-  retainCorrection,
-  retainProcessNote,
-} from '../services/hindsight.ts';
+  recallStructuredMemory,
+  recordStructuredMemory,
+} from '../storage/app-db.ts';
 
 const recalledItem = v.object({
   text: v.string(),
   type: v.string(),
+  context: v.string(),
+  documentId: v.string(),
+  mentionedAt: v.string(),
+});
+
+const structuredItem = v.object({
+  kind: v.string(),
+  note: v.string(),
+  evidence: v.string(),
+  createdAt: v.string(),
 });
 
 export function memoryToolsFor(userKey: string) {
   const recall = defineTool({
     name: 'recall_personal_memory',
     description:
-      'Recall relevant user-stated history and separately labeled process notes. Use before substantive replies when prior context may matter. Treat results as fallible context, not unquestionable fact.',
+      'Recall structured user-confirmed records and a fallible semantic index of user messages. Prefer structured records when sources conflict.',
     input: v.object({
       query: v.pipe(
         v.string(),
@@ -26,34 +35,20 @@ export function memoryToolsFor(userKey: string) {
       ),
     }),
     output: v.object({
-      personal: v.array(recalledItem),
-      process: v.array(recalledItem),
+      structured: v.array(structuredItem),
+      semantic: v.array(recalledItem),
     }),
     async run({ input, signal }) {
-      return recallPersonalMemory(userKey, input.query, signal);
-    },
-  });
-
-  const reflect = defineTool({
-    name: 'reflect_on_personal_history',
-    description:
-      'Generate a tentative synthesis across personal memories. Use sparingly, only when cross-session pattern synthesis is necessary. The result is a hypothesis, never a diagnosis.',
-    input: v.object({
-      query: v.pipe(v.string(), v.minLength(3), v.maxLength(800)),
-    }),
-    output: v.object({
-      enabled: v.boolean(),
-      text: v.string(),
-    }),
-    async run({ input, signal }) {
-      return reflectPersonalHistory(userKey, input.query, signal);
+      const structured = recallStructuredMemory(userKey, input.query);
+      const semantic = await recallPersonalMemory(userKey, input.query, signal);
+      return { structured, semantic };
     },
   });
 
   const processNote = defineTool({
     name: 'record_therapy_process_note',
     description:
-      'Record a concise therapy-process note after the user has provided evidence or confirmation. Use for goals, outcomes, open questions, preferences, repairs, and explicitly tentative working hypotheses.',
+      'Record one concise structured note only after user evidence or confirmation. Working hypotheses must remain explicitly tentative.',
     input: v.object({
       kind: v.picklist([
         'working_hypothesis',
@@ -63,7 +58,6 @@ export function memoryToolsFor(userKey: string) {
         'preference',
         'open_question',
         'repair',
-        'correction',
       ]),
       note: v.pipe(v.string(), v.minLength(3), v.maxLength(1200)),
       evidence: v.pipe(
@@ -74,8 +68,8 @@ export function memoryToolsFor(userKey: string) {
       ),
     }),
     output: v.object({ stored: v.boolean() }),
-    async run({ input, signal }) {
-      await retainProcessNote(userKey, input.kind, input.note, input.evidence, signal);
+    run({ input }) {
+      recordStructuredMemory(userKey, input.kind, input.note, input.evidence);
       return { stored: true };
     },
   });
@@ -83,17 +77,23 @@ export function memoryToolsFor(userKey: string) {
   const correction = defineTool({
     name: 'record_memory_correction',
     description:
-      'Record an explicit user correction to a prior memory. Use only when the user states that something remembered is wrong, outdated, or should be replaced.',
+      'Record an explicit user correction. The structured correction is authoritative; the semantic index remains derived and fallible.',
     input: v.object({
       incorrect: v.pipe(v.string(), v.minLength(1), v.maxLength(1000)),
       correction: v.pipe(v.string(), v.minLength(1), v.maxLength(1000)),
     }),
     output: v.object({ stored: v.boolean() }),
     async run({ input, signal }) {
-      await retainCorrection(userKey, input.incorrect, input.correction, signal);
+      recordStructuredMemory(
+        userKey,
+        'correction',
+        input.correction,
+        `Supersedes: ${input.incorrect}`,
+      );
+      await indexCorrection(userKey, input.incorrect, input.correction, signal);
       return { stored: true };
     },
   });
 
-  return [recall, reflect, processNote, correction];
+  return [recall, processNote, correction];
 }

@@ -50,10 +50,10 @@ pnpm typecheck
 pnpm test
 ```
 
-For changes to agents, skills, routing, or packaging, also run:
+For changes to agents, skills, routing, or packaging, also run Flue's native
+build validation:
 
 ```bash
-pnpm validate:skills
 pnpm build
 ```
 

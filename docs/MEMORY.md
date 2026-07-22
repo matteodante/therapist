@@ -1,62 +1,63 @@
 # Memory design
 
-## Goals
+## Principle
 
-Memory should create continuity without turning model inference into fact.
+Memory provides continuity without promoting model inference to fact. No single
+memory layer is trusted for every purpose.
 
 ## Stores
 
 ### Canonical conversation
 
-Flue SQLite contains the exact accepted messages, assistant outputs, and tool
-events.
+Flue SQLite stores the accepted messages, assistant output, tool calls, and
+tool results. It is the canonical record of what happened.
 
-### Personal memory
+### Structured application memory
 
-Hindsight personal bank receives user-originated messages and explicit
-corrections.
+`therapist-app.db` stores concise goals, preferences, interventions, outcomes,
+open questions, repairs, tentative working hypotheses, and explicit
+corrections. Each record includes the supporting user evidence. Structured
+records take precedence over semantic recall when they conflict.
 
-### Process memory
+### Hindsight derived index
 
-A separate Hindsight bank receives assistant outputs and labeled process notes.
+One user-scoped Hindsight bank indexes user-originated Telegram messages and
+explicit corrections. It never stores complete assistant responses. Messages
+are appended to stable documents through Hindsight's native `documentId` and
+`updateMode: "append"` support, making the index replaceable and deletable.
+
+Hindsight remains a fallible retrieval accelerator, not a source of clinical
+truth. Automatic observations and `reflect` are not used.
 
 ## Retrieval
 
-The agent can call `recall_personal_memory` with a focused query. Results are
-returned in two arrays:
+`recall_personal_memory` returns two clearly labeled collections:
 
-- `personal`;
-- `process`.
+- `structured`: application-owned records with evidence and timestamps;
+- `semantic`: Hindsight facts with context, document ID, and mention time.
 
-The instructions require the model to treat both as fallible evidence and
-process notes as lower-confidence.
-
-## Reflection
-
-`reflect_on_personal_history` is disabled by default because local reflection is
-expensive and can produce persuasive overinterpretation. It can be enabled
-after model-specific evaluation.
+The agent must prefer structured records and treat semantic results as
+potentially incomplete or distorted.
 
 ## Corrections
 
-`record_memory_correction` appends an explicit user correction with strong
-metadata. A complete deletion and source-level invalidation workflow remains a
-required milestone before a hosted release.
+`record_memory_correction` writes an authoritative structured correction and
+also appends it to a dedicated Hindsight correction document so retrieval can
+surface it. The structured correction wins over conflicting extracted facts.
 
-## Known limitations
+## Deletion
 
-- Hindsight extraction quality depends on the configured model.
-- Asynchronous retain means a newly stated fact may not be immediately
-  retrievable.
-- Append-only corrections do not physically remove older records.
-- Flue currently exposes no public per-session deletion orchestration.
-- Export and deletion must cover both Flue and Hindsight.
+`/clear-derived-memory confirm` deletes structured application memory and the
+two known Hindsight documents through Hindsight's native document deletion API.
+It intentionally does not claim to delete Flue's canonical conversation stream,
+because the pinned Flue version exposes no public per-session deletion
+orchestration.
 
-## Future work
+## Remaining requirements before hosted use
 
-- source IDs for every retained message;
-- document-level deletion by transcript reference;
-- memory review interface;
-- confidence and temporal validity;
-- rebuild Hindsight from canonical transcripts;
-- portable encrypted export.
+- complete Flue transcript export and deletion;
+- user-facing review and editing of structured records;
+- retention policy and scheduled expiry;
+- encrypted portable export;
+- memory-quality evaluations covering contradictions, corrections, temporal
+  changes, and cross-language recall.

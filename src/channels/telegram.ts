@@ -7,12 +7,12 @@ import {
 import { Api } from 'grammy';
 import * as v from 'valibot';
 import therapist from '../agents/therapist.ts';
-import { retainAssistantResponse, retainUserMessage } from '../services/hindsight.ts';
+import { clearPersonalMemoryIndex, retainUserMessage } from '../services/hindsight.ts';
 import { transcribeTelegramVoice } from '../services/stt.ts';
 import { requiredEnv } from '../shared/env.ts';
 import { logError, logEvent } from '../shared/log.ts';
 import { isAllowedPrivateMessage, splitTelegramText } from '../shared/telegram.ts';
-import { claimTelegramUpdate } from '../storage/app-db.ts';
+import { claimTelegramUpdate, clearStructuredMemory } from '../storage/app-db.ts';
 
 type TelegramMessage = NonNullable<Update['message']>;
 
@@ -47,7 +47,7 @@ export const channel = createTelegramChannel({
       return;
     }
 
-    const commandHandled = await handleStaticCommand(incoming);
+    const commandHandled = await handleStaticCommand(incoming, String(incoming.from!.id));
     if (commandHandled) return;
 
     try {
@@ -98,11 +98,15 @@ export const channel = createTelegramChannel({
   },
 });
 
-async function handleStaticCommand(message: TelegramMessage): Promise<boolean> {
+async function handleStaticCommand(
+  message: TelegramMessage,
+  userKey: string,
+): Promise<boolean> {
   const text = message.text?.trim();
   if (!text?.startsWith('/')) return false;
 
-  const command = text.split(/\s+/, 1)[0]?.split('@', 1)[0]?.toLowerCase();
+  const [commandToken = '', ...commandArguments] = text.split(/\s+/);
+  const command = commandToken.split('@', 1)[0]?.toLowerCase();
 
   if (command === '/start') {
     await client.sendMessage(
@@ -126,6 +130,7 @@ async function handleStaticCommand(message: TelegramMessage): Promise<boolean> {
         '',
         '/privacy — informazioni essenziali sui dati',
         '/status — verifica che il bot sia online',
+        '/clear-derived-memory confirm — cancella memoria strutturata e indice semantico',
       ].join('\n'),
     );
     return true;
@@ -145,6 +150,27 @@ async function handleStaticCommand(message: TelegramMessage): Promise<boolean> {
 
   if (command === '/status') {
     await client.sendMessage(message.chat.id, 'Therapist è online.');
+    return true;
+  }
+
+  if (command === '/clear-derived-memory') {
+    if (commandArguments.join(' ') !== 'confirm') {
+      await client.sendMessage(
+        message.chat.id,
+        'Per confermare usa esattamente: /clear-derived-memory confirm',
+      );
+      return true;
+    }
+
+    const deleted = clearStructuredMemory(userKey);
+    const { failedDocuments } = await clearPersonalMemoryIndex(userKey);
+    const semanticStatus = failedDocuments === 0
+      ? 'Anche l’indice semantico è stato cancellato.'
+      : `Non è stato possibile cancellare completamente l’indice semantico (${failedDocuments} operazioni fallite).`;
+    await client.sendMessage(
+      message.chat.id,
+      `Memoria strutturata cancellata (${deleted} record). ${semanticStatus} La cronologia canonica di Flue non viene eliminata da questo comando.`,
+    );
     return true;
   }
 
@@ -191,7 +217,6 @@ export function postTelegramMessage(ref: TelegramConversationRef, userKey: strin
         messageIds.push(message.message_id);
       }
 
-      await retainAssistantResponse(userKey, input.text);
       logEvent('telegram.reply_delivered', {
         chatId: String(ref.chatId),
         chunks: messageIds.length,

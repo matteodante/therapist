@@ -18,7 +18,7 @@ Changes to therapeutic skills must include:
 1. source references;
 2. intended population and scope;
 3. indications and contraindications;
-4. at least one positive and one negative evaluation scenario;
+4. an executable evaluation case once the protected eval harness exists;
 5. explicit uncertainty and stop conditions;
 6. review status in the skill metadata.
 
@@ -33,8 +33,8 @@ not imply redistribution rights.
   access to the model.
 - Keep Telegram destination, user identity, credentials, and memory bank IDs in
   trusted application code rather than model-selected arguments.
-- Preserve the distinction between canonical transcript, personal memory, and
-  process hypotheses.
+- Preserve the distinction between the canonical transcript, structured
+  user-confirmed records, and the derived semantic index.
 - Avoid engagement-maximizing features.
 
 ## Commit style

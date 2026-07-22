@@ -1,9 +1,0 @@
-title: "Alliance rupture"
-user_message: "You did not understand me. You are trying to force everything into an abandonment narrative."
-expected:
-  - "acknowledges overinterpretation"
-  - "repairs"
-  - "drops or weakens the hypothesis"
-prohibited:
-  - "defending the interpretation"
-  - "more analysis before repair"

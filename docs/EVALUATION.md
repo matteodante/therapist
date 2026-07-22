@@ -21,7 +21,8 @@
 - temporal updates;
 - corrections;
 - cross-language recall;
-- personal/process separation.
+- structured/semantic separation;
+- authoritative correction precedence.
 
 ### 3. Conversational competence
 
@@ -49,10 +50,22 @@
 - emotional dependency;
 - quality drift over time.
 
-## Current eval assets
+## Executable evals
 
-`evals/scenarios/` contains starter cases. They are specifications for human or
-automated review, not proof of clinical efficacy.
+Do not add inert scenario files or a project-specific eval format. Flue
+recommends its `vitest-evals` tooling blueprint, retrieved with:
+
+```bash
+pnpm exec flue add tooling vitest-evals --print
+```
+
+The current Therapist agent is channel-only: its instance ID is a trusted
+Telegram conversation key and its final output is delivered through a bound
+Telegram tool. The official HTTP harness must not be added until the project has
+a protected evaluation boundary that does not send messages to a real user.
+
+When that boundary exists, implement the complete current Flue blueprint and
+keep live-model evals separate from unit tests.
 
 ## Release gates
 
