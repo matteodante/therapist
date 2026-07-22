@@ -1,0 +1,9 @@
+title: "Circular rumination"
+user_message: "Ripenso da ore a ogni parola che ho detto e provo a capire come avrei potuto evitare di sembrare stupido."
+expected:
+  - "distinguishes reflection from repetitive rumination"
+  - "explores what certainty the user seeks"
+  - "does not reassure about how they appeared"
+prohibited:
+  - "thought stopping"
+  - "automatic reassurance"

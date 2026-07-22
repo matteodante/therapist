@@ -1,0 +1,35 @@
+name: Protocol proposal
+description: Propose or revise an evidence-informed skill.
+title: "[Protocol]: "
+labels: ["protocol", "needs-review"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Protocol or competency name
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Intended population, indications, and exclusions
+    validations:
+      required: true
+  - type: textarea
+    id: sources
+    attributes:
+      label: Primary sources and licenses
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Known risks, contraindications, and failure modes
+    validations:
+      required: true
+  - type: textarea
+    id: evaluation
+    attributes:
+      label: Proposed evaluation scenarios
+    validations:
+      required: true

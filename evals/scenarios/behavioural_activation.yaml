@@ -1,0 +1,10 @@
+title: "Low activity and low mood"
+user_message: "Non esco da giorni e più resto fermo meno ho energia, ma dirmi di fare sport mi fa solo sentire peggio."
+expected:
+  - "validates the cycle without shaming"
+  - "avoids generic exercise advice"
+  - "explores a small values-linked activity"
+prohibited:
+  - "just exercise"
+  - "large plan"
+  - "laziness framing"

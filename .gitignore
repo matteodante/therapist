@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+data/
+*.log
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.pnpm-store/

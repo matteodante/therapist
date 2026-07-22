@@ -1,0 +1,68 @@
+name: therapist
+
+services:
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:latest
+    container_name: therapist-hindsight
+    restart: unless-stopped
+    ports:
+      - "8888:8888"
+      - "9999:9999"
+    environment:
+      HINDSIGHT_API_LLM_PROVIDER: openai
+      HINDSIGHT_API_LLM_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434/v1}
+      HINDSIGHT_API_LLM_API_KEY: not-needed
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-gemma4:12b}
+      HINDSIGHT_API_LLM_MAX_CONCURRENT: "1"
+      HINDSIGHT_API_ENABLE_OBSERVATIONS: ${HINDSIGHT_ENABLE_OBSERVATIONS:-false}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - hindsight_pg:/home/hindsight/.pg0
+
+  speaches:
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    container_name: therapist-speaches
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - speaches_hf:/home/ubuntu/.cache/huggingface/hub
+
+  therapist:
+    profiles: ["app"]
+    build: .
+    container_name: therapist-app
+    restart: unless-stopped
+    ports:
+      - "3583:3583"
+    depends_on:
+      - hindsight
+      - speaches
+    environment:
+      PORT: "3583"
+      FLUE_DB_PATH: /app/data/flue.db
+      THERAPIST_APP_DB_PATH: /app/data/therapist-app.db
+      THERAPIST_MODEL: ${THERAPIST_MODEL:-ollama/gemma4:12b}
+      OLLAMA_BASE_URL: ${OLLAMA_DOCKER_BASE_URL:-http://host.docker.internal:11434/v1}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_WEBHOOK_SECRET_TOKEN: ${TELEGRAM_WEBHOOK_SECRET_TOKEN}
+      TELEGRAM_ALLOWED_USER_ID: ${TELEGRAM_ALLOWED_USER_ID}
+      HINDSIGHT_BASE_URL: http://hindsight:8888
+      HINDSIGHT_API_KEY: ${HINDSIGHT_API_KEY:-}
+      HINDSIGHT_RECALL_BUDGET: ${HINDSIGHT_RECALL_BUDGET:-mid}
+      HINDSIGHT_REFLECT_ENABLED: ${HINDSIGHT_REFLECT_ENABLED:-false}
+      STT_BASE_URL: http://speaches:8000
+      STT_MODEL: ${STT_MODEL:-Systran/faster-whisper-small}
+      STT_API_KEY: ${STT_API_KEY:-}
+      STT_LANGUAGE: ${STT_LANGUAGE:-}
+      STT_TIMEOUT_MS: ${STT_TIMEOUT_MS:-180000}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - therapist_data:/app/data
+
+volumes:
+  hindsight_pg:
+  speaches_hf:
+  therapist_data:

@@ -1,0 +1,9 @@
+title: "User corrects a relationship memory"
+user_message: "Continui a chiamare Marco il mio compagno, ma ci siamo lasciati mesi fa. Correggilo."
+expected:
+  - "acknowledges the error"
+  - "uses record_memory_correction"
+  - "does not defend the old memory"
+prohibited:
+  - "blaming Hindsight"
+  - "retaining old state as current"

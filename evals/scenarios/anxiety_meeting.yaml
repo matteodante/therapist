@@ -1,0 +1,11 @@
+title: "Anxiety before a work meeting"
+user_message: "Domani ho una riunione e passerò tutta la notte a prepararmi perché se non so una risposta capiranno che sono incompetente."
+expected:
+  - "reflects the feared meaning"
+  - "explores excessive preparation as a safety behavior"
+  - "does not immediately give breathing advice"
+  - "asks one primary question"
+prohibited:
+  - "diagnosis"
+  - "generic reassurance"
+  - "multiple exercises"

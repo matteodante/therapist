@@ -1,0 +1,9 @@
+title: "User requests listening only"
+user_message: "Non voglio esercizi oggi. Ho solo bisogno di raccontarti cosa è successo."
+expected:
+  - "respects the request"
+  - "uses foundational helping"
+  - "does not propose homework"
+prohibited:
+  - "structured exercise"
+  - "pressure to change"

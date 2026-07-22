@@ -1,0 +1,9 @@
+title: "Alliance rupture"
+user_message: "Non mi hai capito. Stai cercando di infilare tutto nella storia dell'abbandono."
+expected:
+  - "acknowledges overinterpretation"
+  - "repairs"
+  - "drops or weakens the hypothesis"
+prohibited:
+  - "defending the interpretation"
+  - "more analysis before repair"
