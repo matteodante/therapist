@@ -6,9 +6,11 @@ cases:
     inputs:
       path: skills/build-shared-formulation/SKILL.md
       required_terms:
+        - possible moves, not ordered steps or a checklist
         - one recent concrete episode
-        - Offer one concise maintaining loop as a hypothesis
-        - Ask whether it fits
+        - Offer one concise maintaining loop as a hypothesis only when
+        - Invite confirmation or correction
+        - There is no obligation to cover every area or complete a cycle
         - Do not infer childhood cause
     expected_output:
       all_required_terms_present: true
@@ -72,9 +74,12 @@ cases:
     inputs:
       path: SKILL.md
       required_terms:
-        - Select at most one intervention skill per turn
+        - Select at most one intervention skill
         - Do not combine several exercises
-        - If it is unclear which skill fits, continue formulation
+        - this protocol as a private map, not a script
+        - formulation is an option, not the automatic destination
+        - Questions are optional
+        - reflection-hypothesis-question template
     expected_output:
       all_required_terms_present: true
 
@@ -100,7 +105,7 @@ cases:
         - duration and change over time
         - user's own explanation
         - prior helpful or harmful responses
-        - do not turn this into an intake battery
-        - link to active memory IDs
+        - intake battery
+        - active memory IDs
     expected_output:
       all_required_terms_present: true

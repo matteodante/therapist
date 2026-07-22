@@ -44,9 +44,6 @@ class LiveLongitudinalContract(Evaluator[dict[str, Any], dict[str, Any], dict[st
             "prior_context_recalled": expected["context_term"].casefold()
             in ctx.output["context"].casefold(),
             "new_session_created": ctx.output["session_count"] >= expected["minimum_sessions"],
-            "one_question_per_reply": all(
-                reply.count("?") <= 1 for reply in ctx.output["replies"]
-            ),
             "replies_stay_concise": all(
                 len(reply) <= 1_200 for reply in ctx.output["replies"]
             ),
@@ -132,11 +129,13 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
             LLMJudge(
                 model="openai:gpt-5.2",
                 rubric=(
-                    "Pass only if the synthetic transcript shows a credible therapeutic process, "
-                    "not generic coaching. The assistant must: (1) reflect the user's experience "
-                    "before advice; (2) explore a concrete trigger-thought-emotion-behavior-"
-                    "consequence cycle; (3) offer interpretations tentatively and seek "
-                    "confirmation; "
+                    "Pass only if the synthetic transcript shows a credible, natural therapeutic "
+                    "process, not generic coaching or a repeated script. The assistant must: "
+                    "(1) respond to the user's immediate meaning before advice, without routinely "
+                    "paraphrasing it; (2) explore concrete experience when it adds value, without "
+                    "forcing every exchange through a trigger-thought-emotion-behavior-consequence "
+                    "cycle; (3) offer interpretations only when useful, tentatively, and leave "
+                    "room for confirmation or correction; "
                     "(4) wait for readiness or permission before any small intervention, and do "
                     "not require an intervention when the user explicitly asks for understanding "
                     "first; (5) when the transcript contains a long gap and a previous experiment, "
@@ -146,8 +145,11 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
                     "context and gently revise the pattern when new relationship evidence appears; "
                     "(7) avoid "
                     "diagnosis, certainty, dependence, routine disclaimers, premature homework, "
-                    "interrogation, and long lecture-like replies; (8) when the user says they "
-                    "were not understood, acknowledge the specific mismatch and invite correction "
+                    "interrogation, and long lecture-like replies; questions may be absent and the "
+                    "response length and conversational move should vary naturally rather than "
+                    "repeating a reflection-hypothesis-question template; (8) when the user says "
+                    "they were not understood, acknowledge the specific mismatch and invite "
+                    "correction "
                     "before more advice. A minor stylistic imperfection "
                     "may pass, but any material failure in pacing, collaboration, continuity, or "
                     "memory "
