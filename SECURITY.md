@@ -18,7 +18,8 @@ Advisories once the repository is published.
 - No model-facing host shell, filesystem, browser, or arbitrary HTTP tools.
 - Secrets are supplied only through environment variables.
 - Telegram webhook requests are verified using an independent secret token.
-- Flue canonical conversations and Hindsight memory are sensitive personal data.
+- Flue canonical conversations and the Markdown memory vault are sensitive
+  personal data.
 - A future SaaS deployment requires tenant isolation, encryption, deletion
   workflows, audit logging, and a formal threat model before accepting users.
 

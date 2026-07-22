@@ -31,8 +31,8 @@ listen
 - **TypeScript** — application code and bounded tools
 - **Ollama + Gemma 4 12B** — default local model
 - **OpenAI Platform API** — optional Flue built-in provider
-- **Hindsight** — derived semantic recall index
-- **Node SQLite** — structured, user-confirmed memory
+- **Markdown vault** — editable `SELF.md` and `JOURNEY.md` memory
+- **Node SQLite** — Telegram update idempotency
 - **Flue SQLite** — canonical conversation stream
 - **Telegram** — text and voice interface
 - **Speaches** — local OpenAI-compatible speech-to-text
@@ -66,7 +66,7 @@ Read [`docs/PRODUCT.md`](docs/PRODUCT.md) and
 - Node.js `>=22.19.0`
 - pnpm `>=11`
 - Ollama
-- Docker Desktop or Docker Engine for Hindsight and Speaches
+- Docker Desktop or Docker Engine for Speaches
 - a Telegram bot token
 - a public HTTPS URL for Telegram webhook delivery during local development
   (for example a tunnel)
@@ -97,6 +97,9 @@ PUBLIC_BASE_URL=https://your-public-host.example
 
 Generate a webhook secret with letters, numbers, `_`, or `-`.
 
+The Markdown memory vault is created in `data/memory/`. Open that directory as
+an Obsidian vault if you want to inspect or edit `SELF.md` and `JOURNEY.md`.
+
 Ollama remains the default provider. To use the OpenAI API instead, set a Flue
 `openai/...` model specifier in `THERAPIST_MODEL` and configure
 `OPENAI_API_KEY`. API billing is separate from a ChatGPT/Codex subscription;
@@ -105,7 +108,7 @@ see [`docs/MODELS.md`](docs/MODELS.md).
 ### 3. Start local dependencies
 
 ```bash
-docker compose up -d hindsight speaches
+docker compose up -d speaches
 ```
 
 Download the configured STT model using the Speaches CLI:
@@ -161,10 +164,10 @@ src/
   channels/       Telegram webhook and outbound tool
   instructions/   Permanent agent operating instructions
   sandboxes/      Restricted no-shell/no-file sandbox policy
-  services/       Hindsight, STT, health checks
+  services/       STT and health checks
   skills/         Evidence-informed Agent Skills
-  storage/        Telegram idempotency and structured memory
-  tools/          Bounded structured and semantic memory tools
+  storage/        Telegram idempotency and Markdown memory vault
+  tools/          Bounded memory and Telegram delivery tools
 docs/             Product, scope, clinical method, security, SaaS plan
 scripts/          Doctor and webhook setup
 ```
@@ -172,10 +175,10 @@ scripts/          Doctor and webhook setup
 ## Important limitations
 
 - The bundled protocols are **drafts requiring professional clinical review**.
-- Memory extraction by local models can miss or distort facts.
+- Memory notes can be incomplete, and process notes can still be wrong.
 - A convincing formulation is not necessarily a correct formulation.
 - Telegram bot chats are not end-to-end encrypted.
-- Hindsight and Flue are both pinned because their APIs are evolving.
+- Flue is pinned because its beta API is evolving.
 - `gemma4:12b` is a default, not a guarantee of adequate clinical quality.
 
 ## Repository GitHub

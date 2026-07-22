@@ -31,10 +31,10 @@ not imply redistribution rights.
 - Prefer bounded application tools over broad capabilities.
 - Never add host shell, unrestricted filesystem, browser, or generic network
   access to the model.
-- Keep Telegram destination, user identity, credentials, and memory bank IDs in
+- Keep Telegram destination, user identity, credentials, and memory paths in
   trusted application code rather than model-selected arguments.
-- Preserve the distinction between the canonical transcript, structured
-  user-confirmed records, and the derived semantic index.
+- Preserve the distinction between the canonical transcript, user-stated
+  `SELF.md`, and assistant-authored `JOURNEY.md` process notes.
 - Avoid engagement-maximizing features.
 
 ## Commit style
@@ -44,5 +44,5 @@ Use concise imperative subjects, for example:
 ```text
 Add collaborative formulation skill
 Harden Telegram user allowlist
-Document Hindsight deletion strategy
+Document memory deletion behavior
 ```

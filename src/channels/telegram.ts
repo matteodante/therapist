@@ -7,12 +7,12 @@ import {
 import { Api } from 'grammy';
 import * as v from 'valibot';
 import therapist from '../agents/therapist.ts';
-import { clearPersonalMemoryIndex, retainUserMessage } from '../services/hindsight.ts';
 import { transcribeTelegramVoice } from '../services/stt.ts';
 import { requiredEnv } from '../shared/env.ts';
 import { logError, logEvent } from '../shared/log.ts';
 import { isAllowedPrivateMessage, splitTelegramText } from '../shared/telegram.ts';
-import { claimTelegramUpdate, clearStructuredMemory } from '../storage/app-db.ts';
+import { claimTelegramUpdate } from '../storage/app-db.ts';
+import { resetMemoryVault } from '../storage/memory-vault.ts';
 
 type TelegramMessage = NonNullable<Update['message']>;
 
@@ -47,7 +47,7 @@ export const channel = createTelegramChannel({
       return;
     }
 
-    const commandHandled = await handleStaticCommand(incoming, String(incoming.from!.id));
+    const commandHandled = await handleStaticCommand(incoming);
     if (commandHandled) return;
 
     try {
@@ -61,14 +61,6 @@ export const channel = createTelegramChannel({
         return;
       }
 
-      const userKey = String(incoming.from!.id);
-      await retainUserMessage(userKey, body, {
-        updateId: String(update.update_id),
-        telegramMessageId: String(incoming.message_id),
-        inputModality: incoming.voice ? 'voice' : 'text',
-        languageCode: incoming.from?.language_code ?? '',
-      });
-
       const conversation = conversationFromMessage(incoming);
       await dispatch(therapist, {
         id: channel.conversationKey(conversation),
@@ -77,7 +69,7 @@ export const channel = createTelegramChannel({
           body,
           attributes: {
             updateId: String(update.update_id),
-            fromId: userKey,
+            fromId: String(incoming.from!.id),
             inputModality: incoming.voice ? 'voice' : 'text',
             ...(incoming.from?.username ? { fromUsername: incoming.from.username } : {}),
             ...(incoming.from?.language_code
@@ -98,10 +90,7 @@ export const channel = createTelegramChannel({
   },
 });
 
-async function handleStaticCommand(
-  message: TelegramMessage,
-  userKey: string,
-): Promise<boolean> {
+async function handleStaticCommand(message: TelegramMessage): Promise<boolean> {
   const text = message.text?.trim();
   if (!text?.startsWith('/')) return false;
 
@@ -130,7 +119,7 @@ async function handleStaticCommand(
         '',
         '/privacy — informazioni essenziali sui dati',
         '/status — verifica che il bot sia online',
-        '/clear-derived-memory confirm — cancella memoria strutturata e indice semantico',
+        '/clear-memory confirm — cancella le note di memoria',
       ].join('\n'),
     );
     return true;
@@ -153,23 +142,19 @@ async function handleStaticCommand(
     return true;
   }
 
-  if (command === '/clear-derived-memory') {
+  if (command === '/clear-memory') {
     if (commandArguments.join(' ') !== 'confirm') {
       await client.sendMessage(
         message.chat.id,
-        'Per confermare usa esattamente: /clear-derived-memory confirm',
+        'Per confermare usa esattamente: /clear-memory confirm',
       );
       return true;
     }
 
-    const deleted = clearStructuredMemory(userKey);
-    const { failedDocuments } = await clearPersonalMemoryIndex(userKey);
-    const semanticStatus = failedDocuments === 0
-      ? 'Anche l’indice semantico è stato cancellato.'
-      : `Non è stato possibile cancellare completamente l’indice semantico (${failedDocuments} operazioni fallite).`;
+    const deleted = resetMemoryVault();
     await client.sendMessage(
       message.chat.id,
-      `Memoria strutturata cancellata (${deleted} record). ${semanticStatus} La cronologia canonica di Flue non viene eliminata da questo comando.`,
+      `Memoria cancellata (${deleted} note). La cronologia canonica di Flue non viene eliminata da questo comando.`,
     );
     return true;
   }
@@ -198,7 +183,7 @@ function conversationFromMessage(message: TelegramMessage): TelegramConversation
   };
 }
 
-export function postTelegramMessage(ref: TelegramConversationRef, userKey: string) {
+export function postTelegramMessage(ref: TelegramConversationRef) {
   return defineTool({
     name: 'post_telegram_message',
     description:

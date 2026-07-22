@@ -9,7 +9,7 @@ Sensitive assets:
 - working hypotheses;
 - Telegram token;
 - webhook secret;
-- model and memory endpoints;
+- model and STT endpoints;
 - future exports.
 
 ## Controls in the starter
@@ -20,11 +20,12 @@ Sensitive assets:
 - durable update deduplication;
 - no host shell or filesystem tools;
 - no browser, MCP, generic HTTP, or code execution tools;
-- trusted code selects Telegram destinations and memory banks;
+- trusted code selects Telegram destinations and memory vault paths;
 - secrets in environment variables;
 - content is not written to application logs;
-- application-owned structured memory separated from the Hindsight derived index;
-- local model, memory, and STT endpoints by default.
+- user-stated memory separated from assistant-authored process notes;
+- atomic Markdown writes with owner-only file modes;
+- local model and STT endpoints by default.
 
 ## Telegram limitation
 
@@ -52,7 +53,7 @@ Flue upgrade.
 A hosted version must add:
 
 - tenant authentication and authorization;
-- per-tenant application records and Hindsight bank isolation;
+- per-tenant application records and memory-vault isolation;
 - Postgres row/tenant isolation;
 - encryption at rest and in transit;
 - managed secrets;

@@ -13,7 +13,7 @@ import motivationalInterviewing from '../skills/motivational-interviewing/SKILL.
 import actFlexibility from '../skills/act-psychological-flexibility/SKILL.md' with { type: 'skill' };
 import sessionReview from '../skills/session-review-and-closing/SKILL.md' with { type: 'skill' };
 import highRisk from '../skills/high-risk-conversation/SKILL.md' with { type: 'skill' };
-import { memoryToolsFor } from '../tools/memory.ts';
+import { memoryTools } from '../tools/memory.ts';
 
 const skills = [
   foundationalHelping,
@@ -30,7 +30,6 @@ const skills = [
 
 export default defineAgent(({ id }) => {
   const ref = channel.parseConversationKey(id);
-  const userKey = String(ref.chatId);
 
   return {
     description:
@@ -41,8 +40,8 @@ export default defineAgent(({ id }) => {
     sandbox: restrictedSandbox(),
     skills,
     tools: [
-      ...memoryToolsFor(userKey),
-      postTelegramMessage(ref, userKey),
+      ...memoryTools,
+      postTelegramMessage(ref),
     ],
   };
 });

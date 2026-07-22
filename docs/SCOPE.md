@@ -63,7 +63,7 @@ them autonomously:
 - one authorized Telegram user;
 - Italian and English evaluation first;
 - Gemma 4 12B default;
-- Hindsight local memory;
+- local Markdown memory;
 - ten draft Agent Skills;
 - no scheduled messages;
 - no graphical application.

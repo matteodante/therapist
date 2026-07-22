@@ -1,93 +1,66 @@
 # Memory design
 
-## Principle
+## Decision
 
-Memory provides continuity without promoting model inference to fact. No single
-memory layer is trusted for every purpose.
+Therapist uses a plain Markdown vault. There is no semantic memory service,
+embedding model, vector store, or automatic extraction pipeline.
 
-## Stores
+Flue SQLite remains the canonical conversation stream. The vault contains only
+curated long-term memory that should affect future conversations.
 
-### Canonical conversation
+## Vault
 
-Flue SQLite stores the accepted messages, assistant output, tool calls, and
-tool results. It is the canonical record of what happened.
+The directory configured by `THERAPIST_MEMORY_PATH` contains two notes:
 
-### Structured application memory
+```text
+memory/
+  SELF.md
+  JOURNEY.md
+```
 
-`therapist-app.db` stores concise goals, preferences, interventions, outcomes,
-open questions, repairs, tentative working hypotheses, and explicit
-corrections. Each record includes the supporting user evidence. Structured
-records take precedence over semantic recall when they conflict.
+### `SELF.md`
 
-### Hindsight derived index
+User-owned context: durable facts, relationships, values, preferences, and
+other information explicitly stated or confirmed by the user. Assistant
+inferences never belong here.
 
-One user-scoped Hindsight bank indexes user-originated Telegram messages and
-explicit corrections. It never stores complete assistant responses. Messages
-are appended to stable documents through Hindsight's native `documentId` and
-`updateMode: "append"` support, making the index replaceable and deletable.
+### `JOURNEY.md`
 
-Hindsight remains a fallible retrieval accelerator, not a source of clinical
-truth. Automatic observations and `reflect` are not used.
+Collaborative process memory organized into goals, tentative working
+hypotheses, experiments, outcomes, open threads, and repairs. These are
+assistant-authored notes with supporting user evidence, not facts about the
+user.
 
-## Retrieval
+There is no separate profile, active-memory, correction, or session-note file.
+Corrections update the affected bullet in place. Flue already stores the full
+session history, so copying transcripts or session summaries into the vault
+would create a second source of truth.
 
-`recall_personal_memory` returns two clearly labeled collections:
+## Tools
 
-- `structured`: application-owned records with evidence and timestamps;
-- `semantic`: Hindsight facts with context, document ID, and mention time.
+- `read_therapy_memory` reads both concise notes in full.
+- `remember_user_context` appends one user-stated item to `SELF.md`.
+- `record_therapy_process_note` adds one item to the appropriate `JOURNEY.md`
+  section.
+- `correct_therapy_memory` replaces an exact excerpt in an existing bullet.
 
-The agent must prefer structured records and treat semantic results as
-potentially incomplete or distorted.
+The model never receives generic filesystem access. Trusted application code
+selects the directory and filenames, validates tool inputs, normalizes entries,
+and performs same-directory temporary-file renames for writes.
 
-## Corrections
+## User access
 
-`record_memory_correction` writes an authoritative structured correction and
-also appends it to a dedicated Hindsight correction document so retrieval can
-surface it. The structured correction wins over conflicting extracted facts.
+The vault is ordinary Markdown and can be opened directly in Obsidian or any
+text editor. `data/` is excluded from Git. Docker bind-mounts `./data` so the
+same files remain accessible from the host.
 
 ## Deletion
 
-`/clear-derived-memory confirm` deletes structured application memory and the
-two known Hindsight documents through Hindsight's native document deletion API.
-It intentionally does not claim to delete Flue's canonical conversation stream,
-because the pinned Flue version exposes no public per-session deletion
-orchestration.
+`/clear-memory confirm` resets both notes and reports how many memory bullets
+were removed. It does not delete Flue's canonical conversation stream.
 
-## Memory backend assessment
+## Deliberate limit
 
-**Decision: keep Hindsight as a derived semantic index; do not replace it.**
-Flue remains the canonical conversation stream and application-owned
-SQLite/FTS5 remains the authority for evidence, corrections, reviewable records,
-and deletion. Hindsight is justified only for the product requirement that
-SQLite FTS5 does not cover: semantic, paraphrase, multilingual, and long-horizon
-recall ([Flue database guide](https://flueframework.com/docs/guide/database/),
-[SQLite FTS5](https://www.sqlite.org/fts5.html)).
-
-The alternatives are capable, but none currently justifies its extra failure,
-privacy, and migration surface:
-
-| Option | Relevant strengths | Cost for this product | Decision |
-| --- | --- | --- | --- |
-| No sidecar | No extra service or model extraction; SQLite FTS5 provides ranked lexical retrieval. | Loses semantic and cross-language matches, which are material for longitudinal conversations. | Keep as the baseline and fallback, not the preferred product configuration. |
-| Hindsight | Self-hosted MIT service, official TypeScript client, temporal/semantic recall, and cascading document deletion ([repository](https://github.com/vectorize-io/hindsight), [deletion API](https://docs.hindsight.vectorize.io/api-reference/delete-document/)) | Adds a service, database/index lifecycle, and LLM-based fact extraction. Extracted facts remain derived claims, so they cannot be authoritative for sensitive therapeutic context. | Keep behind the current structured-memory boundary; continue to exclude assistant replies, observations, and `reflect`. |
-| Mem0 | Self-hosted OSS, Node SDK, configurable providers, and explicit CRUD/history through its REST service ([Node quickstart](https://docs.mem0.ai/open-source/node-quickstart), [REST API](https://docs.mem0.ai/open-source/features/rest-api)) | Duplicates the existing structured store and introduces extraction, embedding/vector configuration, and another evolving memory schema without a demonstrated advantage over Hindsight here. | Do not migrate. |
-| Zep / Graphiti | Strong provenance and temporal invalidation for changing facts ([Graphiti repository](https://github.com/getzep/graphiti)) | The OSS engine is Python-first and requires a graph backend; Zep is the managed option. This is excessive for one personal agent and its small user-scoped memory. | Reject for the current scale. |
-| Letta | Self-hostable stateful-agent runtime with editable memory blocks and a TypeScript client ([memory blocks](https://docs.letta.com/guides/core-concepts/memory/memory-blocks), [Docker deployment](https://docs.letta.com/guides/docker)) | It is an alternative agent runtime, not a focused memory sidecar, and would overlap with or replace Flue. Self-hosting also adds PostgreSQL/pgvector and model-provider configuration. | Reject while Flue remains the runtime. |
-
-Self-hosting does not by itself keep sensitive text local: configured LLM and
-embedding providers may still receive it. The current local configuration
-avoids that external transfer, but Hindsight's official multilingual guide says
-its default embedding and reranker are English-only. Before semantic recall is
-treated as production-ready for Italian, configure and evaluate the documented
-multilingual models and protect any network-exposed Hindsight API
-([multilingual guide](https://hindsight.vectorize.io/developer/multilingual),
-[configuration and authentication](https://hindsight.vectorize.io/developer/configuration)).
-
-## Remaining requirements before hosted use
-
-- complete Flue transcript export and deletion;
-- user-facing review and editing of structured records;
-- retention policy and scheduled expiry;
-- encrypted portable export;
-- memory-quality evaluations covering contradictions, corrections, temporal
-  changes, and cross-language recall.
+Reading two concise notes is sufficient for the single-user product. Add a
+rebuildable local index only after measured context growth or recall failures;
+do not make an index authoritative.

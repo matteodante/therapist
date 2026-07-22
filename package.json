@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Open-source, self-hosted therapy agent built with Flue, Hindsight, Ollama, Telegram, and evidence-informed Agent Skills.",
+  "description": "Open-source, self-hosted therapy agent built with Flue, Markdown memory, Ollama, Telegram, and evidence-informed Agent Skills.",
   "license": "Apache-2.0",
   "packageManager": "pnpm@11.1.1",
   "engines": {
@@ -25,7 +25,6 @@
   "dependencies": {
     "@flue/runtime": "1.0.0-beta.9",
     "@flue/telegram": "1.0.0-beta.1",
-    "@vectorize-io/hindsight-client": "0.8.5",
     "grammy": "1.45.1",
     "hono": "4.12.22",
     "just-bash": "3.0.1",

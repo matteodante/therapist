@@ -14,9 +14,6 @@ importers:
       '@flue/telegram':
         specifier: 1.0.0-beta.1
         version: 1.0.0-beta.1
-      '@vectorize-io/hindsight-client':
-        specifier: 0.8.5
-        version: 0.8.5
       grammy:
         specifier: 1.45.1
         version: 1.45.1
@@ -1093,9 +1090,6 @@ packages:
     resolution: {integrity: sha512-3qkmU6KXWh8GIThEAW3kuRHPQBMjWkKy+Ppz3WkUucx53DTpOa6siMn4xDGSOhlVyMrDaJTCTMLYPZVAIk1P0A==}
     peerDependencies:
       valibot: ^1.4.0
-
-  '@vectorize-io/hindsight-client@0.8.5':
-    resolution: {integrity: sha512-XQdSuLGHiGSWEefsdIIURAFBZS9ULAX2JCbAhX4QkZ0bnqR2+OrxmuvXKt015TPvdrLpdeQB4Jg4oaJ7dC20aA==}
 
   '@vercel/detect-agent@1.2.3':
     resolution: {integrity: sha512-VYNCgUc0nOmC4WJmWw9GkrKdfr8Zl4/rxhC5SvgacBgxiW9W/9NRttUoHHXV8xdII3MaRgkZZVX8Ikzc/Jmjag==}
@@ -3275,8 +3269,6 @@ snapshots:
   '@valibot/to-json-schema@1.7.1(valibot@1.1.0(typescript@6.0.3))':
     dependencies:
       valibot: 1.1.0(typescript@6.0.3)
-
-  '@vectorize-io/hindsight-client@0.8.5': {}
 
   '@vercel/detect-agent@1.2.3': {}
 

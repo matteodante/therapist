@@ -4,8 +4,8 @@ Copyright 2026 Therapist contributors
 Therapist is an independent open-source project.
 
 It uses or integrates with third-party open-source projects including Flue,
-Hindsight, Ollama-compatible model servers, grammY, Speaches, Hono, Valibot,
-and just-bash. Their names and trademarks belong to their respective owners.
+Ollama-compatible model servers, grammY, Speaches, Hono, Valibot, and just-bash.
+Their names and trademarks belong to their respective owners.
 
 Clinical and psychological source materials referenced by this repository
 retain their original licenses. No source document is relicensed under the

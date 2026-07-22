@@ -1,4 +1,3 @@
-import { hindsightHealth } from './hindsight.ts';
 import { optionalEnv } from '../shared/env.ts';
 
 async function fetchStatus(url: string, timeout = 5000): Promise<Record<string, unknown>> {
@@ -14,9 +13,8 @@ export async function dependencyHealth(): Promise<Record<string, unknown>> {
   const ollamaRoot = ollamaBase.replace(/\/v1\/?$/, '').replace(/\/+$/, '');
   const sttBase = optionalEnv('STT_BASE_URL', 'http://localhost:8000').replace(/\/+$/, '');
 
-  const [ollama, hindsight, stt] = await Promise.allSettled([
+  const [ollama, stt] = await Promise.allSettled([
     fetchStatus(`${ollamaRoot}/api/tags`),
-    hindsightHealth(),
     fetchStatus(`${sttBase}/health`),
   ]);
 
@@ -28,7 +26,6 @@ export async function dependencyHealth(): Promise<Record<string, unknown>> {
   return {
     app: { ok: true },
     ollama: summarize(ollama),
-    hindsight: summarize(hindsight),
     stt: summarize(stt),
   };
 }

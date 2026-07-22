@@ -21,7 +21,7 @@
 - temporal updates;
 - corrections;
 - cross-language recall;
-- structured/semantic separation;
+- user-stated/process-note separation;
 - authoritative correction precedence.
 
 ### 3. Conversational competence

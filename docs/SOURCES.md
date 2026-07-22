@@ -21,18 +21,14 @@ Pinned starter versions:
 
 Flue is Apache-2.0. It is beta software and requires upgrade testing.
 
-### Hindsight
+### Markdown memory
 
-- Repository: https://github.com/vectorize-io/hindsight
-- TypeScript client: https://github.com/vectorize-io/hindsight/tree/main/hindsight-clients/typescript
-- Local Ollama guide:
-  https://hindsight.vectorize.io/blog/2026/03/10/run-hindsight-with-ollama
+- Node.js filesystem API: https://nodejs.org/api/fs.html
+- Obsidian URI and vault note operations:
+  https://help.obsidian.md/Extending%2BObsidian/Obsidian%2BURI
 
-Pinned client:
-
-- `@vectorize-io/hindsight-client` `0.8.5`
-
-Hindsight and its TypeScript client are MIT.
+The memory vault uses plain Markdown and Node.js standard-library filesystem
+operations. Obsidian is an optional editor, not a runtime dependency.
 
 ### Ollama and Gemma
 

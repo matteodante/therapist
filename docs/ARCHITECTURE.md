@@ -16,15 +16,12 @@ Flue persistent agent instance
          or OpenAI Platform API
 
 Canonical transcript → Flue SQLite
-Confirmed memory     → application SQLite
-Semantic recall      → Hindsight
+Curated memory       → Markdown vault
 Voice transcription → Speaches
 ```
 
-Flue orchestrates the agent and invokes Hindsight through application tools.
-Hindsight remains a separate service and directly uses its own LLM provider for
-extraction and retrieval; the local profile uses Ollama. Flue is not a required
-gateway for internal calls made by external services.
+Flue orchestrates the agent and exposes bounded application tools for the
+Markdown vault. The model has no generic filesystem access.
 
 ## Why Flue
 
@@ -56,13 +53,12 @@ Trusted code binds:
 
 - Telegram destination;
 - authorized user;
-- application memory scope and Hindsight bank IDs;
+- memory vault path and filenames;
 - tokens and endpoints.
 
 The model controls only:
 
-- memory query text;
-- structured memory records;
+- curated memory content;
 - final reply text.
 
 A custom Flue sandbox replaces default bash, read, write, edit, grep, and glob
@@ -81,17 +77,17 @@ Canonical conversation and tool history. It answers: **what happened?**
 
 ### Application SQLite
 
-User-confirmed goals, preferences, outcomes, repairs, tentative hypotheses, and
-corrections with their supporting evidence. It answers: **what has been
-explicitly recorded and confirmed?**
+Telegram update IDs only. It prevents webhook retries from creating duplicate
+turns.
 
-### Hindsight personal index
+### Markdown vault
 
-Only user-originated messages and corrections. It answers: **what did the user
-state or experience?**
+`SELF.md` contains user-stated context. `JOURNEY.md` contains separate
+assistant-authored therapy-process notes with supporting evidence. It answers:
+**what concise context should affect future conversations?**
 
-Assistant replies remain only in Flue's canonical conversation stream. This
-prevents the model's own output from becoming self-confirming semantic memory.
+Assistant replies and full session history remain only in Flue's canonical
+conversation stream.
 
 ## Telegram idempotency
 
@@ -101,7 +97,7 @@ prevents webhook retries from creating duplicate turns.
 ## Local dependencies
 
 - Ollama runs natively for hardware acceleration.
-- Hindsight and Speaches can run through Docker Compose.
+- Speaches can run through Docker Compose.
 - The application can run on the host or under the optional Compose `app`
   profile.
 
@@ -111,10 +107,10 @@ For SaaS:
 
 - Flue SQLite becomes Postgres;
 - one routed owner handles each agent instance;
-- Hindsight banks are tenant-isolated;
+- memory vaults are tenant-isolated;
 - Telegram or first-party clients authenticate at the application edge;
 - secrets, encryption, retention, audit, and deletion become managed services.
 
 The hosted edition must preserve portable exports of the canonical transcript,
-structured memory, protocol versions, and derived-index source identifiers so a
-user can move between hosted and self-hosted deployments without data lock-in.
+Markdown memory, and protocol versions so a user can move between hosted and
+self-hosted deployments without data lock-in.
