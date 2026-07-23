@@ -52,8 +52,6 @@ DEFAULT_EMBEDDING_REVISION = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
 DEFAULT_EMBEDDING_MODEL = (
     f"sentence-transformers:{DEFAULT_EMBEDDING_REPO}@{DEFAULT_EMBEDDING_REVISION}"
 )
-CUSTOM_MODEL = "__custom__"
-LOCAL_OLLAMA = "__local_ollama__"
 PROVIDER_SECRETS = {
     "openai:": ("openai_api_key", "OPENAI_API_KEY", "OpenAI API key"),
     "anthropic:": ("anthropic_api_key", "ANTHROPIC_API_KEY", "Anthropic API key"),
@@ -371,7 +369,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
     state = store.load_app_state()
     install_background = False
     try:
-        model = _select_model(state.default_model)
+        model = _select_model()
         provider_secret = _prompt_provider_secret(store, model)
         if provider_secret is False:
             return 2
@@ -510,45 +508,17 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
     return 0
 
 
-def _select_model(current: str | None) -> str:
+def _select_model() -> str:
     choices = [
         questionary.Choice("ChatGPT Plus/Pro — GPT-5.6 Sol", value=DEFAULT_CODEX_MODEL),
-        questionary.Choice("OpenAI API", value="openai:gpt-5.6-sol"),
-        questionary.Choice("Anthropic API", value="anthropic:claude-sonnet-4-6"),
-        questionary.Choice("Google Gemini API", value="google:gemini-3.1-pro-preview"),
-        questionary.Choice("OpenRouter API", value="openrouter:anthropic/claude-sonnet-4.6"),
-        questionary.Choice("Ollama on this computer", value=LOCAL_OLLAMA),
-        questionary.Choice("Other PydanticAI model", value=CUSTOM_MODEL),
     ]
-    if current:
-        choices.insert(0, questionary.Choice(f"Keep current ({current})", value=current))
-
-    while True:
-        selected = _ask(
-            questionary.select(
-                "Model provider",
-                choices=choices,
-                default=current or DEFAULT_CODEX_MODEL,
-            )
+    return _ask(
+        questionary.select(
+            "Model provider",
+            choices=choices,
+            default=DEFAULT_CODEX_MODEL,
         )
-        if selected == LOCAL_OLLAMA:
-            models = _ollama_models()
-            if not models:
-                print(
-                    "No installed Ollama models found. Start Ollama and run `ollama pull <model>`."
-                )
-                continue
-            name = _ask(questionary.select("Ollama model", choices=models))
-            return f"ollama:{name}"
-        if selected == CUSTOM_MODEL:
-            return _ask(
-                questionary.text(
-                    "PydanticAI model ID",
-                    instruction="For example: openai:gpt-5.6-sol",
-                    validate=lambda value: bool(value.strip() and ":" in value),
-                )
-            ).strip()
-        return selected
+    )
 
 
 def _prompt_provider_secret(
@@ -598,19 +568,6 @@ def _conversation_model(store: MemoryStore, model: str) -> str | Model:
             settings=OpenAIResponsesModelSettings(openai_store=False),
         )
     return model
-
-
-def _ollama_models() -> list[str]:
-    try:
-        with urlopen("http://localhost:11434/api/tags", timeout=1) as response:
-            payload = json.load(response)
-    except (OSError, ValueError, TypeError):
-        return []
-    return sorted(
-        model["name"]
-        for model in payload.get("models", [])
-        if isinstance(model, dict) and isinstance(model.get("name"), str)
-    )
 
 
 def _model_context_window(model: str) -> int:

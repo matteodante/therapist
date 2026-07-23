@@ -20,6 +20,10 @@ alleviation of any disease, disorder, injury, or disability.
 The long-term product may support both self-hosted and SaaS distribution. The current milestone is
 deliberately smaller: make the single-user conversation and long-term memory work well through the
 local CLI and one private Telegram transport before building broader infrastructure.
+The first public alpha support claim is limited to the CLI and private Telegram transport using a
+personal ChatGPT Plus/Pro account through the experimental `codex:` OAuth provider. Other local and
+PydanticAI conversation providers remain technical escape hatches, not configurations advertised or
+release-cleared for the first alpha.
 
 Original code and project content are open source under `AGPL-3.0-or-later`. Linked or referenced
 third-party materials remain under their owners' terms and are not relicensed by this repository.
@@ -49,6 +53,7 @@ Included in this milestone:
 
 - interactive terminal chat;
 - private text-only Telegram chat using long polling and the standard Bot API;
+- personal ChatGPT Plus/Pro conversation inference through the experimental `codex:` OAuth provider;
 - native per-user Telegram background installation for macOS launchd, Linux systemd, and Windows
   Task Scheduler;
 - one PydanticAI conversational agent and one end-of-session consolidation pass;
@@ -321,20 +326,19 @@ after confirmation. Removing the derived model files does not delete encrypted c
 structured memory.
 
 Setup stores a conservative context-window limit for the selected conversation model. Known remote
-presets use their documented limit subject to the application-wide 128,000-token cap. Ollama models
+models use their documented limit subject to the application-wide 128,000-token cap. Ollama models
 are inspected through `/api/show`; an unknown or custom model defaults to that cap and can be
 overridden downward per process with `--context-window-tokens`. An override can never exceed the
 detected model limit. During setup, a validated text prompt displays the current saved value and the
 available range and lets the user replace it. Models below the 16,000-token supported minimum are
 rejected.
 
-`thera setup` is the normal first-run path. Questionary arrow-key menus select a supported provider,
-current documented model preset, locale, Telegram, and confirmation choices. ChatGPT uses device-code
-OAuth; supported remote-provider API keys and the Telegram bot token use no-echo prompts and are
-stored in the encrypted local store. Ollama models are discovered from its local `/api/tags`
-endpoint and the standard local base URL is applied automatically. A custom PydanticAI model ID
-remains available as an escape hatch. Secrets are never placed in process arguments, exports, or
-plaintext configuration files. Explicit `chat` and `telegram` options remain temporary overrides.
+`thera setup` is the normal first-run path. Questionary arrow-key menus configure the first-alpha
+ChatGPT provider, locale, Telegram, and confirmation choices. ChatGPT uses device-code OAuth; the
+Telegram bot token uses a no-echo prompt and is stored in the encrypted local store. Other
+PydanticAI model IDs remain available only as explicit temporary `chat` and `telegram` overrides;
+their provider credentials must come from the provider's standard environment configuration.
+Secrets are never placed in process arguments, exports, or plaintext configuration files.
 
 Before asking for provider details, setup downloads and executes both document and query embeddings
 with the required local multilingual model. Failure stops setup before creating the data store.
@@ -352,9 +356,11 @@ store and are never included in exports.
 
 The `codex:` provider mirrors the device-code flow and Codex Responses backend used by pi and the
 open-source Codex client. It is experimental, self-hosted/personal only, and not part of the public
-OpenAI API contract. OpenAI documents third-party coding harnesses, but does not document non-coding
-subscription use; do not enable this provider in a SaaS or make compatibility/availability claims
-without explicit terms and product review. API-key and local-model providers remain supported.
+OpenAI API contract. OpenAI documents ChatGPT authentication for official Codex clients, the Codex
+SDK, and broader Codex use cases, but not this independent third-party use of the direct Codex
+backend as a conversation provider. Do not enable this provider in a SaaS or make
+compatibility/availability claims without explicit terms and product review. API-key and local-model
+providers remain supported as technical escape hatches.
 Ordinary OpenAI Responses requests explicitly set `store=false`; provider abuse-monitoring retention
 can still apply. Ollama conversation models are forced to the loopback base URL.
 

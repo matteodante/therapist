@@ -31,6 +31,8 @@ deleted by the user.
 
 ## What the alpha does
 
+- Supported first-alpha configuration: terminal or private Telegram conversation using a personal
+  ChatGPT Plus/Pro account through experimental Codex OAuth.
 - Natural, varied conversation guided by an internal protocol rather than a visible script, without
   mandatory questions, goals, or forms.
 - Contextual agent handling of possible danger without keyword routing, diagnosis, or risk scores.
@@ -38,7 +40,8 @@ deleted by the user.
 - Encrypted SQLite archive, structured memory, and local semantic retrieval across months or years.
 - Visible, correctable facts, hypotheses, case formulation, sessions, and interventions.
 - Complete active-session history with warning and automatic rollover at the model context limit.
-- PydanticAI providers, local models, and experimental personal ChatGPT Codex OAuth.
+- Other PydanticAI providers and local conversation models remain technical escape hatches, not
+  configurations advertised or release-cleared for the first alpha.
 - Git-versioned experimental conversation skills and evidence references.
 - Deterministic tests plus longitudinal and multilingual Pydantic Evals datasets.
 - Single-user CLI and allowlisted private Telegram transport with transparent memory views.
@@ -74,12 +77,12 @@ Restart the shell if `thera` is not immediately available, then start:
 thera chat
 ```
 
-Setup uses arrow-key menus, stores credentials encrypted outside the repository, and configures a
-model and locale. It displays the current conversation context limit in an editable field together
-with the allowed range. For Telegram, create a bot with `@BotFather`; setup configures it and asks
+Setup uses arrow-key menus, stores credentials encrypted outside the repository, and configures
+ChatGPT, locale, and Telegram. It displays the current conversation context limit in an editable
+field together with the allowed range. Create a bot with `@BotFather`; setup configures it and asks
 whether to install and start its native background service. Set the bot's privacy-policy URL in
-BotFather to `https://github.com/matteodante/therapist/blob/main/PRIVACY.md`. You can instead keep
-the listener in the foreground:
+BotFather to `https://github.com/matteodante/therapist/blob/main/PRIVACY.md`. You can instead keep the
+listener in the foreground:
 
 ```bash
 thera telegram
@@ -177,7 +180,7 @@ Use `thera export` to inspect your data and `thera delete-data` to remove it.
 Technical compatibility with a provider is not an endorsement or a conclusion that its terms,
 privacy controls, or intended-use rules permit this project. The current
 [provider matrix](protocols/research/provider-data-and-policy-matrix-2026-07-23.md) keeps remote API
-presets and experimental personal Codex OAuth behind unresolved release gates; self-hosters must
+overrides and experimental personal Codex OAuth behind unresolved release gates; self-hosters must
 review the provider and model they enable.
 
 ## Development

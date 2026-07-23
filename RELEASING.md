@@ -7,6 +7,9 @@ software is safe or effective for mental-health treatment.
 The first release is a controlled public alpha for technical contributors and informed adult
 self-hosters. Do not promote it broadly, publish it to PyPI, offer hosted operation, or describe it
 as therapy or treatment.
+Its supported configuration is the local CLI and one private Telegram bot using a personal ChatGPT
+Plus/Pro account through the experimental `codex:` OAuth provider. Other conversation providers are
+not part of the first release support claim.
 
 ## Release authority
 

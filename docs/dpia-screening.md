@@ -15,10 +15,10 @@ applicable roles, law, and required assessment.
   for diagnosis, treatment, monitoring, or emergency use.
 - The maintainer provides source and installers but does not host inference, operate user instances,
   receive telemetry, or receive application data during normal use.
-- A user may run a local Ollama model or separately choose OpenAI, Anthropic, Google, OpenRouter, a
-  custom PydanticAI provider, or experimental personal ChatGPT Codex OAuth.
-- Telegram is optional. Local content is retained until the user corrects, forgets, exports, or
-  deletes it.
+- The first alpha support claim uses experimental personal ChatGPT Codex OAuth. Other local and
+  PydanticAI conversation providers remain technical escape hatches and are not release-cleared.
+- The supported transports are the local CLI and one allowlisted private Telegram bot. Local
+  content is retained until the user corrects, forgets, exports, or deletes it.
 - Minors, organizational deployment, patients, employees, students, paid operation, donations,
   sponsorship, and SaaS are outside this alpha.
 
@@ -84,8 +84,8 @@ provider deletion.
    actual actor and flow.
 3. If the maintainer is a controller, record Article 6 and Article 9 conditions, notices, data
    subject handling, retention, processor contracts, transfers, subprocessors, and breach duties.
-4. Obtain and review provider DPAs, regions, transfer mechanisms, retention, training, safety
-   monitoring, and deletion behavior for every configuration claimed as supported.
+4. Obtain and review the applicable ChatGPT terms, regions, transfer mechanisms, retention,
+   training, safety monitoring, and deletion behavior for the selected personal Codex OAuth path.
 5. Decide whether a full DPIA is required and, if so, complete it before processing begins; consult
    the supervisory authority if high residual risk remains.
 6. Re-screen before SaaS, telemetry, accounts, organizational use, minors, clinical claims, paid

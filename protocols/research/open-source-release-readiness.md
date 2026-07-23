@@ -562,7 +562,8 @@ Resolve these before implementation work is considered release-complete:
 3. Will there be donations, sponsorship, paid support, a hosted service, an app store, or any
    maintainer-controlled inference?
 4. Which model providers, products, regions, retention modes, and contractual terms are supported?
-5. Is personal Codex OAuth acceptable for this non-coding use under current OpenAI terms and policy?
+5. May an independent third-party client use personal Codex OAuth and the direct backend as this
+   conversation provider under current OpenAI terms and policy?
 6. Will any maintainer ever receive conversations, exports, logs, crash reports, or evaluation data?
 7. Are interventions intended only as general reflection prompts, or to alleviate named symptoms or
    conditions?

@@ -37,11 +37,11 @@ AI Act or medical-device obligations; that conclusion is part of the requested r
 - The user can inspect, confirm, correct, forget, export, and delete local state.
 - It gives contextual possible-danger language and resource guidance but does not perform a clinical
   risk assessment, diagnosis, score, alert, human escalation, or emergency monitoring.
-- The selected conversation model can be local Ollama or a separately selected remote provider.
-  Supported setup choices currently include OpenAI, Anthropic, Google, OpenRouter, experimental
-  personal ChatGPT Codex OAuth, and arbitrary PydanticAI model IDs.
-- Telegram is optional and transports message content. The maintainer receives no normal application
-  data.
+- The first alpha support claim uses a personal ChatGPT Plus/Pro account through experimental
+  ChatGPT Codex OAuth. Other local and PydanticAI conversation providers remain technical escape
+  hatches and are not advertised or release-cleared.
+- The supported transports are the local CLI and one allowlisted private Telegram bot. Telegram
+  transports message content; the maintainer receives no normal application data.
 
 The canonical product and architecture facts are in [AGENTS.md](../AGENTS.md), the claim boundary in
 [claims-and-intended-purpose.md](claims-and-intended-purpose.md), and the flow in
@@ -85,12 +85,11 @@ The canonical product and architecture facts are in [AGENTS.md](../AGENTS.md), t
 
 ### Provider and distribution terms
 
-1. Confirm whether each advertised provider permits this mental-wellbeing-adjacent self-hosted use.
-2. Determine whether personal ChatGPT Codex OAuth may lawfully be used by this non-coding agent and
-   which compatibility claim, if any, may be published.
-3. Identify notices, attribution, acceptable-use, age, geographic, or data-processing terms that
+1. Determine whether personal ChatGPT Codex OAuth may be used by this independent third-party client
+   as a conversation provider and which compatibility claim, if any, may be published.
+2. Identify notices, attribution, acceptable-use, age, geographic, or data-processing terms that
    must appear in setup or documentation.
-4. Confirm whether GitHub source archives and copy-paste installers create additional publisher or
+3. Confirm whether GitHub source archives and copy-paste installers create additional publisher or
    product obligations.
 
 ## Requested deliverables
@@ -100,7 +99,7 @@ The canonical product and architecture facts are in [AGENTS.md](../AGENTS.md), t
 - a dated AI Act actor/classification and Article 50 decision, including any implementation
   requirement and transition date;
 - a GDPR role, legal-basis, Article 9, transfer, provider-contract, and DPIA decision;
-- a provider-terms opinion covering all configurations advertised in the release;
+- a provider-terms opinion covering the selected personal ChatGPT Codex OAuth configuration;
 - a short residual-risk and mandatory-change list suitable for the release record.
 
 Every conclusion should identify assumptions, jurisdiction, source, effective date, reviewer, and

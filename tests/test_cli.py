@@ -10,6 +10,7 @@ from pydantic_ai.models.openai import OpenAIResponsesModel
 
 from therapist.chat import TurnStreamEvent, TurnStreamKind
 from therapist.cli import (
+    DEFAULT_CODEX_MODEL,
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_REPO,
     DEFAULT_EMBEDDING_REVISION,
@@ -18,10 +19,30 @@ from therapist.cli import (
     _conversation_model,
     _ensure_chat_consent,
     _model_context_window,
+    _select_model,
     build_parser,
     main,
 )
 from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
+
+
+def test_guided_setup_advertises_only_the_supported_chatgpt_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def select(*_: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(ask=lambda: DEFAULT_CODEX_MODEL)
+
+    monkeypatch.setattr("therapist.cli.questionary.select", select)
+
+    assert _select_model() == DEFAULT_CODEX_MODEL
+    choices = captured["choices"]
+    assert isinstance(choices, list)
+    assert [(choice.title, choice.value) for choice in choices] == [
+        ("ChatGPT Plus/Pro — GPT-5.6 Sol", DEFAULT_CODEX_MODEL)
+    ]
 
 
 def test_chat_consent_discloses_scope_fallibility_and_data_flow(

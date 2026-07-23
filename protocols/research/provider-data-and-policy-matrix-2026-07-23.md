@@ -53,10 +53,10 @@ provider receives, its retention, its legal role, or its terms.
 | Anthropic API | **Disable for alpha** | Therapy and mental health are a high-risk use case requiring qualified professional review; standard DPA lists no special-category data |
 | Google Gemini Developer API | **Disable for alpha pending review** | EEA API clients require Paid Services; terms are for professional/business use and prohibit clinical/medical-advice/device uses |
 | Ollama local | **Allow conditionally** | Loopback is enforced; identify local models and review each model's license and safety behavior |
-| Personal ChatGPT Codex OAuth | **Disable for initial public release** | Consumer product, non-coding use through the direct Codex backend is not documented; API retention and DPA claims do not apply |
+| Personal ChatGPT Codex OAuth | **Block pending written product and terms review** | Selected for the first alpha, but independent third-party use of the direct Codex backend as a conversation provider is not documented; API retention and DPA claims do not apply |
 | Telegram Bot API | **Allow after remaining P0 privacy work** | Cloud and deletion disclosures plus a stable policy URL exist; a non-personal private privacy contact and per-bot BotFather policy configuration remain |
 | Hugging Face Hub model download | **Allow** | Download is pinned and verified; telemetry and implicit credentials are disabled and runtime loads are local-only |
-| OpenRouter preset currently in setup | **Disable for alpha** | Aggregator plus variable downstream provider; the public DPA does not cover this individual non-commercial use and does not intend sensitive-data processing |
+| OpenRouter technical override | **Unsupported for alpha** | Aggregator plus variable downstream provider; the public DPA does not cover this individual non-commercial use and does not intend sensitive-data processing |
 | Arbitrary custom PydanticAI model | **Unsupported escape hatch** | No privacy, residency, retention, training, DPA, or policy claim can be made |
 
 “Allow” means compatible with these release assumptions after the listed controls. It does not mean
@@ -218,8 +218,8 @@ Source: [Anthropic Usage Policy](https://www.anthropic.com/legal/aup).
 
 Therapist has no qualified professional reviewing every reply. Its current name, case formulation,
 personalized intervention, and “therapeutic” behavior make it unsafe to assume that every output is
-mere wellness advice. Disable the Anthropic preset for the adult-only public alpha unless Anthropic
-or qualified counsel confirms that the implemented scope is outside the high-risk category and the
+mere wellness advice. Keep Anthropic out of the guided setup and support claim unless Anthropic or
+qualified counsel confirms that the implemented scope is outside the high-risk category and the
 health-data contract issue is resolved.
 
 The project may accurately describe Anthropic's default no-training and 30-day deletion rules, with
@@ -301,7 +301,7 @@ Sources:
 
 ### Release decision and claims
 
-Disable the Gemini preset for the initial release until all of the following are documented:
+Keep Gemini out of the guided setup and support claim until all of the following are documented:
 
 1. a billing-enabled Paid Services project is required and verified for EEA use;
 2. the professional/business-purpose restriction is reconciled with the personal local alpha;
@@ -365,13 +365,15 @@ calls the ChatGPT-backed Codex endpoint. It is not an OpenAI API key integration
 baseline is the consumer Europe Terms of Use for an EEA user, the Service Terms for Codex, the
 Privacy Policy, Data Controls, and universal Usage Policies.
 
-OpenAI's official Codex app-server documentation supports ChatGPT-managed browser and device-code
-authentication for Codex clients. It does not establish that direct use of the Codex backend for a
-non-coding mental-wellbeing agent is supported under a personal subscription.
+OpenAI documents ChatGPT authentication for official Codex clients, programmatic control through
+the Codex SDK, and broader Codex use cases. Those materials do not establish that an independent
+third-party client may use the direct Codex backend as a conversation provider under a personal
+subscription.
 
 Sources:
 
 - [OpenAI Codex app-server authentication](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md#auth-endpoints)
+- [OpenAI: Using Codex with your ChatGPT plan](https://help.openai.com/en/articles/11369540)
 - [OpenAI Europe Terms of Use](https://openai.com/policies/terms-of-use/)
 - [OpenAI Service Terms](https://openai.com/policies/service-terms/)
 - [OpenAI Privacy Policy](https://openai.com/policies/privacy-policy/)
@@ -398,10 +400,10 @@ apply.
 
 ### Release decision and claims
 
-Do not make Codex OAuth the default or enable it in the initial public alpha. Keep the code clearly
-experimental until OpenAI's official terms or a written product review establish non-coding
-third-party harness use, and until the exact retention and training controls for this path are
-documented.
+The publisher selected Codex OAuth for the first alpha, so do not create a tag or advertise the
+configuration until OpenAI's official terms or a written product review establish this independent
+third-party backend use and the exact retention and training controls for this path are documented.
+Keep the code and public wording clearly experimental.
 
 The project may say only that it uses an experimental ChatGPT-managed Codex OAuth flow. It must not
 call this “the OpenAI API,” promise API privacy controls, claim subscription authorization for
@@ -582,9 +584,9 @@ Source: [OpenRouter Terms §16](https://openrouter.ai/terms).
 
 ### Release decision and claims
 
-Disable the preset for the initial release. Reconsider only with a fixed endpoint, an applicable
-sensitive-data agreement, enforced ZDR and no-training routing, documented region and provider
-chain, and a complete safety-policy review for that exact endpoint.
+Keep OpenRouter out of the guided setup and support claim. Reconsider only with a fixed endpoint, an
+applicable sensitive-data agreement, enforced ZDR and no-training routing, documented region and
+provider chain, and a complete safety-policy review for that exact endpoint.
 
 The project may say that OpenRouter does not retain prompts or responses at its own layer by default,
 subject to opt-ins and its categorization process. It must not claim end-to-end ZDR, no training, no

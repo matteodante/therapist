@@ -17,6 +17,10 @@ clinical validation, legal approval, or a safety certification.
 - Publisher: Matteo Dante, acting as an individual.
 - Free, non-commercial, adult-only, single-user self-hosted alpha.
 - No PyPI, SaaS, donations, sponsorship, paid support, telemetry, or maintainer-operated inference.
+- Supported release configuration: CLI and private Telegram using a personal ChatGPT Plus/Pro
+  account through the experimental `codex:` OAuth provider.
+- Other local and PydanticAI conversation providers are technical escape hatches and are not
+  advertised or release-cleared for this alpha.
 - Claim: “An open-source AI agent for reflection, not code.”
 - Mandatory boundary: experimental AI for self-reflection, not therapy, diagnosis, medical advice,
   emergency care, clinical validation, or human monitoring.
@@ -29,7 +33,7 @@ clinical validation, legal approval, or a safety certification.
 | Ruff formatting | Passed |
 | ty static type check | Passed for `src/therapist` |
 | Branch coverage | 75% minimum enforced |
-| Offline deterministic suite | 130 passed, 5 live tests deselected |
+| Offline deterministic suite | 131 passed, 5 live tests deselected |
 | Protocol validation | Passed for `therapist.transdiagnostic` |
 | Root, nested skill, and reference hash enforcement | Passed |
 | POSIX installer syntax | Passed |
@@ -88,17 +92,12 @@ These limits are public and must not be described as equivalent mature-project c
    be approved for the actual release.
 3. The publisher/provider role and machine-readable output-marking obligation under EU AI Act
    Article 50 must be decided and implemented where required.
-4. Remote provider presets are not release-cleared:
-   - Anthropic requires a high-risk mental-health review path not present in Therapist;
-   - Gemini requires further paid-service and intended-use review;
-   - OpenAI's expected special-category-data coverage is not established;
-   - OpenRouter adds an unresolved aggregator and downstream-provider chain;
-   - personal Codex OAuth has no documented non-coding subscription contract for this path;
-   - arbitrary PydanticAI providers remain unsupported.
+4. OpenAI documents ChatGPT authentication for official Codex clients and the Codex SDK, but not
+   this independent third-party use of the direct Codex backend as a conversation provider. The
+   applicable terms, special-category-data handling, retention, training, transfers, deletion,
+   compatibility wording, and availability must be reviewed for the exact release.
 5. Telegram still lacks a non-personal confidential privacy contact and requires each bot owner to
    configure the published policy in BotFather.
-6. A specific local Ollama reply model and its license and safety behavior must be selected and
-   recorded if the first tagged alpha is local-only.
 
 See [compliance-assessment-brief.md](compliance-assessment-brief.md),
 [dpia-screening.md](dpia-screening.md), [article-50-assessment.md](article-50-assessment.md), and the
