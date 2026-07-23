@@ -75,6 +75,11 @@ The alpha retains baseline safeguards already present: transparent AI identity, 
 and contextual agent instructions for possible danger and emergency resources. These are not a
 validated clinical safety system.
 
+`RELEASING.md` is the release runbook and mandatory go/no-go checklist.
+`docs/maintainer-ai-literacy.md` records the minimum AI-literacy baseline for maintainers and release
+decision-makers. Keep both synchronized with changes to release scope, providers, data flows,
+behavioral safeguards, evaluation strategy, or project roles.
+
 ## Conversation behavior
 
 The experimental behavior pack draws on transdiagnostic self-help and conversation principles

@@ -181,9 +181,12 @@ unless a case explicitly verifies localized behavior or multilingual retrieval.
 See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Report vulnerabilities privately
 according to [SECURITY.md](SECURITY.md). For installation help, project support, and rules about
 sensitive information, see [SUPPORT.md](SUPPORT.md). Project decisions and maintainer responsibilities
-are described in [GOVERNANCE.md](GOVERNANCE.md). The release assumptions and public claim boundaries
-are versioned in [docs/claims-and-intended-purpose.md](docs/claims-and-intended-purpose.md); local and
-external data flows are documented in [PRIVACY.md](PRIVACY.md).
+are described in [GOVERNANCE.md](GOVERNANCE.md). Release gates and maintainer AI-literacy
+expectations are defined in [RELEASING.md](RELEASING.md) and
+[docs/maintainer-ai-literacy.md](docs/maintainer-ai-literacy.md). The release assumptions and public
+claim boundaries are versioned in
+[docs/claims-and-intended-purpose.md](docs/claims-and-intended-purpose.md); local and external data
+flows are documented in [PRIVACY.md](PRIVACY.md).
 
 ## License
 
