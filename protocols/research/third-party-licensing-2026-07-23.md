@@ -138,9 +138,11 @@ license. The Linux lock can also select NVIDIA CUDA/cuDNN distributions subject 
 and `certifi`/`tqdm` introduce MPL-2.0-covered files. These remain separate downloads today but make
 a future self-contained or offline bundle a new, platform-specific legal review.
 
-Build and development tools (`hatchling`, `pytest`, `ruff`, and `pydantic-evals`) are MIT-licensed
-and are not present in the Therapist runtime wheel. This audit did not enumerate all 100-plus
-platform-conditional transitive entries in `uv.lock`.
+Build and development tools `hatchling`, `pytest`, `ruff`,
+[`ty`](https://github.com/astral-sh/ty/blob/0.0.63/LICENSE), and `pydantic-evals` are MIT-licensed.
+[Coverage.py](https://github.com/coveragepy/coveragepy/blob/7.15.2/LICENSE.txt) is Apache-2.0 and
+carries an upstream notice. These tools are not installed as Therapist runtime dependencies. This
+audit did not enumerate all 100-plus platform-conditional transitive entries in `uv.lock`.
 
 **Current requirement:** no dependency license text needs to be duplicated inside Therapist's
 wheel while dependencies are installed as separate upstream distributions with their own package
