@@ -53,7 +53,7 @@ provider receives, its retention, its legal role, or its terms.
 | Anthropic API | **Disable for alpha** | Therapy and mental health are a high-risk use case requiring qualified professional review; standard DPA lists no special-category data |
 | Google Gemini Developer API | **Disable for alpha pending review** | EEA API clients require Paid Services; terms are for professional/business use and prohibit clinical/medical-advice/device uses |
 | Ollama local | **Allow conditionally** | Loopback is enforced; identify local models and review each model's license and safety behavior |
-| Personal ChatGPT Codex OAuth | **Block pending written product and terms review** | Selected for the first alpha, but independent third-party use of the direct Codex backend as a conversation provider is not documented; API retention and DPA claims do not apply |
+| Personal ChatGPT Codex OAuth | **Allow experimentally by publisher decision** | Hermes Agent provides an open-source implementation precedent; independent backend use is still not an OpenAI API contract, API retention and DPA claims do not apply, and compatibility or availability is not promised |
 | Telegram Bot API | **Allow after remaining P0 privacy work** | Cloud and deletion disclosures plus a stable policy URL exist; a non-personal private privacy contact and per-bot BotFather policy configuration remain |
 | Hugging Face Hub model download | **Allow** | Download is pinned and verified; telemetry and implicit credentials are disabled and runtime loads are local-only |
 | OpenRouter technical override | **Unsupported for alpha** | Aggregator plus variable downstream provider; the public DPA does not cover this individual non-commercial use and does not intend sensitive-data processing |
@@ -374,6 +374,8 @@ Sources:
 
 - [OpenAI Codex app-server authentication](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md#auth-endpoints)
 - [OpenAI: Using Codex with your ChatGPT plan](https://help.openai.com/en/articles/11369540)
+- [Hermes Agent provider documentation](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/integrations/providers.md)
+- [Hermes Agent authentication implementation](https://github.com/NousResearch/hermes-agent/blob/main/hermes_cli/auth.py)
 - [OpenAI Europe Terms of Use](https://openai.com/policies/terms-of-use/)
 - [OpenAI Service Terms](https://openai.com/policies/service-terms/)
 - [OpenAI Privacy Policy](https://openai.com/policies/privacy-policy/)
@@ -400,10 +402,10 @@ apply.
 
 ### Release decision and claims
 
-The publisher selected Codex OAuth for the first alpha, so do not create a tag or advertise the
-configuration until OpenAI's official terms or a written product review establish this independent
-third-party backend use and the exact retention and training controls for this path are documented.
-Keep the code and public wording clearly experimental.
+The publisher selected Codex OAuth for the first alpha and accepts the compatibility and availability
+risk, following the public Hermes Agent implementation precedent. Keep the code and public wording
+clearly experimental. Reassess this decision if OpenAI changes the flow, blocks the client, publishes
+contrary terms, or before any hosted or commercial use.
 
 The project may say only that it uses an experimental ChatGPT-managed Codex OAuth flow. It must not
 call this “the OpenAI API,” promise API privacy controls, claim subscription authorization for

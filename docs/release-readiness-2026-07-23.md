@@ -80,6 +80,8 @@ provider's product terms.
 - no mandatory pull request or independent review;
 - no second administrator, recovery owner, or promised succession;
 - no confidential project-specific conduct inbox;
+- experimental personal ChatGPT Codex OAuth may change or stop working, is not the OpenAI API, and
+  carries no compatibility, availability, or endorsement claim;
 - best-effort support and security response only.
 
 These limits are public and must not be described as equivalent mature-project controls.
@@ -92,11 +94,7 @@ These limits are public and must not be described as equivalent mature-project c
    be approved for the actual release.
 3. The publisher/provider role and machine-readable output-marking obligation under EU AI Act
    Article 50 must be decided and implemented where required.
-4. OpenAI documents ChatGPT authentication for official Codex clients and the Codex SDK, but not
-   this independent third-party use of the direct Codex backend as a conversation provider. The
-   applicable terms, special-category-data handling, retention, training, transfers, deletion,
-   compatibility wording, and availability must be reviewed for the exact release.
-5. Telegram still lacks a non-personal confidential privacy contact and requires each bot owner to
+4. Telegram still lacks a non-personal confidential privacy contact and requires each bot owner to
    configure the published policy in BotFather.
 
 See [compliance-assessment-brief.md](compliance-assessment-brief.md),

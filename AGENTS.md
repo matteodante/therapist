@@ -358,8 +358,10 @@ The `codex:` provider mirrors the device-code flow and Codex Responses backend u
 open-source Codex client. It is experimental, self-hosted/personal only, and not part of the public
 OpenAI API contract. OpenAI documents ChatGPT authentication for official Codex clients, the Codex
 SDK, and broader Codex use cases, but not this independent third-party use of the direct Codex
-backend as a conversation provider. Do not enable this provider in a SaaS or make
-compatibility/availability claims without explicit terms and product review. API-key and local-model
+backend as a conversation provider. Hermes Agent publicly implements the same general ChatGPT OAuth
+and direct Codex-backend pattern. The publisher accepts the resulting personal-alpha compatibility
+and availability risk; the project must still call the path experimental, must not call it the
+OpenAI API or imply OpenAI endorsement, and must not enable it in a SaaS. API-key and local-model
 providers remain supported as technical escape hatches.
 Ordinary OpenAI Responses requests explicitly set `store=false`; provider abuse-monitoring retention
 can still apply. Ollama conversation models are forced to the loopback base URL.

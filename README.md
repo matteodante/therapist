@@ -179,9 +179,9 @@ Use `thera export` to inspect your data and `thera delete-data` to remove it.
 
 Technical compatibility with a provider is not an endorsement or a conclusion that its terms,
 privacy controls, or intended-use rules permit this project. The current
-[provider matrix](protocols/research/provider-data-and-policy-matrix-2026-07-23.md) keeps remote API
-overrides and experimental personal Codex OAuth behind unresolved release gates; self-hosters must
-review the provider and model they enable.
+[provider matrix](protocols/research/provider-data-and-policy-matrix-2026-07-23.md) documents remote
+API overrides and the accepted experimental personal Codex OAuth risk; self-hosters must review the
+provider and model they enable.
 
 ## Development
 
