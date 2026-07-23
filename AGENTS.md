@@ -255,6 +255,13 @@ Python, or Git checkout. Re-running the same installer updates the alpha without
 application state or the shared Hugging Face model cache. `uv tool uninstall therapist-cli` removes
 the application command but intentionally leaves user data in place.
 
+Both installers download uv directly from its immutable GitHub release when it is absent. They first
+require the release checksum manifest to match its repository-pinned SHA-256 digest and then require
+the selected platform archive to match the digest in that verified manifest. They install the
+verified binaries without delegating to another network bootstrap; `uv tool update-shell` handles
+the application tool path explicitly. Updating the pinned uv version requires independently
+checking the new manifest digest against the official release asset.
+
 Primary commands:
 
 ```text

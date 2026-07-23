@@ -2,6 +2,8 @@
 set -eu
 
 UV_VERSION="0.11.31"
+UV_RELEASE_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
+UV_CHECKSUMS_SHA256="cae3a06391dd65895dc22246115fd998250fa43ab3aa8ffd0d6ab71ae301b4e1"
 SOURCE_URL="https://github.com/matteodante/therapist/archive/refs/heads/main.tar.gz"
 
 case "$(uname -s)" in
@@ -24,20 +26,96 @@ for command in curl tar; do
     fi
 done
 
+TEMP_DIRECTORY="$(mktemp -d 2>/dev/null || mktemp -d -t therapist-install)"
+trap 'rm -rf "$TEMP_DIRECTORY"' EXIT HUP INT TERM
+
+sha256_file() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        SHA256_RESULT="$(sha256sum "$1")"
+    elif command -v shasum >/dev/null 2>&1; then
+        SHA256_RESULT="$(shasum -a 256 "$1")"
+    else
+        echo "Required command not found: sha256sum or shasum" >&2
+        exit 1
+    fi
+    printf '%s\n' "${SHA256_RESULT%% *}"
+}
+
 if command -v uv >/dev/null 2>&1; then
     UV="$(command -v uv)"
 else
     echo "Installing uv ${UV_VERSION}..."
-    curl -LsSf "https://astral.sh/uv/${UV_VERSION}/install.sh" | sh
+
+    UV_TARGET=""
+    case "$(uname -s):$(uname -m)" in
+        Darwin:arm64|Darwin:aarch64) UV_TARGET="aarch64-apple-darwin" ;;
+        Darwin:x86_64) UV_TARGET="x86_64-apple-darwin" ;;
+        Linux:aarch64|Linux:arm64) UV_ARCH="aarch64" ;;
+        Linux:arm|Linux:armv6l) UV_TARGET="arm-unknown-linux-musleabihf" ;;
+        Linux:armv7l|Linux:armv7) UV_ARCH="armv7" ;;
+        Linux:i386|Linux:i486|Linux:i586|Linux:i686) UV_ARCH="i686" ;;
+        Linux:ppc64le|Linux:powerpc64le) UV_TARGET="powerpc64le-unknown-linux-gnu" ;;
+        Linux:riscv64) UV_ARCH="riscv64gc" ;;
+        Linux:s390x) UV_TARGET="s390x-unknown-linux-gnu" ;;
+        Linux:x86_64|Linux:amd64) UV_ARCH="x86_64" ;;
+        *)
+            echo "uv ${UV_VERSION} has no supported artifact for $(uname -s) $(uname -m)." >&2
+            exit 1
+            ;;
+    esac
+    if [ -z "${UV_TARGET:-}" ]; then
+        case "$(ldd --version 2>&1 || true)" in
+            *musl*) UV_LIBC="musl" ;;
+            *) UV_LIBC="gnu" ;;
+        esac
+        UV_TARGET="${UV_ARCH}-unknown-linux-${UV_LIBC}"
+    fi
+
+    UV_ARCHIVE_NAME="uv-${UV_TARGET}.tar.gz"
+    UV_CHECKSUMS="$TEMP_DIRECTORY/uv-sha256.sum"
+    UV_ARCHIVE="$TEMP_DIRECTORY/$UV_ARCHIVE_NAME"
+    curl --proto '=https' --tlsv1.2 -LsSf "$UV_RELEASE_URL/sha256.sum" -o "$UV_CHECKSUMS"
+    if [ "$(sha256_file "$UV_CHECKSUMS")" != "$UV_CHECKSUMS_SHA256" ]; then
+        echo "The downloaded uv checksum manifest failed SHA-256 verification." >&2
+        exit 1
+    fi
+
+    UV_ARCHIVE_SHA256=""
+    while read -r UV_CHECKSUM UV_CHECKSUM_NAME; do
+        if [ "${UV_CHECKSUM_NAME#\*}" = "$UV_ARCHIVE_NAME" ]; then
+            UV_ARCHIVE_SHA256="$UV_CHECKSUM"
+            break
+        fi
+    done <"$UV_CHECKSUMS"
+    if [ -z "$UV_ARCHIVE_SHA256" ]; then
+        echo "The verified uv checksum manifest has no entry for $UV_ARCHIVE_NAME." >&2
+        exit 1
+    fi
+
+    curl --proto '=https' --tlsv1.2 -LsSf "$UV_RELEASE_URL/$UV_ARCHIVE_NAME" -o "$UV_ARCHIVE"
+    if [ "$(sha256_file "$UV_ARCHIVE")" != "$UV_ARCHIVE_SHA256" ]; then
+        echo "The downloaded uv archive failed SHA-256 verification." >&2
+        exit 1
+    fi
+
+    UV_EXTRACT_DIRECTORY="$TEMP_DIRECTORY/uv"
+    mkdir -p "$UV_EXTRACT_DIRECTORY" "$HOME/.local/bin"
+    tar -xzf "$UV_ARCHIVE" -C "$UV_EXTRACT_DIRECTORY" --strip-components=1
+    for UV_BINARY in uv uvx; do
+        if [ ! -f "$UV_EXTRACT_DIRECTORY/$UV_BINARY" ]; then
+            echo "The verified uv archive is incomplete." >&2
+            exit 1
+        fi
+        cp "$UV_EXTRACT_DIRECTORY/$UV_BINARY" "$HOME/.local/bin/$UV_BINARY"
+        chmod 0755 "$HOME/.local/bin/$UV_BINARY"
+    done
+
     UV="$HOME/.local/bin/uv"
     if [ ! -x "$UV" ]; then
         echo "uv was installed but could not be found at $UV." >&2
         exit 1
     fi
 fi
-
-TEMP_DIRECTORY="$(mktemp -d 2>/dev/null || mktemp -d -t therapist-install)"
-trap 'rm -rf "$TEMP_DIRECTORY"' EXIT HUP INT TERM
 
 echo "Downloading Therapist from main..."
 curl -LsSf "$SOURCE_URL" | tar -xz -C "$TEMP_DIRECTORY" --strip-components=1

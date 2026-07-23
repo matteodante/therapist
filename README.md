@@ -61,10 +61,11 @@ On Windows PowerShell:
 powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/matteodante/therapist/main/install.ps1 | iex"
 ```
 
-The installer fetches the current `main` branch, installs uv and a managed Python 3.12 when needed,
-installs `thera` in an isolated user environment, runs guided setup, and finishes with
-`thera doctor`. It does not require administrator privileges or a preinstalled Git checkout. Restart
-the shell if `thera` is not immediately available, then start:
+The installer fetches the current `main` branch and, when uv is absent, verifies both the pinned uv
+release checksum manifest and the platform archive before installing it. It then uses a managed
+Python 3.12, installs `thera` in an isolated user environment, runs guided setup, and finishes with
+`thera doctor`. It does not require administrator privileges or a preinstalled Git checkout.
+Restart the shell if `thera` is not immediately available, then start:
 
 ```bash
 thera chat

@@ -44,7 +44,8 @@ Before creating a tag, link durable evidence for every item below in the release
   consistent with [docs/claims-and-intended-purpose.md](docs/claims-and-intended-purpose.md);
 - license, protocol-source references, bundled embedding-model license, and generated artifacts have
   been reviewed;
-- the package version, tag, installer channel, supported revision, and rollback target are explicit.
+- the package version, tag, installer channel, supported revision, and rollback target are explicit;
+- the pinned uv version and checksum-manifest SHA-256 match uv's immutable official release assets.
 
 If any legal, privacy, AI Act, safety, or conduct gate is open, stop. A green CI run is not authority
 to release.
