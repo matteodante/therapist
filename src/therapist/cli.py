@@ -7,9 +7,13 @@ import secrets
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 from urllib.request import urlopen
 
 import questionary
+from huggingface_hub import HfApi, scan_cache_dir
+from huggingface_hub.errors import CacheNotFound
+from pydantic_ai import Embedder
 
 from therapist.auth import (
     AuthError,
@@ -27,6 +31,12 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic-v0.4.0"
 TELEGRAM_SECRET = "telegram_bot_token"
 DEFAULT_CODEX_MODEL = "codex:gpt-5.6-sol"
+DEFAULT_EMBEDDING_MODEL = (
+    "sentence-transformers:jinaai/jina-embeddings-v5-text-small-retrieval"
+)
+DEFAULT_EMBEDDING_REPO = DEFAULT_EMBEDDING_MODEL.removeprefix(
+    "sentence-transformers:"
+)
 CUSTOM_MODEL = "__custom__"
 LOCAL_OLLAMA = "__local_ollama__"
 PROVIDER_SECRETS = {
@@ -83,6 +93,13 @@ def build_parser() -> argparse.ArgumentParser:
     correct.add_argument("text")
     forget = memory_commands.add_parser("forget")
     forget.add_argument("id")
+    model = memory_commands.add_parser("model", help="Manage the local embedding model")
+    model_commands = model.add_subparsers(dest="model_command", required=True)
+    model_commands.add_parser("status")
+    model_commands.add_parser("verify")
+    model_commands.add_parser("install")
+    remove_model = model_commands.add_parser("remove")
+    remove_model.add_argument("--yes", action="store_true")
 
     export = commands.add_parser("export", help="Export decrypted user-owned data as JSON")
     export.add_argument("--output", type=Path)
@@ -115,6 +132,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"OK {validated.id} v{validated.version} ({validated.status})")
         return 0
 
+    if args.command == "memory" and args.memory_command == "model":
+        return _memory_model(args)
+
     database_exists = (args.data_dir / "thera.db").exists()
     if args.command == "doctor":
         store = MemoryStore(args.data_dir) if database_exists else None
@@ -124,17 +144,44 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Protocol: {pack.id} v{pack.version} ({pack.status})")
         print(f"Memory: {args.data_dir} ({memory})")
         print(f"Model: {model}")
+        semantic_configuration = (
+            "configured"
+            if state and state.embedding_model == DEFAULT_EMBEDDING_MODEL
+            else "run `thera setup`"
+        )
+        _, cached_model, cache_warnings = _embedding_cache_info()
+        semantic_model = (
+            "installed"
+            if cached_model and not cache_warnings
+            else "corrupted"
+            if cache_warnings
+            else "not installed"
+        )
+        print(f"Semantic memory: {semantic_configuration}")
+        print(f"Semantic model: {semantic_model}")
         telegram = "configured" if store and _telegram_config(store) else "not configured"
         print(f"Telegram: {telegram}")
         return 0
 
-    store = MemoryStore(args.data_dir)
+    if args.command == "setup" and not _prepare_semantic_memory():
+        return 2
+    store = MemoryStore(
+        args.data_dir,
+        embedding_model=(
+            DEFAULT_EMBEDDING_MODEL
+            if args.command in {"chat", "telegram"}
+            else None
+        ),
+    )
     if args.command == "setup":
         return _setup(store)
     if args.command == "auth":
         return _auth(args, store)
     if args.command in {"chat", "telegram"}:
         state = store.load_app_state()
+        if state.embedding_model != DEFAULT_EMBEDDING_MODEL:
+            print("Semantic memory is not configured. Run `thera setup`.")
+            return 2
         selected_model = args.model or state.default_model
         if not selected_model and load_credential(store):
             selected_model = DEFAULT_CODEX_MODEL
@@ -203,7 +250,8 @@ def _setup(store: MemoryStore) -> int:
     state = store.load_app_state()
     try:
         model = _select_model(state.default_model)
-        if not _configure_provider_secret(store, model):
+        provider_secret = _prompt_provider_secret(store, model)
+        if provider_secret is False:
             return 2
         locale = _ask(
             questionary.select(
@@ -248,12 +296,13 @@ def _setup(store: MemoryStore) -> int:
                 state.telegram_update_offset = update_offset
             else:
                 user_id = current_id
-            store.save_secret(TELEGRAM_SECRET, token_payload)
             state.telegram_allowed_user_id = user_id
+        else:
+            token_payload = None
 
         state.default_model = model
         state.default_locale = locale
-        store.save_app_state(state)
+        state.embedding_model = DEFAULT_EMBEDDING_MODEL
         if model.startswith("codex:") and not load_credential(store):
             login_now = _ask(
                 questionary.select(
@@ -271,6 +320,12 @@ def _setup(store: MemoryStore) -> int:
                 except AuthError as error:
                     print(f"Authentication error: {error}")
                     return 2
+        with store.transaction():
+            if provider_secret:
+                store.save_secret(*provider_secret)
+            if token_payload:
+                store.save_secret(TELEGRAM_SECRET, token_payload)
+            store.save_app_state(state)
     except (EOFError, KeyboardInterrupt):
         print("\nSetup cancelled.")
         return 1
@@ -327,10 +382,12 @@ def _select_model(current: str | None) -> str:
         return selected
 
 
-def _configure_provider_secret(store: MemoryStore, model: str) -> bool:
+def _prompt_provider_secret(
+    store: MemoryStore, model: str
+) -> tuple[str, bytes] | None | Literal[False]:
     config = _provider_secret_config(model)
     if config is None:
-        return True
+        return None
     secret_name, _, label = config
     current = store.load_secret(secret_name)
     value = _ask(
@@ -343,8 +400,7 @@ def _configure_provider_secret(store: MemoryStore, model: str) -> bool:
     if not payload:
         print(f"{label} is required.")
         return False
-    store.save_secret(secret_name, payload)
-    return True
+    return secret_name, payload
 
 
 def _load_provider_secret(store: MemoryStore, model: str) -> None:
@@ -458,6 +514,141 @@ def _auth(args: argparse.Namespace, store: MemoryStore) -> int:
     except AuthError as error:
         print(f"Authentication error: {error}")
         return 2
+    return 0
+
+
+def _prepare_semantic_memory() -> bool:
+    print("Preparing local semantic memory (the model downloads on first setup)...")
+    try:
+        _verify_embedding_inference(DEFAULT_EMBEDDING_MODEL)
+    except Exception as error:
+        print(f"Semantic memory setup failed: {type(error).__name__}: {error}")
+        return False
+    print("Local semantic memory is ready.")
+    return True
+
+
+def _embedding_cache_info():
+    try:
+        cache = scan_cache_dir()
+    except CacheNotFound:
+        return None, None, []
+    model = next(
+        (
+            repo
+            for repo in cache.repos
+            if repo.repo_type == "model" and repo.repo_id == DEFAULT_EMBEDDING_REPO
+        ),
+        None,
+    )
+    model_path = str(model.repo_path) if model else DEFAULT_EMBEDDING_REPO.replace("/", "--")
+    warnings = [warning for warning in cache.warnings if model_path in str(warning)]
+    return cache, model, warnings
+
+
+def _verify_embedding_inference(model: str) -> int:
+    embedder = Embedder(model)
+    document = embedder.embed_documents_sync(
+        ["Rimando spesso le telefonate difficili."]
+    ).embeddings[0]
+    query = embedder.embed_query_sync("I avoid difficult calls").embeddings[0]
+    if not document or len(document) != len(query):
+        raise RuntimeError("embedding dimensions do not match")
+    return len(document)
+
+
+def _format_size(size: int) -> str:
+    value = float(size)
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{value:.1f} {unit}"
+        value /= 1024
+    raise AssertionError("unreachable")
+
+
+def _print_embedding_model_status() -> bool:
+    _, model, warnings = _embedding_cache_info()
+    print(f"Model: {DEFAULT_EMBEDDING_MODEL}")
+    if warnings:
+        print("Status: corrupted")
+        for warning in warnings:
+            print(f"Warning: {warning}")
+        return False
+    if model is None or not model.revisions:
+        print("Status: not installed")
+        return False
+    revisions = sorted(revision.commit_hash for revision in model.revisions)
+    print("Status: installed")
+    print(f"Location: {model.repo_path}")
+    print(f"Size: {_format_size(model.size_on_disk)}")
+    print(f"Revision: {', '.join(revisions)}")
+    return True
+
+
+def _memory_model(args: argparse.Namespace) -> int:
+    if args.model_command == "status":
+        return 0 if _print_embedding_model_status() else 1
+    if args.model_command == "install":
+        if not _prepare_semantic_memory():
+            return 2
+        _print_embedding_model_status()
+        return 0
+
+    cache, model, warnings = _embedding_cache_info()
+    if warnings:
+        _print_embedding_model_status()
+        return 2
+    if cache is None or model is None or not model.revisions:
+        print("Embedding model is not installed.")
+        return 1 if args.model_command == "verify" else 0
+
+    if args.model_command == "verify":
+        try:
+            checked = 0
+            for revision in model.revisions:
+                result = HfApi().verify_repo_checksums(
+                    DEFAULT_EMBEDDING_REPO,
+                    revision=revision.commit_hash,
+                    token=False,
+                )
+                if result.mismatches:
+                    raise RuntimeError(f"{len(result.mismatches)} checksum mismatch(es)")
+                checked += result.checked_count
+            active_revision = next(
+                (
+                    revision
+                    for revision in model.revisions
+                    if "main" in revision.refs
+                ),
+                max(model.revisions, key=lambda revision: revision.last_modified),
+            )
+            dimensions = _verify_embedding_inference(
+                f"sentence-transformers:{active_revision.snapshot_path}"
+            )
+        except Exception as error:
+            print(f"Embedding model verification failed: {type(error).__name__}: {error}")
+            return 2
+        print(
+            f"Embedding model verified: {checked} files, "
+            f"{dimensions} dimensions, local inference OK."
+        )
+        return 0
+
+    strategy = cache.delete_revisions(
+        *(revision.commit_hash for revision in model.revisions)
+    )
+    confirmed = args.yes or input(
+        f"Delete only {DEFAULT_EMBEDDING_REPO} from the shared Hugging Face cache "
+        f"and free {strategy.expected_freed_size_str}? [y/N] "
+    ).strip().lower() == "y"
+    if not confirmed:
+        print("Cancelled.")
+        return 1
+    strategy.execute()
+    print(
+        f"Embedding model removed; freed {strategy.expected_freed_size_str}. "
+        "Encrypted memory data was not changed."
+    )
     return 0
 
 

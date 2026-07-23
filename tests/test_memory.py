@@ -2,12 +2,15 @@ import json
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
 from cryptography.fernet import Fernet
 
 from therapist.memory import (
     CaseFormulation,
     InterventionState,
+    MemoryError,
     MemoryKind,
     MemoryObservation,
     MemoryStatus,
@@ -58,6 +61,28 @@ def test_hypotheses_require_confirmation_and_corrections_override_derived_text(
     assert "sometimes avoids" in context
 
 
+def test_confirming_hypothesis_clears_tentative_formulation_and_pending_state(
+    tmp_path: Path,
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "I may avoid criticism", "Does that fit?", [])
+    item = store.add_observations(
+        [MemoryObservation(kind=MemoryKind.HYPOTHESIS, content="Criticism may trigger avoidance")],
+        message_id,
+    )[0]
+    store.save_formulation_links({"open_hypotheses": [item.id]})
+    app_state = store.load_app_state()
+    app_state.pending_hypothesis_id = item.id
+    store.save_app_state(app_state)
+
+    store.confirm_memory(item.id)
+
+    assert store.load_formulation().open_hypotheses == []
+    assert store.load_formulation().evidence == {}
+    assert store.load_app_state().pending_hypothesis_id is None
+
+
 def test_forgetting_suppresses_active_context_but_remains_in_export(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
@@ -99,6 +124,73 @@ def test_forgetting_invalidates_paraphrased_derived_summary(tmp_path: Path) -> N
     assert "Cedar" not in store.working_context("project Cedar").model_dump_json()
 
 
+def test_forgetting_removes_focus_and_intervention_derived_from_claim(
+    tmp_path: Path,
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(
+        session,
+        "Project Cedar makes me anxious and work is difficult.",
+        "I hear you.",
+        [],
+    )
+    cedar, work = store.add_observations(
+        [
+            MemoryObservation(kind=MemoryKind.EVENT, content="Project Cedar causes anxiety"),
+            MemoryObservation(kind=MemoryKind.EVENT, content="Work is difficult"),
+        ],
+        message_id,
+    )
+    store.save_formulation_links(
+        {"presenting_concerns": [cedar.id, work.id]},
+        current_focus="Understand Project Cedar anxiety",
+    )
+    store.create_intervention(
+        skill="build-shared-formulation",
+        description="Write about Project Cedar",
+        prediction=None,
+        state=InterventionState.AGREED,
+        linked_memory_ids=[cedar.id],
+        evidence_message_id=message_id,
+    )
+
+    store.forget_memory(cedar.id)
+
+    context = store.working_context("Cedar").model_dump_json()
+    assert "Cedar" not in context
+    assert cedar.id not in context
+    assert store.load_formulation().presenting_concerns == ["Work is difficult"]
+    retained = store.list_interventions()[0]
+    assert retained.state is InterventionState.STOPPED
+    assert retained.description == "Content removed by user request."
+    assert cedar.id not in retained.linked_memory_ids
+
+
+def test_correction_rolls_back_if_derived_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "I live in Turin", "Noted", [])
+    item = store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="The user lives in Turin")],
+        message_id,
+    )[0]
+
+    def fail_cleanup(*_: object, **__: object) -> None:
+        raise RuntimeError("simulated cleanup failure")
+
+    monkeypatch.setattr(store, "_replace_derived_text", fail_cleanup)
+
+    with pytest.raises(RuntimeError, match="simulated cleanup failure"):
+        store.correct_memory(item.id, "The user lives in Milan")
+
+    persisted = store.list_memory()[0]
+    assert persisted.content == "The user lives in Turin"
+    assert persisted.status is MemoryStatus.USER_CONFIRMED
+
+
 def test_session_gap_and_context_are_bounded(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     started = datetime(2026, 1, 1, tzinfo=UTC)
@@ -114,6 +206,163 @@ def test_session_gap_and_context_are_bounded(tmp_path: Path) -> None:
 
     assert store.session_expired(session, started + timedelta(hours=13))
     assert len(store.working_context("work pressure").relevant_excerpts) == 5
+    assert store.working_context("work pressure").relevant_excerpts == [
+        f"Archive message {index} about recurring work pressure"
+        for index in range(249, 244, -1)
+    ]
+
+
+def test_session_activity_survives_process_restart(tmp_path: Path) -> None:
+    started = datetime(2026, 1, 1, tzinfo=UTC)
+    store = MemoryStore(tmp_path)
+    session = store.start_session(started)
+    store.save_turn(
+        session,
+        "Still talking",
+        "I am here",
+        [],
+        started + timedelta(hours=7),
+    )
+
+    restarted = MemoryStore(tmp_path)
+    restored = restarted.active_session()
+
+    assert restored is not None
+    assert restored.last_activity_at == (started + timedelta(hours=7)).isoformat()
+    assert not restarted.session_expired(restored, started + timedelta(hours=14))
+
+
+class MeaningEmbedder:
+    def __init__(self) -> None:
+        self.document_calls: list[list[str]] = []
+
+    @staticmethod
+    def _vector(text: str) -> list[float]:
+        lowered = text.casefold()
+        if any(
+            term in lowered
+            for term in ("calls", "telephone", "appointments", "telefonate")
+        ):
+            return [1.0, 0.0]
+        return [0.0, 1.0]
+
+    def embed_documents_sync(self, documents: list[str]) -> SimpleNamespace:
+        self.document_calls.append(documents)
+        return SimpleNamespace(embeddings=[self._vector(text) for text in documents])
+
+    def embed_query_sync(self, query: str) -> SimpleNamespace:
+        return SimpleNamespace(embeddings=[self._vector(query)])
+
+
+def test_semantic_index_ranks_meaning_and_is_encrypted_and_rebuildable(
+    tmp_path: Path,
+) -> None:
+    embedder = MeaningEmbedder()
+    store = MemoryStore(  # type: ignore[arg-type]
+        tmp_path, embedding_model="test:meaning", embedder=embedder
+    )
+    january = datetime(2026, 1, 1, tzinfo=UTC)
+    session = store.start_session(january)
+    old_message = store.save_turn(
+        session, "Rimando le telefonate", "Dimmi di più", [], january
+    )
+    calls = store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="Le telefonate vengono rimandate")],
+        old_message,
+        january,
+    )[0]
+    new_message = store.save_turn(
+        session,
+        "I enjoy my garden",
+        "What do you enjoy?",
+        [],
+        january + timedelta(days=120),
+    )
+    store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="The garden feels restorative")],
+        new_message,
+        january + timedelta(days=120),
+    )
+
+    context = store.working_context("telephone appointments")
+
+    assert context.confirmed_memory[0].id == calls.id
+    assert len(embedder.document_calls) == 1
+    database_bytes = store.database_path.read_bytes()
+    assert b"Le telefonate" not in database_bytes
+    assert b"[1.0,0.0]" not in database_bytes
+
+    restarted = MemoryStore(  # type: ignore[arg-type]
+        tmp_path, embedding_model="test:meaning", embedder=embedder
+    )
+    assert restarted.working_context("telephone appointments").confirmed_memory[0].id == calls.id
+    assert len(embedder.document_calls) == 1
+
+    restarted.correct_memory(calls.id, "Telephone appointments are now manageable")
+    restarted.working_context("appointments")
+    assert len(embedder.document_calls) == 2
+
+    restarted.forget_memory(calls.id)
+    with sqlite3.connect(restarted.database_path) as database:
+        remaining = database.execute(
+            "SELECT COUNT(*) FROM semantic_index WHERE memory_id = ?", (calls.id,)
+        ).fetchone()[0]
+    assert remaining == 0
+
+
+def test_semantic_failure_fails_closed_instead_of_silently_using_lexical(
+    tmp_path: Path,
+) -> None:
+    class FailingEmbedder:
+        def embed_documents_sync(self, documents: list[str]) -> SimpleNamespace:
+            raise RuntimeError("local model unavailable")
+
+        def embed_query_sync(self, query: str) -> SimpleNamespace:
+            raise RuntimeError("local model unavailable")
+
+    store = MemoryStore(  # type: ignore[arg-type]
+        tmp_path, embedding_model="test:failing", embedder=FailingEmbedder()
+    )
+    session = store.start_session()
+    message_id = store.save_turn(session, "Calls cause pressure", "I hear you", [])
+    store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="Calls cause pressure")],
+        message_id,
+    )
+    store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="Gardening feels restful")],
+        message_id + 1,
+    )
+
+    with pytest.raises(MemoryError, match="Run `thera setup`"):
+        store.working_context("calls pressure")
+
+
+def test_explicit_merge_target_wins_over_earlier_near_duplicate(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "Calls are hard", "I hear you", [])
+    first, target = store.add_observations(
+        [
+            MemoryObservation(kind=MemoryKind.FACT, content="Calls are very difficult"),
+            MemoryObservation(kind=MemoryKind.FACT, content="Calls feel difficult"),
+        ],
+        message_id,
+    )
+
+    updated = store.add_observations(
+        [
+            MemoryObservation(
+                kind=MemoryKind.FACT,
+                content="Calls are very difficult",
+                merge_into_id=target.id,
+            )
+        ],
+        message_id + 1,
+    )[0]
+
+    assert updated.id == target.id
+    assert updated.id != first.id
 
 
 def test_observation_uses_the_session_timestamp(tmp_path: Path) -> None:
@@ -237,7 +486,17 @@ def test_formulation_is_derived_from_active_claims_and_tracks_corrections(
         message_id,
     )[0]
 
-    store.save_formulation_links({"maintaining_factors": [claim.id, "invented-id"]})
+    store.save_formulation_links(
+        {
+            "maintaining_factors": [claim.id, "invented-id"],
+            "open_hypotheses": [claim.id],
+        }
+    )
+    assert store.load_formulation().maintaining_factors == []
+    assert store.load_formulation().open_hypotheses == [claim.content]
+
+    store.confirm_memory(claim.id)
+    store.save_formulation_links({"maintaining_factors": [claim.id]})
     assert store.load_formulation().maintaining_factors == [claim.content]
     assert store.load_formulation().evidence == {"maintaining_factors": [claim.id]}
 
@@ -249,6 +508,37 @@ def test_formulation_is_derived_from_active_claims_and_tracks_corrections(
     store.forget_memory(claim.id)
     assert store.load_formulation().maintaining_factors == []
     assert store.load_formulation().evidence == {}
+
+
+def test_formulation_merge_preserves_omissions_and_supports_explicit_unlink(
+    tmp_path: Path,
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "Work is hard", "Tell me more", [])
+    old, new = store.add_observations(
+        [
+            MemoryObservation(kind=MemoryKind.PREFERENCE, content="Listening is preferred"),
+            MemoryObservation(kind=MemoryKind.EVENT, content="Work is hard"),
+        ],
+        message_id,
+    )
+    store.save_formulation_links({"preferred_help": [old.id]})
+
+    preserved = store.save_formulation_links(
+        {"presenting_concerns": [new.id]}, merge_existing=True
+    )
+    revised = store.save_formulation_links(
+        {},
+        merge_existing=True,
+        remove_links={"preferred_help": [old.id]},
+    )
+
+    assert preserved.evidence == {
+        "presenting_concerns": [new.id],
+        "preferred_help": [old.id],
+    }
+    assert revised.evidence == {"presenting_concerns": [new.id]}
 
 
 def test_intervention_and_alias_retrieval_survive_restart_encrypted(tmp_path: Path) -> None:
@@ -281,3 +571,74 @@ def test_intervention_and_alias_retrieval_survive_restart_encrypted(tmp_path: Pa
     assert context.active_interventions[0].id == intervention.id
     database = store.database_path.read_bytes()
     assert b"Prepare one sentence" not in database
+
+
+def test_intervention_can_be_reviewed_and_retried_without_creating_a_copy(
+    tmp_path: Path,
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    evidence_id = store.save_turn(session, "I will try a short call", "Agreed", [])
+    intervention = store.create_intervention(
+        skill="change-avoidance-behavior",
+        description="Make a short call",
+        prediction="Anxiety may rise",
+        state=InterventionState.AGREED,
+        linked_memory_ids=[],
+        evidence_message_id=evidence_id,
+    )
+
+    store.update_intervention(
+        intervention.id,
+        state=InterventionState.TRIED,
+        evidence_message_id=evidence_id,
+        outcome="The call was completed",
+    )
+    reviewed = store.update_intervention(
+        intervention.id,
+        state=InterventionState.TRIED,
+        evidence_message_id=evidence_id,
+        user_appraisal="Useful despite anxiety",
+    )
+    retried = store.update_intervention(
+        intervention.id,
+        state=InterventionState.AGREED,
+        evidence_message_id=evidence_id,
+        description="Make another short call",
+    )
+
+    assert reviewed.user_appraisal == "Useful despite anxiety"
+    assert retried.description == "Make another short call"
+    assert retried.state is InterventionState.AGREED
+    assert len(store.list_interventions()) == 1
+
+
+def test_pending_intervention_is_pinned_inside_bounded_context(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    evidence_id = store.save_turn(session, "Try something small", "Agreed", [])
+    pending = store.create_intervention(
+        skill="change-avoidance-behavior",
+        description="Make one short call",
+        prediction=None,
+        state=InterventionState.OFFERED,
+        linked_memory_ids=[],
+        evidence_message_id=evidence_id,
+    )
+    for index in range(6):
+        store.create_intervention(
+            skill="change-avoidance-behavior",
+            description=f"Garden experiment {index}",
+            prediction=None,
+            state=InterventionState.AGREED,
+            linked_memory_ids=[],
+            evidence_message_id=evidence_id,
+        )
+    app_state = store.load_app_state()
+    app_state.pending_intervention_id = pending.id
+    store.save_app_state(app_state)
+
+    context = store.working_context("garden experiment")
+
+    assert len(context.active_interventions) == 5
+    assert context.active_interventions[0].id == pending.id

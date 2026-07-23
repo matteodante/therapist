@@ -59,7 +59,7 @@ Explicitly deferred:
 - web, mobile, voice, Telegram groups/media/webhooks, and other channels;
 - SaaS, accounts, billing, multi-tenancy, PostgreSQL, workers, and queues;
 - reminders, background jobs, MCP integrations, and external tools;
-- embeddings, vector databases, knowledge graphs, and multi-agent orchestration;
+- standalone vector databases, knowledge graphs, and multi-agent orchestration;
 - commercial dual licensing, a CLA, and formal release/PyPI publishing;
 - clinical ownership, clinical validation, efficacy studies, and formal risk management;
 - MDR, AI Act, FDA, GDPR/HIPAA compliance work;
@@ -140,10 +140,20 @@ message. The IDs of the last explicitly offered hypothesis and active interventi
 so confirmation, agreement, and outcome update the original records instead of creating copies.
 Provider transport retries remain a separate concern.
 
-No network call is needed for memory retrieval. Relevant claims and interventions are ranked locally
-using encrypted aliases, lexical matching, dates, and status after decryption. Historical excerpts
-remain lexical. Context is reduced by complete structured items and serialized only as valid JSON;
-model history and consolidation retain complete turns instead of slicing messages mid-run.
+Consolidation preserves valid formulation links when the model omits them and removes a link only
+through an explicit `formulation_unlinks` entry. Existing evidence is retained before new links when
+a field reaches its five-claim bound, so omission or overflow cannot silently evict history.
+
+Memory retrieval uses local hybrid ranking over validated claims by default: lexical overlap plus
+semantic similarity through PydanticAI `Embedder`, with recency as a tie-breaker. The semantic index
+is an encrypted, derived SQLite cache tied to claim IDs and keyed content hashes; it is rebuilt after
+content or model changes and deleted on forgetting. SQLite/Fernet remains the source of truth.
+Semantic retrieval is a required memory capability: setup downloads and verifies the local model,
+and conversation fails closed with setup guidance when embeddings are unavailable rather than
+silently switching to lexical-only claim ranking. Historical excerpts remain lexical and prefer
+recency on equal scores. Context is reduced by complete structured items and serialized only as
+valid JSON; model history and consolidation retain complete turns instead of slicing messages
+mid-run.
 
 ## Memory model
 
@@ -162,6 +172,8 @@ model on every turn.
   prediction, outcome, user appraisal, and follow-up information. It is not a goal.
 - `WorkingContext`: formulation, bounded confirmed memory, unresolved hypotheses, the latest three
   completed sessions, at most five active interventions, and five historical excerpts.
+- `SemanticIndex`: encrypted vectors for active `MemoryItem` records only. It is derived,
+  excluded from export, safe to discard, and never establishes truth or provenance.
 
 Memory states:
 
@@ -177,8 +189,13 @@ When generated derived text paraphrases corrected or forgotten evidence, the ove
 field is conservatively invalidated instead of risking stale personal information returning.
 Explicit corrections from natural conversation target an existing claim ID, retain the old wording
 as superseded provenance, clear stale aliases, and cannot also create a replacement claim.
+If forgetting removes the meaningful description of an intervention, its sensitive content is
+replaced with a neutral tombstone and the record is stopped rather than deleted, preserving lifecycle
+and provenance without returning forgotten content.
 
-SQLite comes from the Python standard library. Sensitive payloads are encrypted with Fernet using a
+Session activity timestamps are written both to the indexed SQLite column and the encrypted session
+payload in the same transaction so restart cannot move the eight-hour boundary backward. SQLite
+comes from the Python standard library. Sensitive payloads are encrypted with Fernet using a
 separate local key with filesystem mode `0600`. This protects copied databases and casual backups;
 it does not replace full-disk encryption or protect a compromised operating-system account.
 
@@ -200,11 +217,24 @@ thera memory interventions
 thera memory confirm <id>
 thera memory correct <id> <text>
 thera memory forget <id>
+thera memory model status
+thera memory model verify
+thera memory model install
+thera memory model remove
 thera export [--output path]
 thera delete-data
 thera doctor
 thera protocol validate [path]
 ```
+
+`setup` downloads and verifies the local multilingual
+`sentence-transformers:jinaai/jina-embeddings-v5-text-small-retrieval` model by default. The model
+then runs on-device for every `chat` and `telegram` conversation. Semantic claim retrieval has no
+off switch in the product CLI. `memory model status` inspects the local Hugging Face cache without
+network access, `verify` checks the cached revision against Hub checksums and performs local
+inference, `install` downloads or repairs the model and runs the same inference smoke test, and
+`remove` deletes only that model from the shared Hugging Face cache after confirmation. Removing the
+derived model files does not delete encrypted conversations or structured memory.
 
 `thera setup` is the normal first-run path. Questionary arrow-key menus select a supported provider,
 current documented model preset, locale, Telegram, and confirmation choices. ChatGPT uses device-code
@@ -213,6 +243,13 @@ stored in the encrypted local store. Ollama models are discovered from its local
 endpoint and the standard local base URL is applied automatically. A custom PydanticAI model ID
 remains available as an escape hatch. Secrets are never placed in process arguments, exports, or
 plaintext configuration files. Explicit `chat` and `telegram` options remain temporary overrides.
+
+Before asking for provider details, setup downloads and executes both document and query embeddings
+with the required local multilingual model. Failure stops setup before creating the data store.
+Successful setup records the exact embedding model in encrypted app state; `chat` and `telegram`
+refuse missing or stale setup state. Provider and Telegram secrets are staged in memory and committed
+with app defaults only after all interactive validation succeeds, so cancellation does not leave a
+partially configured provider.
 
 After `thera auth login`, omitting `--model` selects `codex:gpt-5.6-sol`. An explicit model can be
 selected with `--model codex:<model-id>`. Access and refresh tokens are encrypted in the same local
@@ -359,6 +396,8 @@ still require exact user evidence.
 - Selective forgetting and full deletion work; sensitive plaintext is absent from SQLite.
 - Eight-hour segmentation, `/end`, interrupted consolidation, and session resumption preserve data.
 - Context stays bounded with hundreds of sessions.
+- Semantic retrieval ranks meaning-equivalent bilingual claims without weakening evidence,
+  encryption, correction, or forgetting contracts, and setup fails if the model is unavailable.
 - Italian and English golden conversations cover listening, continuity, gentle challenge, technique
   choice, AI transparency, and refusal to diagnose.
 - An explicit matched danger disclosure bypasses the normal model response.
@@ -378,7 +417,8 @@ synthetic people and events only; never put real user data, access tokens, or AP
 
 Longitudinal tests must cover retrieval after several months, encrypted persistence across process
 restart, evidence provenance, fact/hypothesis separation, correction precedence, selective
-forgetting, and hard context bounds. A separate `live` test exercises the same high-level path
+forgetting, semantic reindexing and fail-closed behavior, and hard context bounds. A separate `live`
+test exercises the same high-level path
 against a real OpenAI model. It is skipped unless explicitly enabled:
 
 ```bash
@@ -390,6 +430,18 @@ continuity contracts, and uses a Pydantic Evals `LLMJudge` rubric for therapeuti
 exact wording. It covers longitudinal avoidance and alliance repair. Run it manually before releases
 or after changing model integration; do not make ordinary local or CI runs depend on an external
 provider.
+
+A separate Codex-subscription memory eval exercises the configured experimental OAuth backend with
+synthetic data through the production `ChatSession`: capture, explicit hypothesis confirmation,
+consolidation, encrypted semantic indexing, restart, four-month retrieval, and continuity. It is
+opt-in and runs once by default:
+
+```bash
+THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
+```
+
+The deterministic semantic-memory Pydantic Evals dataset remains offline by using a fixed bilingual
+embedding test model; it verifies ranking, index reuse, bounds, and absence of sensitive plaintext.
 
 Run before handing off a change:
 
@@ -403,6 +455,7 @@ uv run ruff check .
 - PydanticAI: https://pydantic.dev/docs/ai/overview/
 - PydanticAI message history: https://pydantic.dev/docs/ai/core-concepts/message-history/
 - PydanticAI structured output: https://pydantic.dev/docs/ai/core-concepts/output/
+- PydanticAI embeddings: https://pydantic.dev/docs/ai/guides/embeddings/
 - PydanticAI OpenAI Responses provider: https://pydantic.dev/docs/ai/models/openai/
 - Pydantic Evals datasets: https://ai.pydantic.dev/evals/how-to/dataset-serialization/
 - Python sqlite3: https://docs.python.org/3.12/library/sqlite3.html

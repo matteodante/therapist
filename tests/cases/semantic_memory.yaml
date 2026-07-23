@@ -1,0 +1,40 @@
+name: semantic_memory_retrieval
+cases:
+  - name: SEMANTIC-001
+    metadata:
+      description: Italian authority-call memory is retrieved by an English meaning-equivalent query.
+    inputs:
+      memory: Rimandare le telefonate al responsabile porta sollievo immediato.
+      distractor: Il giardinaggio nel fine settimana è rilassante.
+      query: I need to tell a manager that a delivery is late.
+    expected_output:
+      relevant_ranked_first: true
+      index_reused_after_restart: true
+      all_vectors_indexed: true
+      sensitive_plaintext_absent: true
+
+  - name: SEMANTIC-002
+    metadata:
+      description: English family guilt memory is retrieved by an Italian query without shared words.
+    inputs:
+      memory: Guilt appears before answering the user's sister.
+      distractor: The user enjoys cooking vegetable soup.
+      query: Mi sento in colpa quando devo rispondere a mia sorella.
+    expected_output:
+      relevant_ranked_first: true
+      index_reused_after_restart: true
+      all_vectors_indexed: true
+      sensitive_plaintext_absent: true
+
+  - name: SEMANTIC-003
+    metadata:
+      description: A sleep memory remains retrievable after a newer unrelated event.
+    inputs:
+      memory: Worry at night makes it difficult to sleep.
+      distractor: A new bicycle was purchased recently.
+      query: La preoccupazione serale mi tiene sveglio.
+    expected_output:
+      relevant_ranked_first: true
+      index_reused_after_restart: true
+      all_vectors_indexed: true
+      sensitive_plaintext_absent: true

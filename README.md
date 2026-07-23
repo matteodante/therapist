@@ -13,7 +13,7 @@ It supports Italian and English through a terminal chat and a private Telegram b
 
 - Natural, varied conversation guided by an internal protocol rather than a visible script, without
   mandatory questions, goals, or forms.
-- Encrypted SQLite archive and structured memory across months or years.
+- Encrypted SQLite archive, structured memory, and local semantic retrieval across months or years.
 - Visible, correctable facts, hypotheses, case formulation, sessions, and interventions.
 - PydanticAI providers, local models, and experimental personal ChatGPT Codex OAuth.
 - Versioned experimental therapeutic skills and evidence references.
@@ -47,11 +47,25 @@ uv run thera telegram
 Run `uv run thera --help` for all commands. Inside chat, `/help` lists memory, session, correction,
 forgetting, and session-closing commands.
 
+Private semantic retrieval is enabled by default using PydanticAI embeddings and an encrypted,
+rebuildable local index:
+
+```bash
+uv run thera chat
+```
+
+During `thera setup`, the multilingual model downloads once from Hugging Face and both query and
+document embeddings are verified before the encrypted data store is created. Provider and Telegram
+configuration is saved only after the interactive flow succeeds. It then runs on-device. Semantic
+claim retrieval is mandatory: incomplete or stale setup state and unavailable local embeddings stop
+conversation with setup guidance instead of silently using weaker lexical-only retrieval.
+
 ## Memory and privacy
 
 Messages, session summaries, structured memory, case formulation, and intervention history are
-stored locally in encrypted form. Retrieval is local and bounded; the agent sends only relevant
-context to the selected model provider. Remote providers and Telegram still receive the content
+stored locally in encrypted form. Retrieval and its semantic index are local and bounded;
+the index is derived from evidence-linked claims and is not a second source of truth. The agent
+sends only relevant context to the selected model provider. Remote providers and Telegram receive the content
 needed to answer or deliver messages. Use `thera export` to inspect your data and
 `thera delete-data` to remove it.
 

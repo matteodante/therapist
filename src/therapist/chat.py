@@ -133,8 +133,9 @@ class SessionReflection(BaseModel):
     user_response: str = Field(default="", max_length=1_000)
     open_questions: list[ShortText] = Field(default_factory=list, max_length=10)
     formulation_links: dict[str, list[str]] = Field(default_factory=dict)
+    formulation_unlinks: dict[str, list[str]] = Field(default_factory=dict)
 
-    @field_validator("formulation_links")
+    @field_validator("formulation_links", "formulation_unlinks")
     @classmethod
     def validate_formulation_links(cls, value: dict[str, list[str]]) -> dict[str, list[str]]:
         if set(value) - set(FORMULATION_FIELDS):
@@ -394,103 +395,113 @@ class ChatSession:
             event_stream_handler=_consume_model_events,
         )
         output = result.output
-        evidence_id = self.memory.save_turn(
-            session, text, output.reply, result.new_messages(), now
-        )
-        for correction in output.corrections:
-            self.memory.correct_memory(
-                correction.memory_id,
-                correction.replacement,
+        with self.memory.transaction():
+            evidence_id = self.memory.save_turn(
+                session, text, output.reply, result.new_messages(), now
+            )
+            for correction in output.corrections:
+                self.memory.correct_memory(
+                    correction.memory_id,
+                    correction.replacement,
+                    evidence_id,
+                    now,
+                )
+                if correction.memory_id == app_state.pending_hypothesis_id:
+                    app_state.pending_hypothesis_id = None
+            correction_quotes = {
+                " ".join(item.evidence_quote.split()).casefold()
+                for item in output.corrections
+            }
+            observations = [
+                item
+                for item in output.observations
+                if not item.evidence_quote
+                or " ".join(item.evidence_quote.split()).casefold()
+                not in correction_quotes
+            ]
+            if output.offered_hypothesis:
+                observations = [
+                    *[
+                        item
+                        for item in observations
+                        if item.kind not in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
+                    ][:1],
+                    MemoryObservation(
+                        kind="hypothesis",
+                        content=output.offered_hypothesis,
+                    ),
+                ]
+            saved_observations = self.memory.add_observations(
+                observations,
                 evidence_id,
                 now,
+                evidence_text=text,
             )
-        correction_quotes = {
-            " ".join(item.evidence_quote.split()).casefold() for item in output.corrections
-        }
-        observations = [
-            item
-            for item in output.observations
-            if not item.evidence_quote
-            or " ".join(item.evidence_quote.split()).casefold() not in correction_quotes
-        ]
-        if output.offered_hypothesis:
-            observations = [
-                *[
-                    item
-                    for item in observations
-                    if item.kind not in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
-                ][:1],
-                MemoryObservation(
-                    kind="hypothesis",
-                    content=output.offered_hypothesis,
-                ),
-            ]
-        saved_observations = self.memory.add_observations(
-            observations,
-            evidence_id,
-            now,
-            evidence_text=text,
-        )
-        allowed_confirmations = {item.id for item in context.hypotheses}
-        for item_id in output.confirmed_memory_ids:
-            if item_id in allowed_confirmations:
-                self.memory.confirm_memory(item_id, now)
-                if item_id == app_state.pending_hypothesis_id:
-                    app_state.pending_hypothesis_id = None
-        if output.offered_hypothesis:
-            offered = next(
-                (
-                    item
-                    for item in saved_observations
-                    if item.kind.value == "hypothesis"
-                    and item.content == output.offered_hypothesis
-                ),
-                None,
-            )
-            if offered is not None:
-                app_state.pending_hypothesis_id = offered.id
-        formulation = self.memory.load_formulation()
-        formulation_changed = False
-        if output.proposed_focus:
-            formulation.proposed_focus = output.proposed_focus
-            formulation_changed = True
-        if output.accepted_focus:
-            formulation.current_focus = output.accepted_focus
-            formulation.proposed_focus = None
-            formulation_changed = True
-        if formulation_changed:
-            self.memory.save_formulation(formulation, now)
-        if output.intervention:
-            action = output.intervention
-            if action.record_id:
-                active_ids = {item.id for item in context.active_interventions}
-                if action.record_id in active_ids:
-                    updated = self.memory.update_intervention(
-                        action.record_id,
+            allowed_confirmations = {item.id for item in context.hypotheses}
+            for item_id in output.confirmed_memory_ids:
+                if item_id in allowed_confirmations:
+                    self.memory.confirm_memory(item_id, now)
+                    if item_id == app_state.pending_hypothesis_id:
+                        app_state.pending_hypothesis_id = None
+            if output.offered_hypothesis:
+                offered = next(
+                    (
+                        item
+                        for item in saved_observations
+                        if item.kind.value == "hypothesis"
+                        and item.content == output.offered_hypothesis
+                    ),
+                    None,
+                )
+                if offered is not None:
+                    app_state.pending_hypothesis_id = offered.id
+            formulation = self.memory.load_formulation()
+            formulation_changed = False
+            if output.proposed_focus:
+                formulation.proposed_focus = output.proposed_focus
+                formulation_changed = True
+            if output.accepted_focus:
+                formulation.current_focus = output.accepted_focus
+                formulation.proposed_focus = None
+                formulation_changed = True
+            if formulation_changed:
+                self.memory.save_formulation(formulation, now)
+            if output.intervention:
+                action = output.intervention
+                if action.record_id:
+                    active_ids = {item.id for item in context.active_interventions}
+                    if action.record_id in active_ids:
+                        updated = self.memory.update_intervention(
+                            action.record_id,
+                            state=action.state,
+                            evidence_message_id=evidence_id,
+                            description=action.description,
+                            prediction=action.prediction,
+                            linked_memory_ids=action.linked_memory_ids,
+                            outcome=action.outcome,
+                            user_appraisal=action.user_appraisal,
+                            follow_up_at=action.follow_up_at,
+                            now=now,
+                        )
+                        app_state.pending_intervention_id = (
+                            updated.id
+                            if updated.state
+                            in {InterventionState.OFFERED, InterventionState.AGREED}
+                            else None
+                        )
+                elif action.state in {InterventionState.OFFERED, InterventionState.AGREED}:
+                    created = self.memory.create_intervention(
+                        skill=action.skill.value,
+                        description=action.description,
+                        prediction=action.prediction,
                         state=action.state,
+                        linked_memory_ids=action.linked_memory_ids,
                         evidence_message_id=evidence_id,
-                        outcome=action.outcome,
-                        user_appraisal=action.user_appraisal,
+                        follow_up_at=action.follow_up_at,
                         now=now,
                     )
-                    app_state.pending_intervention_id = (
-                        updated.id
-                        if updated.state is InterventionState.AGREED
-                        else None
-                    )
-            elif action.state in {InterventionState.OFFERED, InterventionState.AGREED}:
-                created = self.memory.create_intervention(
-                    skill=action.skill.value,
-                    description=action.description,
-                    prediction=action.prediction,
-                    state=action.state,
-                    linked_memory_ids=action.linked_memory_ids,
-                    evidence_message_id=evidence_id,
-                    follow_up_at=action.follow_up_at,
-                    now=now,
-                )
-                app_state.pending_intervention_id = created.id
-        self.memory.save_app_state(app_state)
+                    app_state.pending_intervention_id = created.id
+            self.memory.save_app_state(app_state)
         return ChatTurn(
             output.reply,
             SafetyState.CLEAR,
@@ -521,12 +532,13 @@ class ChatSession:
             # Never introduce a model call before deterministic crisis routing.
             formulation = self.memory.load_formulation()
             formulation.proposed_focus = None
-            self.memory.save_formulation(
-                formulation, datetime.fromisoformat(session.last_activity_at)
-            )
-            self.memory.close_session(
-                session, now=datetime.fromisoformat(session.last_activity_at)
-            )
+            with self.memory.transaction():
+                self.memory.save_formulation(
+                    formulation, datetime.fromisoformat(session.last_activity_at)
+                )
+                self.memory.close_session(
+                    session, now=datetime.fromisoformat(session.last_activity_at)
+                )
             return self.memory.start_session(now)
         return session
 
@@ -537,18 +549,38 @@ class ChatSession:
         if not transcript:
             formulation = self.memory.load_formulation()
             formulation.proposed_focus = None
-            self.memory.save_formulation(formulation, now)
-            return self.memory.close_session(session, now=now)
-        memories = self.memory.list_memory()[:50]
+            with self.memory.transaction():
+                self.memory.save_formulation(formulation, now)
+                return self.memory.close_session(session, now=now)
         existing_formulation = self.memory.load_formulation()
+        all_memories = self.memory.list_memory()
+        by_id = {item.id: item for item in all_memories}
+        priority_ids = [
+            item_id
+            for ids in existing_formulation.evidence.values()
+            for item_id in ids
+        ]
+        memories = list(
+            {
+                item.id: item
+                for item in [
+                    *(by_id[item_id] for item_id in priority_ids if item_id in by_id),
+                    *all_memories,
+                ]
+            }.values()
+        )[:50]
         existing_formulation.proposed_focus = None
-        self.memory.save_formulation(existing_formulation, now)
         instructions = (
             "Consolidate one therapeutic conversation episode. Use only the transcript and "
             "listed memory claims. Preserve uncertainty, do not diagnose, and never turn an "
             "agent hypothesis into a confirmed fact. Return a concise reflection plus "
             "formulation_links that map formulation fields only to existing memory IDs. Do not "
-            "write independent formulation prose or invent IDs.\n\nExisting formulation:\n"
+            "write independent formulation prose or invent IDs. Link agent_hypothesis claims "
+            "only under open_hypotheses; every other field accepts only user_confirmed or "
+            "user_corrected claims. Omission preserves existing valid formulation links.\n\n"
+            "Use formulation_unlinks only to remove an existing field-to-claim link that this "
+            "episode explicitly makes obsolete or no longer useful; omission is not removal.\n\n"
+            "Existing formulation:\n"
             + existing_formulation.model_dump_json(indent=2)
             + "\n\nAvailable claims:\n"
             + "\n".join(item.model_dump_json() for item in memories)
@@ -566,26 +598,31 @@ class ChatSession:
                 event_stream_handler=_consume_model_events,
             ).output
         except AgentRunError as error:
-            return self.memory.close_session(
-                session,
-                consolidation_error=type(error).__name__,
+            with self.memory.transaction():
+                self.memory.save_formulation(existing_formulation, now)
+                return self.memory.close_session(
+                    session,
+                    consolidation_error=type(error).__name__,
+                    now=now,
+                )
+        with self.memory.transaction():
+            self.memory.save_formulation_links(
+                reflection.formulation_links,
+                proposed_focus=None,
+                current_focus=existing_formulation.current_focus,
+                merge_existing=True,
+                remove_links=reflection.formulation_unlinks,
                 now=now,
             )
-        self.memory.save_formulation_links(
-            reflection.formulation_links,
-            proposed_focus=None,
-            current_focus=existing_formulation.current_focus,
-            now=now,
-        )
-        return self.memory.close_session(
-            session,
-            summary=reflection.summary,
-            themes=reflection.themes,
-            interventions=reflection.interventions,
-            user_response=reflection.user_response,
-            open_questions=reflection.open_questions,
-            now=now,
-        )
+            return self.memory.close_session(
+                session,
+                summary=reflection.summary,
+                themes=reflection.themes,
+                interventions=reflection.interventions,
+                user_response=reflection.user_response,
+                open_questions=reflection.open_questions,
+                now=now,
+            )
 
 
 def _quote_in_text(quote: str | None, text: str) -> bool:

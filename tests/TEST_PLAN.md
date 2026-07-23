@@ -15,6 +15,12 @@ contracts.
 | LM-007 | Deterministic | Offer and accept one experiment | One intervention record advances state without duplication |
 | LM-008 | Deterministic | End a session with an unaccepted focus | Proposed focus expires while accepted focus remains longitudinal |
 | LM-009 | Deterministic | Add similar, numbered, and negated claims | Paraphrases merge; distinct numbers and opposite statements remain separate |
+| LM-010 | Deterministic | Retrieve a claim by meaning without shared words | Hybrid semantic ranking returns the evidence-linked claim before a newer irrelevant one |
+| LM-011 | Deterministic | Correct and forget a semantically indexed claim | Correction rebuilds its encrypted vector; forgetting removes it; provider failure stops conversation with setup guidance |
+| LM-012 | Deterministic | Continue near the eight-hour boundary and restart | Encrypted session activity survives restart and prevents premature consolidation |
+| SEMANTIC-001..003 | Deterministic Pydantic Evals | Retrieve bilingual authority, relationship, and sleep memories against newer distractors | Meaning-equivalent claim ranks first; encrypted vectors persist and are reused after restart |
+| MODEL-001 | Deterministic | Inspect, verify, install, and remove the local embedding model | Cache operations target only the configured repository; removal leaves encrypted memory untouched |
+| CODEX-MEMORY-001 | Configured Codex subscription | Capture, consolidate, restart, and return after four months | Confirmed hypothesis, evidence, semantic index, session boundary, and continuity all survive |
 | MEMORY-006 | Deterministic | Link, correct, and forget a formulation claim | Every formulation field resolves to active evidence and follows correction/deletion |
 | INTERVENTION-001 | Deterministic | Offer and accept one behavioral experiment | Consent and valid state transition persist encrypted for later review |
 | PROCESS-001..003 | Deterministic Pydantic Evals | Execute supported fact, unsupported fact, and Italian rupture cases | Evidence gates and repair stage operate in the real harness |
@@ -32,6 +38,12 @@ Run the real-provider case explicitly when credentials and network access are av
 
 ```bash
 THERA_RUN_LIVE_TESTS=1 OPENAI_API_KEY=... uv run pytest -m live
+```
+
+Run the configured Codex subscription memory eval separately:
+
+```bash
+THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
 ```
 
 The live test repeats every case three times in an isolated database and avoids assertions about

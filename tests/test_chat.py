@@ -55,6 +55,42 @@ def test_normal_turn_returns_reply_and_persists_supported_observation(tmp_path: 
     assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
 
 
+def test_turn_persistence_rolls_back_as_one_transaction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = ChatSession(
+        TestModel(
+            custom_output_args={
+                "reply": "I hear the pressure.",
+                "observations": [
+                    {
+                        "kind": "event",
+                        "content": "The user feels pressure at work.",
+                        "evidence_quote": "pressure at work",
+                    }
+                ],
+            }
+        ),
+        _pack(),
+        store,
+        "en-US",
+    )
+
+    def fail_final_write(*_: object, **__: object) -> None:
+        raise RuntimeError("simulated final write failure")
+
+    monkeypatch.setattr(store, "save_app_state", fail_final_write)
+
+    with pytest.raises(RuntimeError, match="simulated final write failure"):
+        session.respond("I feel pressure at work.")
+
+    active = store.active_session()
+    assert active is not None
+    assert store.session_transcript(active.id) == ""
+    assert store.list_memory() == []
+
+
 def test_expired_session_is_closed_before_a_new_turn(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     model = TestModel(
@@ -76,10 +112,20 @@ def test_end_consolidates_session_and_revises_formulation(tmp_path: Path) -> Non
     store = MemoryStore(tmp_path)
     active = store.start_session()
     message_id = store.save_turn(active, "Sono teso al lavoro.", "Cosa accade?", [])
-    claim = store.add_observations(
-        [MemoryObservation(kind=MemoryKind.EVENT, content="Work stress")], message_id
-    )[0]
-    store.save_formulation(CaseFormulation(current_focus="Understand work pressure"))
+    claim, preference = store.add_observations(
+        [
+            MemoryObservation(kind=MemoryKind.EVENT, content="Work stress"),
+            MemoryObservation(
+                kind=MemoryKind.PREFERENCE,
+                content="The user prefers understanding before exercises",
+            ),
+        ],
+        message_id,
+    )
+    store.save_formulation_links(
+        {"preferred_help": [preference.id]},
+        current_focus="Understand work pressure",
+    )
     model = TestModel(
         custom_output_args={
             "summary": "The user explored work pressure.",
@@ -96,7 +142,47 @@ def test_end_consolidates_session_and_revises_formulation(tmp_path: Path) -> Non
     assert closed is not None
     assert closed.summary == "The user explored work pressure."
     assert store.load_formulation().current_focus == "Understand work pressure"
-    assert store.load_formulation().evidence == {"presenting_concerns": [claim.id]}
+    assert store.load_formulation().evidence == {
+        "presenting_concerns": [claim.id],
+        "preferred_help": [preference.id],
+    }
+
+
+def test_consolidation_rolls_back_formulation_if_session_close_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    active = store.start_session()
+    message_id = store.save_turn(active, "Work is tense", "What happens?", [])
+    old, new = store.add_observations(
+        [
+            MemoryObservation(kind=MemoryKind.PREFERENCE, content="Listening is preferred"),
+            MemoryObservation(kind=MemoryKind.EVENT, content="Work is tense"),
+        ],
+        message_id,
+    )
+    store.save_formulation_links({"preferred_help": [old.id]})
+    model = TestModel(
+        custom_output_args={
+            "summary": "Work was discussed.",
+            "themes": [],
+            "interventions": [],
+            "user_response": "",
+            "open_questions": [],
+            "formulation_links": {"presenting_concerns": [new.id]},
+        }
+    )
+
+    def fail_save(_: object) -> None:
+        raise RuntimeError("simulated session write failure")
+
+    monkeypatch.setattr(store, "save_session", fail_save)
+
+    with pytest.raises(RuntimeError, match="simulated session write failure"):
+        ChatSession(model, _pack(), store, "en-US").end()
+
+    assert store.load_formulation().evidence == {"preferred_help": [old.id]}
+    assert store.active_session() is not None
 
 
 def test_crisis_turn_bypasses_model_and_archives_the_exchange(tmp_path: Path) -> None:

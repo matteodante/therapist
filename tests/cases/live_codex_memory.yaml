@@ -1,0 +1,21 @@
+name: live_codex_longitudinal_memory
+cases:
+  - name: CODEX-MEMORY-001
+    metadata:
+      description: Codex captures, consolidates, semantically retrieves, and uses a confirmed pattern after four months.
+      locale: it-IT
+    inputs:
+      started_at: "2026-01-10T10:00:00+00:00"
+      return_after_days: 120
+      initial_messages:
+        - Da alcune settimane rimando le telefonate con il mio responsabile. Prima penso che noterà ogni errore, poi preparo tutto nei dettagli e alla fine trovo una scusa per non chiamare.
+        - Quando rimando provo sollievo per un po', ma la sera mi vergogno. Mi succede soprattutto se devo spiegare un ritardo.
+        - Sì, l'ipotesi che il timore del giudizio alimenti il rinvio mi sembra corretta. Vorrei prima capirla bene, senza esercizi per ora.
+      semantic_query: Domani devo comunicare a una figura autorevole che una consegna è in ritardo.
+      return_message: Sono passati quattro mesi. Domani devo comunicare a una figura autorevole che una consegna è in ritardo e mi viene voglia di evitare la conversazione.
+    expected_output:
+      minimum_memory_items: 3
+      minimum_sessions: 2
+      context_terms: [responsabile, giudizio]
+      continuity_terms: [responsabile, quattro mesi, prima, ricorda]
+      require_confirmed_hypothesis: true

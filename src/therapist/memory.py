@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
+import math
 import os
 import re
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
 from enum import StrEnum
@@ -15,9 +20,10 @@ from uuid import uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
 from pydantic import BaseModel, Field
-from pydantic_ai import ModelMessage, ModelMessagesTypeAdapter
+from pydantic_ai import Embedder, ModelMessage, ModelMessagesTypeAdapter
 
 SESSION_GAP = timedelta(hours=8)
+LOCAL_OLLAMA_EMBEDDINGS_URL = "http://localhost:11434/v1"
 
 
 def _now() -> datetime:
@@ -55,10 +61,25 @@ def valid_intervention_transition(
     current: InterventionState, target: InterventionState
 ) -> bool:
     allowed = {
-        InterventionState.OFFERED: {InterventionState.AGREED, InterventionState.STOPPED},
+        InterventionState.OFFERED: {
+            InterventionState.OFFERED,
+            InterventionState.AGREED,
+            InterventionState.STOPPED,
+        },
         InterventionState.AGREED: {
+            InterventionState.AGREED,
             InterventionState.TRIED,
             InterventionState.NOT_TRIED,
+            InterventionState.STOPPED,
+        },
+        InterventionState.TRIED: {
+            InterventionState.TRIED,
+            InterventionState.AGREED,
+            InterventionState.STOPPED,
+        },
+        InterventionState.NOT_TRIED: {
+            InterventionState.NOT_TRIED,
+            InterventionState.AGREED,
             InterventionState.STOPPED,
         },
     }
@@ -71,6 +92,7 @@ class AppState(BaseModel):
     telegram_update_offset: int | None = Field(default=None, ge=0)
     default_model: str | None = None
     default_locale: str | None = None
+    embedding_model: str | None = None
     telegram_allowed_user_id: int | None = Field(default=None, gt=0)
     pending_hypothesis_id: str | None = None
     pending_intervention_id: str | None = None
@@ -180,12 +202,29 @@ class MemoryError(RuntimeError):
 
 
 class MemoryStore:
-    def __init__(self, directory: Path | None = None) -> None:
+    def __init__(
+        self,
+        directory: Path | None = None,
+        *,
+        embedding_model: str | None = None,
+        embedder: Embedder | None = None,
+    ) -> None:
+        if embedding_model and embedder is None and not embedding_model.startswith(
+            ("sentence-transformers:", "ollama:")
+        ):
+            raise ValueError("Semantic memory requires a local embedding model.")
+        if embedding_model and embedding_model.startswith("ollama:"):
+            os.environ["OLLAMA_BASE_URL"] = LOCAL_OLLAMA_EMBEDDINGS_URL
         self.directory = directory or Path.home() / ".therapist"
         self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.directory, 0o700)
         self.database_path = self.directory / "thera.db"
-        self._cipher = Fernet(self._load_or_create_key())
+        encryption_key = self._load_or_create_key()
+        self._cipher = Fernet(encryption_key)
+        self._hash_key = encryption_key
+        self._transaction: sqlite3.Connection | None = None
+        self._embedding_model = embedding_model or ("injected" if embedder else None)
+        self._embedder = embedder or (Embedder(embedding_model) if embedding_model else None)
         with self._connect() as database:
             database.executescript(
                 """
@@ -210,6 +249,12 @@ class MemoryStore:
                 CREATE TABLE IF NOT EXISTS interventions (
                     id TEXT PRIMARY KEY, state TEXT NOT NULL,
                     updated_at TEXT NOT NULL, payload BLOB NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS semantic_index (
+                    memory_id TEXT PRIMARY KEY, model TEXT NOT NULL,
+                    content_hash TEXT NOT NULL, dimensions INTEGER NOT NULL,
+                    payload BLOB NOT NULL,
+                    FOREIGN KEY(memory_id) REFERENCES memory_items(id) ON DELETE CASCADE
                 );
                 """
             )
@@ -240,15 +285,44 @@ class MemoryStore:
         *,
         proposed_focus: str | None = None,
         current_focus: str | None = None,
+        merge_existing: bool = False,
+        remove_links: dict[str, list[str]] | None = None,
         now: datetime | None = None,
     ) -> CaseFormulation:
         active = {item.id: item for item in self.list_memory()}
+        if merge_existing:
+            existing_links = self.load_formulation().evidence
+            remove_links = remove_links or {}
+            links = {
+                field_name: list(
+                    dict.fromkeys(
+                        [
+                            *(
+                                item_id
+                                for item_id in existing_links.get(field_name, [])
+                                if item_id not in remove_links.get(field_name, [])
+                            ),
+                            *links.get(field_name, []),
+                        ]
+                    )
+                )[:5]
+                for field_name in FORMULATION_FIELDS
+            }
         formulation = CaseFormulation(
             current_focus=current_focus,
             proposed_focus=proposed_focus,
         )
         for field_name in FORMULATION_FIELDS:
-            ids = [item_id for item_id in links.get(field_name, []) if item_id in active]
+            expected_statuses = (
+                {MemoryStatus.AGENT_HYPOTHESIS}
+                if field_name == "open_hypotheses"
+                else {MemoryStatus.USER_CONFIRMED, MemoryStatus.USER_CORRECTED}
+            )
+            ids = [
+                item_id
+                for item_id in links.get(field_name, [])
+                if item_id in active and active[item_id].status in expected_statuses
+            ]
             if ids:
                 setattr(formulation, field_name, [active[item_id].content for item_id in ids])
                 formulation.evidence[field_name] = ids
@@ -333,6 +407,7 @@ class MemoryStore:
         now: datetime | None = None,
     ) -> int:
         timestamp = _iso(now)
+        session.last_activity_at = timestamp
         user_payload = self._encrypt_json({"content": user_text})
         assistant_payload = self._encrypt_json(
             {
@@ -353,10 +428,9 @@ class MemoryStore:
                 (session.id, timestamp, assistant_payload),
             )
             database.execute(
-                "UPDATE sessions SET last_activity_at = ? WHERE id = ?",
-                (timestamp, session.id),
+                "UPDATE sessions SET last_activity_at = ?, payload = ? WHERE id = ?",
+                (timestamp, self._encrypt_model(session), session.id),
             )
-        session.last_activity_at = timestamp
         return user_message_id
 
     def load_session_history(self, session_id: str, limit: int = 20) -> list[ModelMessage]:
@@ -432,11 +506,19 @@ class MemoryStore:
                 (
                     item
                     for item in existing
+                    if item.id == observation.merge_into_id
+                    and item.kind == observation.kind
+                    and item.status is not MemoryStatus.ARCHIVED
+                ),
+                None,
+            ) or next(
+                (
+                    item
+                    for item in existing
                     if item.kind == observation.kind
                     and item.status is not MemoryStatus.ARCHIVED
                     and (
-                        item.id == observation.merge_into_id
-                        or item.content.casefold() == content.casefold()
+                        item.content.casefold() == content.casefold()
                         or _near_duplicate(item.content, content)
                     )
                 ),
@@ -485,11 +567,14 @@ class MemoryStore:
         return [self._decrypt_model(row[0], MemoryItem) for row in rows]
 
     def confirm_memory(self, item_id: str, now: datetime | None = None) -> MemoryItem:
-        item = self._get_memory(item_id)
-        item.status = MemoryStatus.USER_CONFIRMED
-        item.last_seen_at = _iso(now)
-        self._save_memory_item(item)
-        return item
+        with self.transaction():
+            item = self._get_memory(item_id)
+            item.status = MemoryStatus.USER_CONFIRMED
+            item.last_seen_at = _iso(now)
+            self._save_memory_item(item)
+            self._refresh_formulation_links()
+            self._clear_pending_hypothesis(item.id)
+            return item
 
     def correct_memory(
         self,
@@ -498,31 +583,40 @@ class MemoryStore:
         evidence_message_id: int | None = None,
         now: datetime | None = None,
     ) -> MemoryItem:
-        content = " ".join(content.split()).strip()
-        if not content:
-            raise ValueError("Correction cannot be empty.")
-        item = self._get_memory(item_id)
-        old = item.content
-        item.superseded_content.append(old)
-        item.content = content
-        item.status = MemoryStatus.USER_CORRECTED
-        item.aliases = []
-        if evidence_message_id is not None and evidence_message_id not in item.evidence_message_ids:
-            item.evidence_message_ids.append(evidence_message_id)
-        item.last_seen_at = _iso(now)
-        self._save_memory_item(item)
-        self._refresh_formulation_links()
-        self._replace_derived_text(old, content)
-        return item
+        with self.transaction():
+            content = " ".join(content.split()).strip()
+            if not content:
+                raise ValueError("Correction cannot be empty.")
+            item = self._get_memory(item_id)
+            old = item.content
+            item.superseded_content.append(old)
+            item.content = content
+            item.status = MemoryStatus.USER_CORRECTED
+            item.aliases = []
+            if (
+                evidence_message_id is not None
+                and evidence_message_id not in item.evidence_message_ids
+            ):
+                item.evidence_message_ids.append(evidence_message_id)
+            item.last_seen_at = _iso(now)
+            self._save_memory_item(item)
+            self._refresh_formulation_links()
+            self._replace_derived_text(old, content)
+            self._clear_pending_hypothesis(item.id)
+            return item
 
     def forget_memory(self, item_id: str) -> MemoryItem:
-        item = self._get_memory(item_id)
-        item.status = MemoryStatus.ARCHIVED
-        item.last_seen_at = _iso()
-        self._save_memory_item(item)
-        self._refresh_formulation_links()
-        self._replace_derived_text(item.content, "")
-        return item
+        with self.transaction():
+            item = self._get_memory(item_id)
+            item.status = MemoryStatus.ARCHIVED
+            item.last_seen_at = _iso()
+            self._save_memory_item(item)
+            with self._connect() as database:
+                database.execute("DELETE FROM semantic_index WHERE memory_id = ?", (item.id,))
+            self._refresh_formulation_links()
+            self._replace_derived_text(item.content, "", forgotten_id=item.id)
+            self._clear_pending_hypothesis(item.id)
+            return item
 
     def create_intervention(
         self,
@@ -563,18 +657,32 @@ class MemoryStore:
         *,
         state: InterventionState,
         evidence_message_id: int,
+        description: str | None = None,
+        prediction: str | None = None,
+        linked_memory_ids: list[str] | None = None,
         outcome: str | None = None,
         user_appraisal: str | None = None,
+        follow_up_at: str | None = None,
         now: datetime | None = None,
     ) -> InterventionRecord:
         record = self._get_intervention(record_id)
         if not valid_intervention_transition(record.state, state):
             raise ValueError(f"Invalid intervention transition: {record.state} -> {state}")
         record.state = state
+        record.description = (
+            " ".join(description.split()) if description else record.description
+        )
+        record.prediction = " ".join(prediction.split()) if prediction else record.prediction
+        if linked_memory_ids is not None:
+            active_memory_ids = {item.id for item in self.list_memory()}
+            record.linked_memory_ids = [
+                item_id for item_id in linked_memory_ids if item_id in active_memory_ids
+            ][:5]
         record.outcome = " ".join(outcome.split()) if outcome else record.outcome
         record.user_appraisal = (
             " ".join(user_appraisal.split()) if user_appraisal else record.user_appraisal
         )
+        record.follow_up_at = follow_up_at or record.follow_up_at
         if evidence_message_id not in record.evidence_message_ids:
             record.evidence_message_ids.append(evidence_message_id)
         record.updated_at = _iso(now)
@@ -585,8 +693,13 @@ class MemoryStore:
         sql = "SELECT payload FROM interventions"
         parameters: tuple[str, ...] = ()
         if active_only:
-            sql += " WHERE state IN (?, ?)"
-            parameters = (InterventionState.OFFERED.value, InterventionState.AGREED.value)
+            sql += " WHERE state IN (?, ?, ?, ?)"
+            parameters = (
+                InterventionState.OFFERED.value,
+                InterventionState.AGREED.value,
+                InterventionState.TRIED.value,
+                InterventionState.NOT_TRIED.value,
+            )
         sql += " ORDER BY updated_at DESC"
         with self._connect() as database:
             rows = database.execute(sql, parameters).fetchall()
@@ -594,8 +707,16 @@ class MemoryStore:
 
     def working_context(self, query: str) -> WorkingContext:
         memories = self.list_memory()
+        semantic_scores = self._semantic_scores(query, memories)
+        app_state = self.load_app_state()
+        pending_ids = {app_state.pending_hypothesis_id}
         memories.sort(
-            key=lambda item: (_memory_score(query, item), item.last_seen_at), reverse=True
+            key=lambda item: (
+                item.id in pending_ids,
+                _hybrid_score(query, item, semantic_scores.get(item.id)),
+                item.last_seen_at,
+            ),
+            reverse=True,
         )
         confirmed = [
             ContextMemoryItem.model_validate(item, from_attributes=True)
@@ -611,6 +732,7 @@ class MemoryStore:
         interventions = self.list_interventions(active_only=True)
         interventions.sort(
             key=lambda item: (
+                item.id == app_state.pending_intervention_id,
                 _lexical_score(
                     query,
                     " ".join(
@@ -642,8 +764,12 @@ class MemoryStore:
         candidates = self._archive_candidates(excluded_message_ids)
         excerpts = [
             text
-            for _, text in sorted(
-                ((_lexical_score(query, text), text) for text in candidates), reverse=True
+            for _, _, text in sorted(
+                (
+                    (_lexical_score(query, text), -position, text)
+                    for position, text in enumerate(candidates)
+                ),
+                reverse=True,
             )
             if _lexical_score(query, text) > 0
             and not any(old in text.casefold() for old in excluded)
@@ -695,6 +821,7 @@ class MemoryStore:
 
     def delete_all(self) -> None:
         with self._connect() as database:
+            database.execute("DELETE FROM semantic_index")
             database.execute("DELETE FROM messages")
             database.execute("DELETE FROM sessions")
             database.execute("DELETE FROM memory_items")
@@ -756,7 +883,66 @@ class MemoryStore:
             if message_id not in excluded_message_ids
         ]
 
-    def _replace_derived_text(self, old: str, new: str) -> None:
+    def _semantic_scores(
+        self, query: str, memories: list[MemoryItem]
+    ) -> dict[str, float]:
+        if not self._embedder or not self._embedding_model or not query.strip() or not memories:
+            return {}
+        try:
+            expected = {
+                item.id: self._content_hash(" ".join([item.content, *item.aliases]))
+                for item in memories
+            }
+            with self._connect() as database:
+                rows = database.execute(
+                    "SELECT memory_id, content_hash, dimensions, payload "
+                    "FROM semantic_index WHERE model = ?",
+                    (self._embedding_model,),
+                ).fetchall()
+            vectors: dict[str, list[float]] = {}
+            for memory_id, content_hash, dimensions, payload in rows:
+                vector = self._decrypt_json(payload)["vector"]
+                if expected.get(memory_id) == content_hash and len(vector) == dimensions:
+                    vectors[memory_id] = vector
+            missing = [item for item in memories if item.id not in vectors]
+            if missing:
+                documents = [" ".join([item.content, *item.aliases]) for item in missing]
+                result = self._embedder.embed_documents_sync(documents)
+                with self._connect() as database:
+                    for item, vector in zip(missing, result.embeddings, strict=True):
+                        stored = list(vector)
+                        vectors[item.id] = stored
+                        database.execute(
+                            "INSERT INTO semantic_index(memory_id, model, content_hash, "
+                            "dimensions, payload) VALUES (?, ?, ?, ?, ?) "
+                            "ON CONFLICT(memory_id) DO UPDATE SET model = excluded.model, "
+                            "content_hash = excluded.content_hash, "
+                            "dimensions = excluded.dimensions, payload = excluded.payload",
+                            (
+                                item.id,
+                                self._embedding_model,
+                                expected[item.id],
+                                len(stored),
+                                self._encrypt_json({"vector": stored}),
+                            ),
+                        )
+            query_vector = list(self._embedder.embed_query_sync(query).embeddings[0])
+            return {
+                item_id: similarity
+                for item_id, vector in vectors.items()
+                if (similarity := _cosine_similarity(query_vector, vector)) is not None
+            }
+        except Exception as error:
+            raise MemoryError(
+                "Semantic memory is unavailable. Run `thera setup` and try again."
+            ) from error
+
+    def _content_hash(self, content: str) -> str:
+        return hmac.new(self._hash_key, content.encode(), hashlib.sha256).hexdigest()
+
+    def _replace_derived_text(
+        self, old: str, new: str, *, forgotten_id: str | None = None
+    ) -> None:
         formulation = self.load_formulation()
         changed = False
         if not formulation.evidence:
@@ -767,13 +953,42 @@ class MemoryStore:
                     if replaced != value:
                         setattr(formulation, field_name, replaced)
                         changed = True
-                elif isinstance(value, str):
-                    replaced = _replace_derived(value, old, new)
-                    if replaced != value:
-                        setattr(formulation, field_name, replaced or None)
-                        changed = True
+        for field_name in ("current_focus", "proposed_focus"):
+            value = getattr(formulation, field_name)
+            if value:
+                replaced = _replace_derived(value, old, new)
+                if replaced != value:
+                    setattr(formulation, field_name, replaced or None)
+                    changed = True
         if changed:
             self.save_formulation(formulation)
+        stopped_interventions: set[str] = set()
+        for intervention in self.list_interventions():
+            before = intervention.model_dump()
+            if forgotten_id:
+                intervention.linked_memory_ids = [
+                    item_id
+                    for item_id in intervention.linked_memory_ids
+                    if item_id != forgotten_id
+                ]
+            intervention.description = _replace_derived(intervention.description, old, new)
+            for field_name in ("prediction", "outcome", "user_appraisal"):
+                value = getattr(intervention, field_name)
+                if value:
+                    setattr(intervention, field_name, _replace_derived(value, old, new) or None)
+            if not intervention.description:
+                intervention.description = "Content removed by user request."
+                intervention.state = InterventionState.STOPPED
+                intervention.updated_at = _iso()
+                self._save_intervention(intervention)
+                stopped_interventions.add(intervention.id)
+            elif intervention.model_dump() != before:
+                self._save_intervention(intervention)
+        if stopped_interventions:
+            app_state = self.load_app_state()
+            if app_state.pending_intervention_id in stopped_interventions:
+                app_state.pending_intervention_id = None
+                self.save_app_state(app_state)
         for session in self.list_sessions():
             before = session.model_dump()
             session.summary = _replace_derived(session.summary, old, new)
@@ -805,6 +1020,12 @@ class MemoryStore:
             proposed_focus=formulation.proposed_focus,
             current_focus=formulation.current_focus,
         )
+
+    def _clear_pending_hypothesis(self, item_id: str) -> None:
+        app_state = self.load_app_state()
+        if app_state.pending_hypothesis_id == item_id:
+            app_state.pending_hypothesis_id = None
+            self.save_app_state(app_state)
 
     def _migrate_legacy_state(self) -> None:
         if self._read_state("schema_version") is not None:
@@ -848,7 +1069,33 @@ class MemoryStore:
         os.chmod(path, 0o600)
         return key
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        if self._transaction is not None:
+            yield
+            return
+        database = self._open_connection()
+        self._transaction = database
+        try:
+            with database:
+                yield
+        finally:
+            self._transaction = None
+            database.close()
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        if self._transaction is not None:
+            yield self._transaction
+            return
+        database = self._open_connection()
+        try:
+            with database:
+                yield database
+        finally:
+            database.close()
+
+    def _open_connection(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.database_path, autocommit=False)
         database.execute("PRAGMA foreign_keys = ON")
         return database
@@ -896,6 +1143,23 @@ def _lexical_score(query: str, text: str) -> int:
 
 def _memory_score(query: str, item: MemoryItem) -> int:
     return _lexical_score(query, " ".join([item.content, *item.aliases]))
+
+
+def _hybrid_score(query: str, item: MemoryItem, semantic_score: float | None) -> float:
+    lexical = min(_memory_score(query, item), 3) / 3
+    if semantic_score is None:
+        return lexical
+    return (0.7 * max(0.0, semantic_score)) + (0.3 * lexical)
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float | None:
+    if len(left) != len(right) or not left:
+        return None
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if not left_norm or not right_norm:
+        return None
+    return sum(a * b for a, b in zip(left, right, strict=True)) / (left_norm * right_norm)
 
 
 def _near_duplicate(left: str, right: str) -> bool:
