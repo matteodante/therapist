@@ -171,6 +171,12 @@ process-stage or selected-skill fields. The agent sends only relevant context to
 provider. Remote providers and Telegram receive the content needed to answer or deliver messages.
 Use `thera export` to inspect your data and `thera delete-data` to remove it.
 
+Technical compatibility with a provider is not an endorsement or a conclusion that its terms,
+privacy controls, or intended-use rules permit this project. The current
+[provider matrix](protocols/research/provider-data-and-policy-matrix-2026-07-23.md) keeps remote API
+presets and experimental personal Codex OAuth behind unresolved release gates; self-hosters must
+review the provider and model they enable.
+
 ## Development
 
 ```bash
@@ -203,4 +209,6 @@ are [docs/dpia-screening.md](docs/dpia-screening.md) and
 
 Original code and project content are licensed under
 [AGPL-3.0-or-later](LICENSE). Linked WHO, NICE, and other third-party materials remain under their
-respective owners' terms and are not copied into this repository.
+respective owners' terms and are not copied into this repository. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the uv bootstrap, runtime model, dependency, and
+source-reference boundaries.

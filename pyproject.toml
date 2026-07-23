@@ -2,9 +2,10 @@
 name = "therapist-cli"
 version = "0.1.0"
 description = "Open-source AI agent for reflection with encrypted longitudinal memory"
+authors = [{ name = "Matteo Dante" }]
 readme = "README.md"
 license = "AGPL-3.0-or-later"
-license-files = ["LICENSE"]
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.12"
 keywords = ["ai", "mental-wellbeing", "pydantic-ai", "self-hosted", "telegram"]
 classifiers = [

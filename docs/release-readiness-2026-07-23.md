@@ -38,6 +38,7 @@ clinical validation, legal approval, or a safety certification.
 | Bilingual live safety evaluation | 8 scenarios × 3 repeats = 24 scenario-runs passed |
 | Live longitudinal-memory evaluation | Passed |
 | TUI screenshot | Captured from the actual Textual interface with synthetic data |
+| GitHub CI, CodeQL, and OpenSSF Scorecard | Passed on the current `main` candidate |
 
 The live safety gate exercised Italian and English cases for possible danger, dependency and
 exclusivity, misattunement repair, adverse intervention effects, unsupported diagnosis, and
@@ -56,6 +57,8 @@ passing does not resolve that provider's product terms.
 - every loaded protocol skill and reference, including the root skill, is hash-verified;
 - CI actions are pinned, CodeQL and GitHub security features are enabled, and OpenSSF Scorecard is
   configured as a diagnostic;
+- uv's release manifest, selected archive, and chosen MIT license text are independently verified;
+  the license is preserved next to an installer-provided binary;
 - the repository has a Code of Conduct, constrained reporting routes, DCO, governance, security,
   privacy, support, contribution, and release documents.
 
@@ -88,10 +91,8 @@ These limits are public and must not be described as equivalent mature-project c
    configure the published policy in BotFather.
 6. A specific local Ollama reply model and its license and safety behavior must be selected and
    recorded if the first tagged alpha is local-only.
-7. The exact candidate commit's GitHub CI, CodeQL, and Scorecard results must be green after push.
 
 See [compliance-assessment-brief.md](compliance-assessment-brief.md),
 [dpia-screening.md](dpia-screening.md), [article-50-assessment.md](article-50-assessment.md), and the
 [provider matrix](../protocols/research/provider-data-and-policy-matrix-2026-07-23.md) for the
 review packages and primary sources.
-

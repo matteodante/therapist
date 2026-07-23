@@ -4,6 +4,8 @@ $ProgressPreference = "SilentlyContinue"
 $UvVersion = "0.11.31"
 $UvReleaseUrl = "https://github.com/astral-sh/uv/releases/download/$UvVersion"
 $UvChecksumsSha256 = "cae3a06391dd65895dc22246115fd998250fa43ab3aa8ffd0d6ab71ae301b4e1"
+$UvLicenseUrl = "https://raw.githubusercontent.com/astral-sh/uv/b7fdec626cdafcfb0d0db54d39d3d5f114aefb5c/LICENSE-MIT"
+$UvLicenseSha256 = "860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c"
 $SourceUrl = "https://github.com/matteodante/therapist/archive/refs/heads/main.zip"
 
 if ($env:OS -ne "Windows_NT") {
@@ -37,6 +39,7 @@ try {
         $UvArchiveName = "uv-$UvTarget.zip"
         $UvChecksums = Join-Path $TemporaryDirectory "uv-sha256.sum"
         $UvArchive = Join-Path $TemporaryDirectory $UvArchiveName
+        $UvLicense = Join-Path $TemporaryDirectory "uv-LICENSE-MIT"
 
         Invoke-WebRequest -Uri "$UvReleaseUrl/sha256.sum" -OutFile $UvChecksums
         $UvChecksumsActualSha256 = (Get-FileHash -LiteralPath $UvChecksums -Algorithm SHA256).Hash
@@ -57,6 +60,11 @@ try {
         if ($UvArchiveActualSha256 -ne $UvArchiveSha256) {
             throw "The downloaded uv archive failed SHA-256 verification."
         }
+        Invoke-WebRequest -Uri $UvLicenseUrl -OutFile $UvLicense
+        $UvLicenseActualSha256 = (Get-FileHash -LiteralPath $UvLicense -Algorithm SHA256).Hash
+        if ($UvLicenseActualSha256 -ne $UvLicenseSha256) {
+            throw "The downloaded uv license failed SHA-256 verification."
+        }
 
         $UvExtractDirectory = Join-Path $TemporaryDirectory "uv"
         Expand-Archive -LiteralPath $UvArchive -DestinationPath $UvExtractDirectory
@@ -69,6 +77,7 @@ try {
             }
             Copy-Item -LiteralPath $UvSource -Destination $UvInstallDirectory -Force
         }
+        Copy-Item -LiteralPath $UvLicense -Destination $UvInstallDirectory -Force
 
         $Uv = Join-Path $HOME ".local\bin\uv.exe"
         if (-not (Test-Path -LiteralPath $Uv -PathType Leaf)) {

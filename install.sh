@@ -4,6 +4,8 @@ set -eu
 UV_VERSION="0.11.31"
 UV_RELEASE_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
 UV_CHECKSUMS_SHA256="cae3a06391dd65895dc22246115fd998250fa43ab3aa8ffd0d6ab71ae301b4e1"
+UV_LICENSE_URL="https://raw.githubusercontent.com/astral-sh/uv/b7fdec626cdafcfb0d0db54d39d3d5f114aefb5c/LICENSE-MIT"
+UV_LICENSE_SHA256="860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c"
 SOURCE_URL="https://github.com/matteodante/therapist/archive/refs/heads/main.tar.gz"
 
 case "$(uname -s)" in
@@ -74,6 +76,7 @@ else
     UV_ARCHIVE_NAME="uv-${UV_TARGET}.tar.gz"
     UV_CHECKSUMS="$TEMP_DIRECTORY/uv-sha256.sum"
     UV_ARCHIVE="$TEMP_DIRECTORY/$UV_ARCHIVE_NAME"
+    UV_LICENSE="$TEMP_DIRECTORY/uv-LICENSE-MIT"
     curl --proto '=https' --tlsv1.2 -LsSf "$UV_RELEASE_URL/sha256.sum" -o "$UV_CHECKSUMS"
     if [ "$(sha256_file "$UV_CHECKSUMS")" != "$UV_CHECKSUMS_SHA256" ]; then
         echo "The downloaded uv checksum manifest failed SHA-256 verification." >&2
@@ -97,6 +100,11 @@ else
         echo "The downloaded uv archive failed SHA-256 verification." >&2
         exit 1
     fi
+    curl --proto '=https' --tlsv1.2 -LsSf "$UV_LICENSE_URL" -o "$UV_LICENSE"
+    if [ "$(sha256_file "$UV_LICENSE")" != "$UV_LICENSE_SHA256" ]; then
+        echo "The downloaded uv license failed SHA-256 verification." >&2
+        exit 1
+    fi
 
     UV_EXTRACT_DIRECTORY="$TEMP_DIRECTORY/uv"
     mkdir -p "$UV_EXTRACT_DIRECTORY" "$HOME/.local/bin"
@@ -109,6 +117,7 @@ else
         cp "$UV_EXTRACT_DIRECTORY/$UV_BINARY" "$HOME/.local/bin/$UV_BINARY"
         chmod 0755 "$HOME/.local/bin/$UV_BINARY"
     done
+    cp "$UV_LICENSE" "$HOME/.local/bin/uv-LICENSE-MIT"
 
     UV="$HOME/.local/bin/uv"
     if [ ! -x "$UV" ]; then
