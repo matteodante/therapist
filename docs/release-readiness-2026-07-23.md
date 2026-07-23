@@ -88,10 +88,12 @@ provider's product terms.
 
 These limits are public and must not be described as equivalent mature-project controls.
 
-## Remaining release work
+## Publication authorization
 
-Confirm the existing `0.1.0` alpha version, create the signed tag and human release notes, then
-verify the published installer path.
+The maintainer approves package version `0.1.0`, signed tag `v0.1.0`, and a GitHub prerelease from
+the exact final `main` candidate once its required checks and candidate workflow pass. The supported
+installer channel is the release-tagged `install.sh` and `install.ps1`; both install the immutable
+`v0.1.0` source rather than a moving branch.
 
 The current privacy screening does not identify publisher-side application-data processing: there is
 no hosted instance, central account, telemetry, maintainer inference, or normal access to user data.

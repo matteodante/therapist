@@ -19,6 +19,23 @@ _Actual Textual interface captured with synthetic data._
 > provider and, if enabled, Telegram receive the content needed to provide their services. If there
 > may be immediate danger, contact local emergency services.
 
+## Install
+
+macOS or Linux:
+
+```bash
+curl -LsSf https://raw.githubusercontent.com/matteodante/therapist/v0.1.0/install.sh | sh
+```
+
+Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/matteodante/therapist/v0.1.0/install.ps1 | iex"
+```
+
+The installer needs no administrator privileges, existing Python, or Git checkout. It installs the
+tagged `v0.1.0` alpha, opens guided setup, and finishes with `thera doctor`.
+
 ## Why this exists
 
 Most AI agents are built to complete tasks or work on code. Therapist explores a different question:
@@ -53,25 +70,11 @@ effective. See
 Its stable directory is `protocols/transdiagnostic/`; Git commits and tags track revisions, so the
 manifest and directory name do not carry a separate SemVer version.
 
-## Quick start
+## First run
 
-On macOS or Linux:
-
-```bash
-curl -LsSf https://raw.githubusercontent.com/matteodante/therapist/main/install.sh | sh
-```
-
-On Windows PowerShell:
-
-```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/matteodante/therapist/main/install.ps1 | iex"
-```
-
-The installer fetches the current `main` branch and, when uv is absent, verifies both the pinned uv
-release checksum manifest and the platform archive before installing it. It then uses a managed
-Python 3.12, installs `thera` in an isolated user environment, runs guided setup, and finishes with
-`thera doctor`. It does not require administrator privileges or a preinstalled Git checkout.
-Restart the shell if `thera` is not immediately available, then start:
+When uv is absent, the installer verifies both the pinned uv release checksum manifest and the
+platform archive before installing it. It then uses a managed Python 3.12 and installs `thera` in an
+isolated user environment. Restart the shell if `thera` is not immediately available, then start:
 
 ```bash
 thera chat
@@ -140,8 +143,9 @@ thera memory model install
 thera memory model remove
 ```
 
-To update the alpha, run the same installer again. Existing encrypted configuration, memory, and
-downloaded model data are preserved. To uninstall the application while keeping user data:
+To reinstall this alpha, run the same installer again. To update later, use the installer command
+published for the newer release. Existing encrypted configuration, memory, and downloaded model data
+are preserved. To uninstall the application while keeping user data:
 
 ```bash
 uv tool uninstall therapist-cli

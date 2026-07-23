@@ -263,13 +263,14 @@ it does not replace full-disk encryption or protect a compromised operating-syst
 ## CLI contract
 
 The normal end-user installation is a copy-paste bootstrap from GitHub: `install.sh` supports macOS
-and Linux, while `install.ps1` supports Windows PowerShell. Both download the current `main` source
-archive, install a pinned uv bootstrap only when uv is absent, use uv-managed Python 3.12 to install
-`therapist-cli` as an isolated user tool, expose `thera` on the user's PATH, run interactive
-`thera setup`, and then run `thera doctor`. They require no administrator privileges, existing
-Python, or Git checkout. Re-running the same installer updates the alpha without deleting encrypted
-application state or the shared Hugging Face model cache. `uv tool uninstall therapist-cli` removes
-the application command but intentionally leaves user data in place.
+and Linux, while `install.ps1` supports Windows PowerShell. The installer published for a release
+downloads that exact immutable tag's source archive, installs a pinned uv bootstrap only when uv is
+absent, uses uv-managed Python 3.12 to install `therapist-cli` as an isolated user tool, exposes
+`thera` on the user's PATH, runs interactive `thera setup`, and then runs `thera doctor`. It requires
+no administrator privileges, existing Python, or Git checkout. Running the installer from a newer
+release updates the alpha without deleting encrypted application state or the shared Hugging Face
+model cache. `uv tool uninstall therapist-cli` removes the application command but intentionally
+leaves user data in place.
 
 Both installers download uv directly from its immutable GitHub release when it is absent. They first
 require the release checksum manifest to match its repository-pinned SHA-256 digest and then require

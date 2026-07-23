@@ -6,7 +6,8 @@ $UvReleaseUrl = "https://github.com/astral-sh/uv/releases/download/$UvVersion"
 $UvChecksumsSha256 = "cae3a06391dd65895dc22246115fd998250fa43ab3aa8ffd0d6ab71ae301b4e1"
 $UvLicenseUrl = "https://raw.githubusercontent.com/astral-sh/uv/b7fdec626cdafcfb0d0db54d39d3d5f114aefb5c/LICENSE-MIT"
 $UvLicenseSha256 = "860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c"
-$SourceUrl = "https://github.com/matteodante/therapist/archive/refs/heads/main.zip"
+$TherapistVersion = "v0.1.0"
+$SourceUrl = "https://github.com/matteodante/therapist/archive/refs/tags/$TherapistVersion.zip"
 
 if ($env:OS -ne "Windows_NT") {
     throw "This installer is for Windows. Use install.sh on macOS or Linux."
@@ -90,7 +91,7 @@ try {
     $Archive = Join-Path $TemporaryDirectory "therapist.zip"
     $SourceDirectory = Join-Path $TemporaryDirectory "source"
 
-    Write-Host "Downloading Therapist from main..."
+    Write-Host "Downloading Therapist $TherapistVersion..."
     Invoke-WebRequest -Uri $SourceUrl -OutFile $Archive
     Expand-Archive -LiteralPath $Archive -DestinationPath $SourceDirectory
     $ProjectDirectory = Get-ChildItem -LiteralPath $SourceDirectory -Directory |
