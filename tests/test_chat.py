@@ -101,23 +101,23 @@ def test_normal_turn_returns_text_and_persists_tool_staged_observation(
                         {
                             "kind": "event",
                             "content": "The user feels pressure at work.",
-                            "evidence_quote": "sotto pressione al lavoro",
-                            "aliases": ["work stress", "pressione lavorativa"],
+                            "evidence_quote": "under pressure at work",
+                            "aliases": ["work stress", "work pressure"],
                         }
                     ],
                     "offered_hypothesis": None,
                 },
             )
         ],
-        "Sono qui. Cosa succede al lavoro?",
+        "I am here. What is happening at work?",
     )
 
-    turn = ChatSession(model, _pack(), store, "it-IT").respond(
-        "Mi sento sotto pressione al lavoro."
+    turn = ChatSession(model, _pack(), store, "en-US").respond(
+        "I feel under pressure at work."
     )
 
     assert turn.safety_state is SafetyState.CLEAR
-    assert turn.text == "Sono qui. Cosa succede al lavoro?"
+    assert turn.text == "I am here. What is happening at work?"
     assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
     history = store.load_session_history(store.active_session().id)  # type: ignore[union-attr]
     assert [part.part_kind for message in history for part in message.parts] == [
@@ -154,9 +154,7 @@ def test_turn_persistence_rolls_back_as_one_transaction(
     monkeypatch.setattr(store, "save_app_state", fail_final_write)
 
     with pytest.raises(RuntimeError, match="simulated final write failure"):
-        ChatSession(model, _pack(), store, "en-US").respond(
-            "I feel pressure at work."
-        )
+        ChatSession(model, _pack(), store, "en-US").respond("I feel pressure at work.")
 
     active = store.active_session()
     assert active is not None
@@ -186,9 +184,9 @@ def test_failed_agent_run_commits_no_staged_actions(tmp_path: Path) -> None:
 
     store = MemoryStore(tmp_path)
     with pytest.raises(AgentRunError):
-        ChatSession(
-            FunctionModel(stream_function=stream), _pack(), store, "en-US"
-        ).respond("Nothing supports that claim.")
+        ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+            "Nothing supports that claim."
+        )
 
     assert store.list_memory() == []
     assert store.session_transcript(store.active_session().id) == ""  # type: ignore[union-attr]
@@ -198,16 +196,14 @@ def test_expired_session_is_closed_before_a_new_turn(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
 
     async def stream(_messages: list[Any], _info: Any):
-        yield "Bentornato."
+        yield "Welcome back."
 
-    session = ChatSession(
-        FunctionModel(stream_function=stream), _pack(), store, "it-IT"
-    )
+    session = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US")
     january = datetime(2026, 1, 1, tzinfo=UTC)
 
-    session.respond("A gennaio ero preoccupato per il lavoro.", january)
+    session.respond("In January I was worried about work.", january)
     old_id = store.active_session().id  # type: ignore[union-attr]
-    session.respond("Sono passati alcuni mesi.", january + timedelta(days=90))
+    session.respond("Several months have passed.", january + timedelta(days=90))
 
     assert store.active_session().id != old_id  # type: ignore[union-attr]
     assert store.list_sessions()[1].ended_at is not None
@@ -217,7 +213,7 @@ def test_expired_session_is_closed_before_a_new_turn(tmp_path: Path) -> None:
 def test_end_consolidates_session_and_revises_formulation(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     active = store.start_session()
-    message_id = store.save_turn(active, "Sono teso al lavoro.", "Cosa accade?", [])
+    message_id = store.save_turn(active, "I feel tense at work.", "What is happening?", [])
     claim, preference = store.add_observations(
         [
             MemoryObservation(kind=MemoryKind.EVENT, content="Work stress"),
@@ -243,7 +239,7 @@ def test_end_consolidates_session_and_revises_formulation(tmp_path: Path) -> Non
         }
     )
 
-    closed = ChatSession(model, _pack(), store, "it-IT").end()
+    closed = ChatSession(model, _pack(), store, "en-US").end()
 
     assert closed is not None
     assert closed.summary == "The user explored work pressure."
@@ -294,16 +290,16 @@ def test_consolidation_rolls_back_formulation_if_session_close_fails(
 def test_crisis_turn_bypasses_model_and_archives_the_exchange(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     session = ChatSession(
-        TestModel(custom_output_text="THIS MUST NOT APPEAR"), _pack(), store, "it-IT"
+        TestModel(custom_output_text="THIS MUST NOT APPEAR"), _pack(), store, "en-US"
     )
 
-    turn = session.respond("Voglio uccidermi adesso, ho un piano.")
+    turn = session.respond("I want to kill myself right now, and I have a plan.")
 
     assert turn.safety_state is SafetyState.IMMEDIATE_DANGER_DISCLOSED
-    assert "112" in turn.text
-    assert "contattare i soccorsi" in turn.text.casefold()
+    assert "911" in turn.text
+    assert "contact emergency services" in turn.text.casefold()
     assert "THIS MUST NOT APPEAR" not in turn.text
-    assert "uccidermi" in store.session_transcript(store.active_session().id)  # type: ignore[union-attr]
+    assert "kill myself" in store.session_transcript(store.active_session().id)  # type: ignore[union-attr]
 
 
 def test_hypothesis_tools_offer_then_confirm_the_same_claim(tmp_path: Path) -> None:
@@ -314,9 +310,7 @@ def test_hypothesis_tools_offer_then_confirm_the_same_claim(tmp_path: Path) -> N
                 "record_memory",
                 {
                     "observations": [],
-                    "offered_hypothesis": (
-                        "Avoidance may protect against anticipated criticism."
-                    ),
+                    "offered_hypothesis": ("Avoidance may protect against anticipated criticism."),
                 },
             )
         ],
@@ -374,9 +368,9 @@ def test_unsupported_direct_observation_is_rejected_before_persistence(
 
     store = MemoryStore(tmp_path)
     with pytest.raises(AgentRunError):
-        ChatSession(
-            FunctionModel(stream_function=stream), _pack(), store, "en-US"
-        ).respond("Work was difficult today.")
+        ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+            "Work was difficult today."
+        )
 
     assert store.list_memory() == []
 
@@ -386,14 +380,14 @@ def test_correction_tool_replaces_existing_memory_without_duplicate(
 ) -> None:
     store = MemoryStore(tmp_path)
     active = store.start_session()
-    evidence_id = store.save_turn(active, "Mia madre vive sola.", "Capisco.", [])
+    evidence_id = store.save_turn(active, "My mother lives alone.", "I understand.", [])
     old = store.add_observations(
-        [MemoryObservation(kind=MemoryKind.FACT, content="La madre vive sola.")],
+        [MemoryObservation(kind=MemoryKind.FACT, content="The user's mother lives alone.")],
         evidence_id,
     )[0]
     text = (
-        "In realtà devo rivedere quel dettaglio: mia madre non vive sola; "
-        "vive con mia zia quasi tutta la settimana."
+        "I need to correct that detail: my mother does not live alone; "
+        "she lives with my aunt most of the week."
     )
     model = _tool_model(
         [
@@ -404,7 +398,7 @@ def test_correction_tool_replaces_existing_memory_without_duplicate(
                         {
                             "memory_id": old.id,
                             "replacement": (
-                                "La madre vive con la zia quasi tutta la settimana."
+                                "The user's mother lives with the user's aunt most of the week."
                             ),
                             "evidence_quote": text,
                         }
@@ -412,17 +406,19 @@ def test_correction_tool_replaces_existing_memory_without_duplicate(
                 },
             )
         ],
-        "Grazie della correzione: aggiorno il quadro.",
+        "Thank you for the correction. I will update the picture.",
     )
 
-    ChatSession(model, _pack(), store, "it-IT").respond(text)
+    ChatSession(model, _pack(), store, "en-US").respond(text)
 
     items = store.list_memory()
     assert len(items) == 1
     assert items[0].id == old.id
     assert items[0].status is MemoryStatus.USER_CORRECTED
-    assert items[0].content == "La madre vive con la zia quasi tutta la settimana."
-    assert "vive sola" not in store.working_context("madre zia").model_dump_json()
+    assert (
+        items[0].content == "The user's mother lives with the user's aunt most of the week."
+    )
+    assert "lives alone" not in store.working_context("mother aunt").model_dump_json()
 
 
 def test_lookup_authorizes_an_out_of_context_correction_without_persisting_tool_results(
@@ -494,9 +490,7 @@ def test_lookup_authorizes_an_out_of_context_correction_without_persisting_tool_
     assert target.id not in {
         item.id for item in store.working_context("revise an old detail").confirmed_memory
     }
-    ChatSession(
-        FunctionModel(stream_function=stream), _pack(), store, "en-US"
-    ).respond(user_text)
+    ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(user_text)
 
     corrected = next(item for item in store.list_memory() if item.id == target.id)
     assert corrected.content == "The oak cabin is blue."
@@ -533,9 +527,7 @@ def test_focus_and_intervention_tools_update_existing_records(tmp_path: Path) ->
         ],
         "Would a two-minute draft be worth testing?",
     )
-    ChatSession(offered, _pack(), store, "en-US").respond(
-        "I keep postponing the first draft."
-    )
+    ChatSession(offered, _pack(), store, "en-US").respond("I keep postponing the first draft.")
     intervention = store.list_interventions()[0]
 
     accepted = _tool_model(
@@ -607,9 +599,7 @@ def test_intervention_update_preserves_omitted_links(tmp_path: Path) -> None:
         "What did you notice when you tried it?",
     )
 
-    ChatSession(model, _pack(), store, "en-US").respond(
-        "I tried the short call this morning."
-    )
+    ChatSession(model, _pack(), store, "en-US").respond("I tried the short call this morning.")
 
     updated = store.list_interventions()[0]
     assert updated.state is InterventionState.TRIED
@@ -647,9 +637,7 @@ def test_intervention_update_rejects_a_different_skill(tmp_path: Path) -> None:
     )
 
     with pytest.raises(AgentRunError):
-        ChatSession(model, _pack(), store, "en-US").respond(
-            "I tried the short call this morning."
-        )
+        ChatSession(model, _pack(), store, "en-US").respond("I tried the short call this morning.")
 
     assert store.list_interventions()[0].state is InterventionState.AGREED
 
@@ -680,15 +668,14 @@ def test_semantic_misattunement_reply_needs_no_process_classifier(
 ) -> None:
     turn = ChatSession(
         _text_model(
-            "Hai ragione: ti ho letto attraverso una lente che non era la tua. "
-            "Che cosa ho mancato?"
+            "You are right: I viewed you through a lens that was not yours. What did I miss?"
         ),
         _pack(),
         MemoryStore(tmp_path),
-        "it-IT",
-    ).respond("Mi stai leggendo attraverso una lente che non è la mia.")
+        "en-US",
+    ).respond("You are viewing me through a lens that is not mine.")
 
-    assert "che cosa ho mancato" in turn.text.casefold()
+    assert "what did i miss" in turn.text.casefold()
 
 
 def test_visible_reply_must_fit_the_text_contract(tmp_path: Path) -> None:

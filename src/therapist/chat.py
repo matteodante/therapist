@@ -224,9 +224,7 @@ class ChatSession:
             "Call independent action tools together when possible. Tool validation errors explain "
             "what must be corrected. Do not describe a durable state change without calling its "
             "tool. Never call a tool merely to classify the conversational process. Keep the final "
-            "reply under 1,200 characters."
-            + return_guidance
-            + formulation_guidance
+            "reply under 1,200 characters." + return_guidance + formulation_guidance
         )
         deps = TurnContext(
             memory=self.memory,
@@ -266,8 +264,7 @@ class ChatSession:
             _ensure_unused_tool(ctx.deps.actions, "record_memory")
             total = len(observations) + int(offered_hypothesis is not None)
             hypotheses = sum(
-                item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
-                for item in observations
+                item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS} for item in observations
             ) + int(offered_hypothesis is not None)
             if total == 0 or total > 2:
                 raise ModelRetry("Record one or two durable memory items.")
@@ -328,9 +325,7 @@ class ChatSession:
             _ensure_unused_tool(ctx.deps.actions, "confirm_hypotheses")
             if len(memory_ids) != len(set(memory_ids)):
                 raise ModelRetry("Confirm each hypothesis ID at most once.")
-            if set(memory_ids) & {
-                item.memory_id for item in ctx.deps.actions.corrections
-            }:
+            if set(memory_ids) & {item.memory_id for item in ctx.deps.actions.corrections}:
                 raise ModelRetry("Do not confirm and correct the same claim in one turn.")
             for item_id in memory_ids:
                 item = ctx.deps.available_memory.get(item_id)
@@ -381,13 +376,9 @@ class ChatSession:
             _ensure_unused_tool(ctx.deps.actions, "record_intervention")
             if action.skill is TherapeuticSkill.REPAIR:
                 raise ModelRetry("Repair is conversational behavior, not an intervention record.")
-            unknown_links = set(action.linked_memory_ids or []) - set(
-                ctx.deps.available_memory
-            )
+            unknown_links = set(action.linked_memory_ids or []) - set(ctx.deps.available_memory)
             if unknown_links:
-                raise ModelRetry(
-                    "Linked memory IDs must come from context or search_memory."
-                )
+                raise ModelRetry("Linked memory IDs must come from context or search_memory.")
             if action.record_id:
                 current = ctx.deps.active_interventions.get(action.record_id)
                 if current is None or not valid_intervention_transition(
@@ -405,20 +396,14 @@ class ChatSession:
                 InterventionState.AGREED,
             }:
                 raise ModelRetry("A new intervention must be offered or agreed.")
-            elif (
-                pending_intervention
-                and action.skill.value == pending_intervention.skill
-            ):
+            elif pending_intervention and action.skill.value == pending_intervention.skill:
                 raise ModelRetry(
                     "Update or stop the pending intervention instead of creating another."
                 )
             if (
-                action.record_id is not None
-                or action.state is InterventionState.AGREED
+                action.record_id is not None or action.state is InterventionState.AGREED
             ) and not _quote_in_text(action.evidence_quote, ctx.deps.user_text):
-                raise ModelRetry(
-                    "An agreed or updated intervention requires an exact user quote."
-                )
+                raise ModelRetry("An agreed or updated intervention requires an exact user quote.")
             ctx.deps.actions.intervention = action
             ctx.deps.actions.called_tools.add("record_intervention")
             return {"staged": action.state.value}
@@ -446,9 +431,7 @@ class ChatSession:
             ModelResponse(parts=[TextPart(content=reply)]),
         ]
         with self.memory.transaction():
-            evidence_id = self.memory.save_turn(
-                session, text, reply, canonical_messages, now
-            )
+            evidence_id = self.memory.save_turn(session, text, reply, canonical_messages, now)
             for correction in actions.corrections:
                 self.memory.correct_memory(
                     correction.memory_id,
@@ -459,15 +442,13 @@ class ChatSession:
                 if correction.memory_id == app_state.pending_hypothesis_id:
                     app_state.pending_hypothesis_id = None
             correction_quotes = {
-                " ".join(item.evidence_quote.split()).casefold()
-                for item in actions.corrections
+                " ".join(item.evidence_quote.split()).casefold() for item in actions.corrections
             }
             observations = [
                 item
                 for item in actions.observations
                 if not item.evidence_quote
-                or " ".join(item.evidence_quote.split()).casefold()
-                not in correction_quotes
+                or " ".join(item.evidence_quote.split()).casefold() not in correction_quotes
             ]
             if actions.offered_hypothesis:
                 observations = [
@@ -546,8 +527,7 @@ class ChatSession:
                     )
                     app_state.pending_intervention_id = (
                         updated.id
-                        if updated.state
-                        in {InterventionState.OFFERED, InterventionState.AGREED}
+                        if updated.state in {InterventionState.OFFERED, InterventionState.AGREED}
                         else None
                     )
                 elif action.state in {InterventionState.OFFERED, InterventionState.AGREED}:
@@ -598,9 +578,7 @@ class ChatSession:
             return self.memory.start_session(now)
         return session
 
-    def _consolidate(
-        self, session: SessionRecord, now: datetime | None = None
-    ) -> SessionRecord:
+    def _consolidate(self, session: SessionRecord, now: datetime | None = None) -> SessionRecord:
         transcript = self.memory.session_transcript(session.id, limit_chars=16_000)
         if not transcript:
             formulation = self.memory.load_formulation()
@@ -612,9 +590,7 @@ class ChatSession:
         all_memories = self.memory.list_memory()
         by_id = {item.id: item for item in all_memories}
         priority_ids = [
-            item_id
-            for ids in existing_formulation.evidence.values()
-            for item_id in ids
+            item_id for ids in existing_formulation.evidence.values() for item_id in ids
         ]
         memories = list(
             {

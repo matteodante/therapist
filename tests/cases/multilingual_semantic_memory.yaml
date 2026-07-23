@@ -1,0 +1,126 @@
+name: multilingual_semantic_memory_retrieval
+cases:
+  - name: MULTILINGUAL-IT-EN
+    metadata:
+      language: Italian to English
+    inputs:
+      memory: Quando devo parlare con il mio responsabile temo il giudizio e rimando la telefonata.
+      query: Tomorrow I must explain to my manager that the delivery is late.
+      distractors:
+        - Nel fine settimana coltivo pomodori in giardino.
+        - Ho comprato una bicicletta per andare lungo il fiume.
+        - La sera preparo spesso una zuppa di verdure.
+    expected_output: &expected
+      claim_ranked_first: true
+      excerpt_ranked_first: true
+      intervention_ranked_first: true
+      index_reused_after_restart: true
+      encrypted_at_rest: true
+
+  - name: MULTILINGUAL-EN-ES
+    metadata:
+      language: English to Spanish
+    inputs:
+      memory: I postpone calls with my supervisor because I am afraid of being judged.
+      query: Mañana debo contarle a mi responsable que la entrega se retrasó.
+      distractors:
+        - I grow tomatoes in the garden on weekends.
+        - I bought a bicycle to ride beside the river.
+        - I often make vegetable soup in the evening.
+    expected_output: *expected
+
+  - name: MULTILINGUAL-FR-DE
+    metadata:
+      language: French to German
+    inputs:
+      memory: Je reporte les appels avec ma responsable parce que je crains son jugement.
+      query: Morgen muss ich meiner Chefin erklären, dass die Lieferung verspätet ist.
+      distractors:
+        - Le week-end je cultive des tomates dans le jardin.
+        - J'ai acheté un vélo pour rouler près de la rivière.
+        - Le soir je prépare souvent une soupe de légumes.
+    expected_output: *expected
+
+  - name: MULTILINGUAL-DE-PT
+    metadata:
+      language: German to Portuguese
+    inputs:
+      memory: Ich verschiebe Gespräche mit meinem Vorgesetzten, weil ich Angst vor seiner Bewertung habe.
+      query: Amanhã preciso explicar ao meu supervisor que a entrega está atrasada.
+      distractors:
+        - Am Wochenende pflanze ich Tomaten im Garten.
+        - Ich fahre mit dem Fahrrad am Fluss entlang.
+        - Abends koche ich gern Gemüsesuppe.
+    expected_output: *expected
+
+  - name: MULTILINGUAL-AR-EN
+    metadata:
+      language: Arabic to English
+    inputs:
+      memory: عندما أحتاج إلى التحدث مع مديري أخشى حكمه وأؤجل المكالمة.
+      query: I need to tell my boss that tomorrow's delivery will be late.
+      distractors:
+        - أحب زراعة الطماطم في الحديقة في عطلة نهاية الأسبوع.
+        - اشتريت دراجة للركوب بجانب النهر.
+        - أحب إعداد حساء الخضار في المساء.
+    expected_output: *expected
+
+  - name: MULTILINGUAL-HI-EN
+    metadata:
+      language: Hindi to English
+    inputs:
+      memory: जब मुझे अपने प्रबंधक से बात करनी होती है तो मुझे आलोचना का डर लगता है और मैं फोन टाल देता हूँ।
+      query: Tomorrow I have to explain a delayed shipment to my manager.
+      distractors:
+        - मैं सप्ताहांत में बगीचे में टमाटर उगाता हूँ।
+        - मैंने नदी के किनारे चलाने के लिए साइकिल खरीदी।
+        - शाम को मैं अक्सर सब्ज़ियों का सूप बनाता हूँ।
+    expected_output: *expected
+
+  - name: MULTILINGUAL-ZH-EN
+    metadata:
+      language: Chinese to English
+    inputs:
+      memory: 需要和主管谈话时，我害怕被评价，所以总是推迟打电话。
+      query: I must tell my manager that the delivery is late tomorrow.
+      distractors:
+        - 周末我喜欢在花园里种西红柿。
+        - 我买了一辆自行车去河边骑行。
+        - 晚上我经常做蔬菜汤。
+    expected_output: *expected
+
+  - name: MULTILINGUAL-JA-EN
+    metadata:
+      language: Japanese to English
+    inputs:
+      memory: 上司と話す必要があると、評価されるのが怖くて電話を先延ばしにします。
+      query: Tomorrow I need to explain a late delivery to my supervisor.
+      distractors:
+        - 週末は庭でトマトを育てています。
+        - 川沿いを走るために自転車を買いました。
+        - 夜によく野菜スープを作ります。
+    expected_output: *expected
+
+  - name: MULTILINGUAL-TH-EN
+    metadata:
+      language: Thai to English
+    inputs:
+      memory: เมื่อต้องคุยกับหัวหน้า ฉันกลัวถูกตัดสินจึงเลื่อนการโทรออกไป
+      query: I have to tell my manager that tomorrow's delivery is delayed.
+      distractors:
+        - วันหยุดฉันชอบปลูกมะเขือเทศในสวน
+        - ฉันซื้อจักรยานเพื่อปั่นริมแม่น้ำ
+        - ตอนเย็นฉันมักทำซุปผัก
+    expected_output: *expected
+
+  - name: MULTILINGUAL-UK-EN
+    metadata:
+      language: Ukrainian to English
+    inputs:
+      memory: Коли треба говорити з керівником, я боюся осуду й відкладаю дзвінок.
+      query: Tomorrow I must explain to my manager why the delivery is late.
+      distractors:
+        - На вихідних я вирощую помідори в саду.
+        - Я купив велосипед для поїздок біля річки.
+        - Увечері я часто готую овочевий суп.
+    expected_output: *expected

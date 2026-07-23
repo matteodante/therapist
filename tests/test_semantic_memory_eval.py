@@ -48,9 +48,7 @@ def _run_semantic_case(inputs: dict[str, Any]) -> dict[str, bool]:
         )
         started = datetime(2026, 1, 1, tzinfo=UTC)
         session = store.start_session(started)
-        relevant_message = store.save_turn(
-            session, inputs["memory"], "Tell me more.", [], started
-        )
+        relevant_message = store.save_turn(session, inputs["memory"], "Tell me more.", [], started)
         relevant = store.add_observations(
             [MemoryObservation(kind=MemoryKind.EVENT, content=inputs["memory"])],
             relevant_message,
@@ -81,9 +79,9 @@ def _run_semantic_case(inputs: dict[str, Any]) -> dict[str, bool]:
             "relevant_ranked_first": first_context.confirmed_memory[0].id == relevant.id,
             "index_reused_after_restart": (
                 second_context.confirmed_memory[0].id == relevant.id
-                and embedder.document_calls == 1
+                and embedder.document_calls == 2
             ),
-            "all_vectors_indexed": indexed == 2,
+            "all_vectors_indexed": indexed == 4,
             "sensitive_plaintext_absent": all(
                 text.encode() not in database_bytes
                 for text in (inputs["memory"], inputs["distractor"])
@@ -102,8 +100,6 @@ def test_semantic_memory_dataset() -> None:
     report = dataset.evaluate_sync(_run_semantic_case, progress=False)
 
     assert not report.failures, report.render(include_errors=True)
-    assert all(
-        result.value
-        for case in report.cases
-        for result in case.assertions.values()
-    ), report.render(include_input=True, include_output=True, include_reasons=True)
+    assert all(result.value for case in report.cases for result in case.assertions.values()), (
+        report.render(include_input=True, include_output=True, include_reasons=True)
+    )

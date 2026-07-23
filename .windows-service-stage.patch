@@ -1,0 +1,90 @@
+diff --git a/AGENTS.md b/AGENTS.md
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -44,7 +44,8 @@ Included in this milestone:
+ 
+ - interactive terminal chat;
+ - private text-only Telegram chat using long polling and the standard Bot API;
+-- native per-user Telegram background service installation for macOS launchd and Linux systemd;
++- native per-user Telegram background installation for macOS launchd, Linux systemd, and Windows
++  Task Scheduler;
+ - one PydanticAI conversational agent and one end-of-session consolidation pass;
+ - device-code ChatGPT OAuth, encrypted token storage, and automatic refresh for the experimental
+   `codex:` provider;
+@@ -314,11 +315,12 @@ encrypted update offset survives restarts. A crash between model state commit an
+ can still cause one update to be processed again; full durable inbox idempotency is deferred until
+ `ChatSession` can atomically accept an external idempotency key.
+ 
+-`thera telegram-service install` validates the saved configuration, writes a mode-`0600` native
+-per-user service definition, and starts it without putting secrets in process arguments. It uses a
+-LaunchAgent in `~/Library/LaunchAgents` on macOS and a user unit in `~/.config/systemd/user` on Linux.
+-The service starts with the user's login; Linux operation beyond logout depends on the host's user
+-manager/lingering policy. `status`, `restart`, and `uninstall` inspect, restart, or stop and remove
+-only this service definition. macOS operational output is written to the application data directory's
++`thera telegram-service install` validates the saved configuration and starts the listener without
++putting secrets in process arguments. It writes a mode-`0600` LaunchAgent in
++`~/Library/LaunchAgents` on macOS, a mode-`0600` user unit in `~/.config/systemd/user` on Linux, or a
++limited-privilege per-user scheduled task on Windows. The listener starts with the user's login;
++Linux operation beyond logout depends on the host's user manager/lingering policy. `status`,
++`restart`, and `uninstall` inspect, restart, or stop the process and remove only this native
++definition. macOS operational output is written to the application data directory's
+ `telegram-service.log`; Linux output is available through the user journal.
+ 
+ Minimal setup:
+@@ -452,7 +454,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and
+   consent, persists its update offset, exposes read-only state with evidence and pagination, reports
+   durable turn changes, and keeps privileged memory operations local.
+-- Telegram background installation uses the native per-user service manager, keeps secrets out of
+-  process arguments and service files, and supports status, restart, and clean removal.
++- Telegram background installation uses the native per-user service or task manager, keeps secrets
++  out of process arguments and native definitions, and supports status, restart, and clean removal
++  on macOS, Linux, and Windows.
+ - Interactive setup persists defaults and secrets encrypted, does not echo the Telegram token, and
+   lets chat and Telegram start without environment configuration.
+ 
+@@ -553,5 +556,7 @@ uv run ruff check .
+ - Apple launchd jobs:
+   https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html
+ - systemd user services: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
++- Windows Task Scheduler:
++  https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/schtasks
+ - OpenClaw Telegram channel:
+   https://github.com/openclaw/openclaw/blob/main/docs/channels/telegram.md
+diff --git a/README.md b/README.md
+--- a/README.md
++++ b/README.md
+@@ -47,17 +47,17 @@ the listener running in the foreground:
+ uv run thera telegram
+ ```
+ 
+-Or install and start it as a native per-user background service:
++Or install and start it as a native per-user background service or task:
+ 
+ ```bash
+ uv run thera telegram-service install
+ uv run thera telegram-service status
+ ```
+ 
+-This uses a macOS LaunchAgent or Linux systemd user unit. The service file contains only command
+-paths and reads tokens and provider credentials from the existing encrypted store. Use
+-`telegram-service restart` after configuration changes and `telegram-service uninstall` to stop and
+-remove it.
++This uses a macOS LaunchAgent, Linux systemd user unit, or Windows scheduled task. The native
++definition contains only command paths and reads tokens and provider credentials from the existing
++encrypted store. Use `telegram-service restart` after configuration changes and
++`telegram-service uninstall` to stop the process and remove its background definition.
+ 
+ Run `uv run thera --help` for all commands. Inside chat, `/help` lists memory, session, correction,
+ forgetting, and session-closing commands.
+diff --git a/tests/TEST_PLAN.md b/tests/TEST_PLAN.md
+--- a/tests/TEST_PLAN.md
++++ b/tests/TEST_PLAN.md
+@@ -31,7 +31,7 @@ contracts.
+ | PROCESS-001..004 | Deterministic Pydantic Evals | Execute supported/unsupported memory writes, indirect Italian rupture, and ordinary presence | Tool paths, evidence gates, semantic repair, and intentional no-tool turns operate in the real harness |
+ | TELEGRAM-001 | Deterministic | Inspect status, formulation, memory, sessions, interventions, and privacy from the allowlisted chat | Read-only views are localized, evidence-linked, paginated, and unavailable before channel consent |
+ | TELEGRAM-002 | Deterministic | A normal Telegram turn commits memory, focus, or intervention changes | The reply is followed by an exact durable-change record without exposing prompts, secrets, or private reasoning |
+-| TELEGRAM-SERVICE-001 | Deterministic | Install, inspect, restart, and remove the listener as a user service | Native launchd/systemd configuration contains no secrets, starts the saved Telegram command, and is removed cleanly |
++| TELEGRAM-SERVICE-001 | Deterministic | Install, inspect, restart, and remove the listener in background | Native launchd/systemd/Task Scheduler configuration contains no secrets, starts the saved Telegram command, and is removed cleanly |
+ | SKILL-001..010 | Deterministic Pydantic Evals | Audit the Git-versioned protocol and progressive formulation contract | Required workflow, evidence, repair, consent, autonomy, adverse-effect review, and boundaries remain present |
+ | LIVE-001 | Real provider + LLM judge | Complete a synthetic avoidance case, consolidate, restart, and return after four months | Storage gates pass and the transcript demonstrates listening, shared formulation, pacing, a small agreed intervention, outcome review, and accurate continuity |
+ | LIVE-002 | Real provider + LLM judge | User rejects advice in English and returns after two weeks | The agent repairs the mismatch before more technique and retains the corrected helping preference |

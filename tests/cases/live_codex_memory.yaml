@@ -3,19 +3,19 @@ cases:
   - name: CODEX-MEMORY-001
     metadata:
       description: Codex captures, consolidates, semantically retrieves, and uses a confirmed pattern after four months.
-      locale: it-IT
+      locale: en-US
     inputs:
       started_at: "2026-01-10T10:00:00+00:00"
       return_after_days: 120
       initial_messages:
-        - Da alcune settimane rimando le telefonate con il mio responsabile. Prima penso che noterà ogni errore, poi preparo tutto nei dettagli e alla fine trovo una scusa per non chiamare.
-        - Quando rimando provo sollievo per un po', ma la sera mi vergogno. Mi succede soprattutto se devo spiegare un ritardo.
-        - Sì, l'ipotesi che il timore del giudizio alimenti il rinvio mi sembra corretta. Vorrei prima capirla bene, senza esercizi per ora.
-      semantic_query: Domani devo comunicare a una figura autorevole che una consegna è in ritardo.
-      return_message: Sono passati quattro mesi. Domani devo comunicare a una figura autorevole che una consegna è in ritardo e mi viene voglia di evitare la conversazione.
+        - For several weeks I have postponed calls with my manager. First I think they will notice every mistake, then I prepare every detail, and finally I find an excuse not to call.
+        - When I postpone the call, I feel relieved for a while but ashamed by evening. It happens especially when I need to explain a delay.
+        - Yes, the hypothesis that fear of judgment drives the postponement seems accurate. I want to understand it before trying any exercises.
+      semantic_query: Tomorrow I need to tell an authority figure that a delivery is late.
+      return_message: Four months have passed. Tomorrow I need to tell an authority figure that a delivery is late, and I want to avoid the conversation.
     expected_output:
       minimum_memory_items: 3
       minimum_sessions: 2
-      context_terms: [responsabile, giudizio]
-      continuity_terms: [responsabile, quattro mesi, prima, ricorda]
+      context_terms: [manager, judgment]
+      continuity_terms: [manager, four months, before, remember]
       require_confirmed_hypothesis: true

@@ -13,7 +13,7 @@ from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 
 from therapist.auth import codex_model, load_credential
 from therapist.chat import ChatSession
-from therapist.cli import DEFAULT_EMBEDDING_MODEL
+from therapist.cli import DEFAULT_EMBEDDING_MODEL, _default_embedder
 from therapist.memory import MemoryKind, MemoryStatus, MemoryStore
 from therapist.protocol import ProtocolPack
 
@@ -52,9 +52,7 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
             "return_uses_continuity": any(
                 term.casefold() in reply for term in expected["continuity_terms"]
             ),
-            "new_session_created": (
-                ctx.output["session_count"] >= expected["minimum_sessions"]
-            ),
+            "new_session_created": (ctx.output["session_count"] >= expected["minimum_sessions"]),
             "return_reply_non_empty": bool(reply.strip()),
         }
 
@@ -71,19 +69,20 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
         started_at = datetime.fromisoformat(inputs["started_at"])
         with tempfile.TemporaryDirectory(dir=tmp_path) as data_directory:
             path = Path(data_directory)
-            store = MemoryStore(path, embedding_model=DEFAULT_EMBEDDING_MODEL)
-            chat = ChatSession(model, pack, store, "it-IT")
+            embedder = _default_embedder(local_files_only=True)
+            store = MemoryStore(path, embedding_model=DEFAULT_EMBEDDING_MODEL, embedder=embedder)
+            chat = ChatSession(model, pack, store, "en-US")
             replies = [
-                chat.respond(
-                    message, started_at + timedelta(minutes=index * 10)
-                ).text
+                chat.respond(message, started_at + timedelta(minutes=index * 10)).text
                 for index, message in enumerate(inputs["initial_messages"])
             ]
             closed = chat.end(started_at + timedelta(hours=1))
 
-            restarted = MemoryStore(path, embedding_model=DEFAULT_EMBEDDING_MODEL)
+            restarted = MemoryStore(
+                path, embedding_model=DEFAULT_EMBEDDING_MODEL, embedder=embedder
+            )
             context = restarted.working_context(inputs["semantic_query"])
-            returned = ChatSession(model, pack, restarted, "it-IT").respond(
+            returned = ChatSession(model, pack, restarted, "en-US").respond(
                 inputs["return_message"],
                 started_at + timedelta(days=inputs["return_after_days"]),
             )
@@ -91,7 +90,7 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
             restarted.working_context(inputs["return_message"])
             with sqlite3.connect(restarted.database_path) as database:
                 indexed = database.execute(
-                    "SELECT COUNT(*) FROM semantic_index"
+                    "SELECT COUNT(*) FROM semantic_index WHERE entity_type = 'memory'"
                 ).fetchone()[0]
             return {
                 "memory_count": len(items),

@@ -95,4 +95,3 @@ def _resource(locale: str) -> CrisisResource:
     if locale.casefold().startswith("it"):
         return CrisisResource("112", None)
     return CrisisResource("911", "988")
-

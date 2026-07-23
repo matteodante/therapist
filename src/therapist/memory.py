@@ -9,6 +9,7 @@ import math
 import os
 import re
 import sqlite3
+import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -57,9 +58,7 @@ class InterventionState(StrEnum):
     STOPPED = "stopped"
 
 
-def valid_intervention_transition(
-    current: InterventionState, target: InterventionState
-) -> bool:
+def valid_intervention_transition(current: InterventionState, target: InterventionState) -> bool:
     allowed = {
         InterventionState.OFFERED: {
             InterventionState.OFFERED,
@@ -209,8 +208,10 @@ class MemoryStore:
         embedding_model: str | None = None,
         embedder: Embedder | None = None,
     ) -> None:
-        if embedding_model and embedder is None and not embedding_model.startswith(
-            ("sentence-transformers:", "ollama:")
+        if (
+            embedding_model
+            and embedder is None
+            and not embedding_model.startswith(("sentence-transformers:", "ollama:"))
         ):
             raise ValueError("Semantic memory requires a local embedding model.")
         if embedding_model and embedding_model.startswith("ollama:"):
@@ -251,13 +252,26 @@ class MemoryStore:
                     updated_at TEXT NOT NULL, payload BLOB NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS semantic_index (
-                    memory_id TEXT PRIMARY KEY, model TEXT NOT NULL,
+                    entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
+                    model TEXT NOT NULL,
                     content_hash TEXT NOT NULL, dimensions INTEGER NOT NULL,
                     payload BLOB NOT NULL,
-                    FOREIGN KEY(memory_id) REFERENCES memory_items(id) ON DELETE CASCADE
+                    PRIMARY KEY(entity_type, entity_id)
                 );
                 """
             )
+            semantic_columns = {
+                row[1] for row in database.execute("PRAGMA table_info(semantic_index)")
+            }
+            if "entity_type" not in semantic_columns:
+                database.execute("DROP TABLE semantic_index")
+                database.execute(
+                    "CREATE TABLE semantic_index ("
+                    "entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, "
+                    "model TEXT NOT NULL, content_hash TEXT NOT NULL, "
+                    "dimensions INTEGER NOT NULL, payload BLOB NOT NULL, "
+                    "PRIMARY KEY(entity_type, entity_id))"
+                )
         self._migrate_legacy_state()
 
     def load_app_state(self) -> AppState:
@@ -273,9 +287,7 @@ class MemoryStore:
             return CaseFormulation()
         return CaseFormulation.model_validate_json(payload)
 
-    def save_formulation(
-        self, formulation: CaseFormulation, now: datetime | None = None
-    ) -> None:
+    def save_formulation(self, formulation: CaseFormulation, now: datetime | None = None) -> None:
         formulation.last_reviewed_at = _iso(now)
         self._write_state("formulation", formulation.model_dump_json().encode())
 
@@ -464,8 +476,7 @@ class MemoryStore:
                 (session_id,),
             ).fetchall()
         lines = [
-            f"{role}: {self._decrypt_json(payload).get('content', '')}"
-            for role, payload in rows
+            f"{role}: {self._decrypt_json(payload).get('content', '')}" for role, payload in rows
         ]
         if limit_chars is None:
             return "\n".join(lines)
@@ -497,8 +508,7 @@ class MemoryStore:
                 continue
             if (
                 evidence_text is not None
-                and observation.kind
-                in {MemoryKind.FACT, MemoryKind.PREFERENCE, MemoryKind.EVENT}
+                and observation.kind in {MemoryKind.FACT, MemoryKind.PREFERENCE, MemoryKind.EVENT}
                 and not _supported_quote(observation.evidence_quote, evidence_text)
             ):
                 continue
@@ -528,9 +538,9 @@ class MemoryStore:
                 duplicate.last_seen_at = _iso(now)
                 if evidence_message_id not in duplicate.evidence_message_ids:
                     duplicate.evidence_message_ids.append(evidence_message_id)
-                duplicate.aliases = list(
-                    dict.fromkeys([*duplicate.aliases, *observation.aliases])
-                )[:5]
+                duplicate.aliases = list(dict.fromkeys([*duplicate.aliases, *observation.aliases]))[
+                    :5
+                ]
                 self._save_memory_item(duplicate)
                 saved.append(duplicate)
                 continue
@@ -572,6 +582,9 @@ class MemoryStore:
             item.status = MemoryStatus.USER_CONFIRMED
             item.last_seen_at = _iso(now)
             self._save_memory_item(item)
+            self._delete_semantic_entities(
+                "message", [str(value) for value in item.evidence_message_ids]
+            )
             self._refresh_formulation_links()
             self._clear_pending_hypothesis(item.id)
             return item
@@ -611,8 +624,10 @@ class MemoryStore:
             item.status = MemoryStatus.ARCHIVED
             item.last_seen_at = _iso()
             self._save_memory_item(item)
-            with self._connect() as database:
-                database.execute("DELETE FROM semantic_index WHERE memory_id = ?", (item.id,))
+            self._delete_semantic_entities("memory", [item.id])
+            self._delete_semantic_entities(
+                "message", [str(value) for value in item.evidence_message_ids]
+            )
             self._refresh_formulation_links()
             self._replace_derived_text(item.content, "", forgotten_id=item.id)
             self._clear_pending_hypothesis(item.id)
@@ -669,9 +684,7 @@ class MemoryStore:
         if not valid_intervention_transition(record.state, state):
             raise ValueError(f"Invalid intervention transition: {record.state} -> {state}")
         record.state = state
-        record.description = (
-            " ".join(description.split()) if description else record.description
-        )
+        record.description = " ".join(description.split()) if description else record.description
         record.prediction = " ".join(prediction.split()) if prediction else record.prediction
         if linked_memory_ids is not None:
             active_memory_ids = {item.id for item in self.list_memory()}
@@ -730,16 +743,39 @@ class MemoryStore:
         ][:10]
         recent_sessions = [session for session in self.list_sessions() if session.ended_at][:3]
         interventions = self.list_interventions(active_only=True)
+        intervention_scores = self._semantic_text_scores(
+            query,
+            "intervention",
+            {
+                item.id: " ".join(
+                    value
+                    for value in (
+                        item.description,
+                        item.prediction,
+                        item.outcome,
+                        item.user_appraisal,
+                    )
+                    if value
+                )
+                for item in interventions
+            },
+        )
         interventions.sort(
             key=lambda item: (
                 item.id == app_state.pending_intervention_id,
-                _lexical_score(
+                _hybrid_text_score(
                     query,
                     " ".join(
                         value
-                        for value in (item.description, item.prediction, item.outcome)
+                        for value in (
+                            item.description,
+                            item.prediction,
+                            item.outcome,
+                            item.user_appraisal,
+                        )
                         if value
                     ),
+                    intervention_scores.get(item.id),
                 ),
                 item.updated_at,
             ),
@@ -762,16 +798,23 @@ class MemoryStore:
             for message_id in item.evidence_message_ids
         }
         candidates = self._archive_candidates(excluded_message_ids)
+        candidate_text = dict(candidates)
+        excerpt_scores = self._semantic_text_scores(query, "message", candidate_text)
         excerpts = [
             text
-            for _, _, text in sorted(
+            for _, _, message_id, text in sorted(
                 (
-                    (_lexical_score(query, text), -position, text)
-                    for position, text in enumerate(candidates)
+                    (
+                        _hybrid_text_score(query, text, excerpt_scores.get(message_id)),
+                        -position,
+                        message_id,
+                        text,
+                    )
+                    for position, (message_id, text) in enumerate(candidates)
                 ),
                 reverse=True,
             )
-            if _lexical_score(query, text) > 0
+            if (_lexical_score(query, text) > 0 or excerpt_scores.get(message_id, 0.0) >= 0.3)
             and not any(old in text.casefold() for old in excluded)
         ][:5]
         return WorkingContext(
@@ -802,9 +845,7 @@ class MemoryStore:
             "app": self.load_app_state().model_dump(),
             "case_formulation": self.load_formulation().model_dump(),
             "memory": [item.model_dump(mode="json") for item in self.list_memory(True)],
-            "interventions": [
-                item.model_dump(mode="json") for item in self.list_interventions()
-            ],
+            "interventions": [item.model_dump(mode="json") for item in self.list_interventions()],
             "sessions": [session.model_dump() for session in self.list_sessions()],
             "messages": messages,
         }
@@ -872,56 +913,63 @@ class MemoryStore:
             raise KeyError(f"Unknown memory: {item_id}")
         return self._decrypt_model(row[0], MemoryItem)
 
-    def _archive_candidates(self, excluded_message_ids: set[int]) -> list[str]:
+    def _archive_candidates(self, excluded_message_ids: set[int]) -> list[tuple[str, str]]:
         with self._connect() as database:
             rows = database.execute(
                 "SELECT id, payload FROM messages WHERE role = 'user' ORDER BY id DESC LIMIT 1000"
             ).fetchall()
         return [
-            self._decrypt_json(payload).get("content", "")
+            (str(message_id), self._decrypt_json(payload).get("content", ""))
             for message_id, payload in rows
             if message_id not in excluded_message_ids
         ]
 
-    def _semantic_scores(
-        self, query: str, memories: list[MemoryItem]
+    def _semantic_scores(self, query: str, memories: list[MemoryItem]) -> dict[str, float]:
+        return self._semantic_text_scores(
+            query,
+            "memory",
+            {item.id: " ".join([item.content, *item.aliases]) for item in memories},
+        )
+
+    def _semantic_text_scores(
+        self, query: str, entity_type: str, texts: dict[str, str]
     ) -> dict[str, float]:
-        if not self._embedder or not self._embedding_model or not query.strip() or not memories:
+        if not self._embedder or not self._embedding_model or not query.strip() or not texts:
             return {}
         try:
-            expected = {
-                item.id: self._content_hash(" ".join([item.content, *item.aliases]))
-                for item in memories
-            }
+            expected = {entity_id: self._content_hash(text) for entity_id, text in texts.items()}
             with self._connect() as database:
                 rows = database.execute(
-                    "SELECT memory_id, content_hash, dimensions, payload "
-                    "FROM semantic_index WHERE model = ?",
-                    (self._embedding_model,),
+                    "SELECT entity_id, content_hash, dimensions, payload "
+                    "FROM semantic_index WHERE model = ? AND entity_type = ?",
+                    (self._embedding_model, entity_type),
                 ).fetchall()
             vectors: dict[str, list[float]] = {}
-            for memory_id, content_hash, dimensions, payload in rows:
+            for entity_id, content_hash, dimensions, payload in rows:
                 vector = self._decrypt_json(payload)["vector"]
-                if expected.get(memory_id) == content_hash and len(vector) == dimensions:
-                    vectors[memory_id] = vector
-            missing = [item for item in memories if item.id not in vectors]
+                if expected.get(entity_id) == content_hash and len(vector) == dimensions:
+                    vectors[entity_id] = vector
+            missing = {
+                entity_id: text for entity_id, text in texts.items() if entity_id not in vectors
+            }
             if missing:
-                documents = [" ".join([item.content, *item.aliases]) for item in missing]
-                result = self._embedder.embed_documents_sync(documents)
+                result = self._embedder.embed_documents_sync(list(missing.values()))
                 with self._connect() as database:
-                    for item, vector in zip(missing, result.embeddings, strict=True):
+                    for entity_id, vector in zip(missing, result.embeddings, strict=True):
                         stored = list(vector)
-                        vectors[item.id] = stored
+                        vectors[entity_id] = stored
                         database.execute(
-                            "INSERT INTO semantic_index(memory_id, model, content_hash, "
-                            "dimensions, payload) VALUES (?, ?, ?, ?, ?) "
-                            "ON CONFLICT(memory_id) DO UPDATE SET model = excluded.model, "
+                            "INSERT INTO semantic_index(entity_type, entity_id, model, "
+                            "content_hash, dimensions, payload) VALUES (?, ?, ?, ?, ?, ?) "
+                            "ON CONFLICT(entity_type, entity_id) DO UPDATE SET "
+                            "model = excluded.model, "
                             "content_hash = excluded.content_hash, "
                             "dimensions = excluded.dimensions, payload = excluded.payload",
                             (
-                                item.id,
+                                entity_type,
+                                entity_id,
                                 self._embedding_model,
-                                expected[item.id],
+                                expected[entity_id],
                                 len(stored),
                                 self._encrypt_json({"vector": stored}),
                             ),
@@ -937,12 +985,19 @@ class MemoryStore:
                 "Semantic memory is unavailable. Run `thera setup` and try again."
             ) from error
 
+    def _delete_semantic_entities(self, entity_type: str, entity_ids: list[str]) -> None:
+        if not entity_ids:
+            return
+        with self._connect() as database:
+            database.executemany(
+                "DELETE FROM semantic_index WHERE entity_type = ? AND entity_id = ?",
+                ((entity_type, entity_id) for entity_id in entity_ids),
+            )
+
     def _content_hash(self, content: str) -> str:
         return hmac.new(self._hash_key, content.encode(), hashlib.sha256).hexdigest()
 
-    def _replace_derived_text(
-        self, old: str, new: str, *, forgotten_id: str | None = None
-    ) -> None:
+    def _replace_derived_text(self, old: str, new: str, *, forgotten_id: str | None = None) -> None:
         formulation = self.load_formulation()
         changed = False
         if not formulation.evidence:
@@ -967,9 +1022,7 @@ class MemoryStore:
             before = intervention.model_dump()
             if forgotten_id:
                 intervention.linked_memory_ids = [
-                    item_id
-                    for item_id in intervention.linked_memory_ids
-                    if item_id != forgotten_id
+                    item_id for item_id in intervention.linked_memory_ids if item_id != forgotten_id
                 ]
             intervention.description = _replace_derived(intervention.description, old, new)
             for field_name in ("prediction", "outcome", "user_appraisal"):
@@ -993,9 +1046,7 @@ class MemoryStore:
             before = session.model_dump()
             session.summary = _replace_derived(session.summary, old, new)
             session.themes = [
-                text
-                for value in session.themes
-                if (text := _replace_derived(value, old, new))
+                text for value in session.themes if (text := _replace_derived(value, old, new))
             ]
             session.interventions = [
                 text
@@ -1134,19 +1185,33 @@ class MemoryStore:
 
 
 def _tokens(text: str) -> set[str]:
-    return {token for token in re.findall(r"\w+", text.casefold()) if len(token) >= 4}
+    normalized = text.casefold()
+    tokens = {token for token in re.findall(r"\w+", normalized) if len(token) >= 4}
+    if any(
+        "\u3040" <= character <= "\u30ff"
+        or "\u3400" <= character <= "\u9fff"
+        or "\u0e00" <= character <= "\u0e7f"
+        for character in normalized
+    ):
+        characters = "".join(
+            character
+            for character in normalized
+            if unicodedata.category(character)[0] in {"L", "M", "N"}
+        )
+        tokens.update(characters[index : index + 2] for index in range(max(0, len(characters) - 1)))
+    return tokens
 
 
 def _lexical_score(query: str, text: str) -> int:
     return len(_tokens(query) & _tokens(text))
 
 
-def _memory_score(query: str, item: MemoryItem) -> int:
-    return _lexical_score(query, " ".join([item.content, *item.aliases]))
-
-
 def _hybrid_score(query: str, item: MemoryItem, semantic_score: float | None) -> float:
-    lexical = min(_memory_score(query, item), 3) / 3
+    return _hybrid_text_score(query, " ".join([item.content, *item.aliases]), semantic_score)
+
+
+def _hybrid_text_score(query: str, text: str, semantic_score: float | None) -> float:
+    lexical = min(_lexical_score(query, text), 3) / 3
     if semantic_score is None:
         return lexical
     return (0.7 * max(0.0, semantic_score)) + (0.3 * lexical)

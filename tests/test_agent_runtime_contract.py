@@ -55,9 +55,9 @@ def test_staged_action_is_not_committed_when_final_reply_never_validates(
     store = MemoryStore(tmp_path)
 
     with pytest.raises(AgentRunError):
-        ChatSession(
-            FunctionModel(stream_function=stream), _pack(), store, "en-US"
-        ).respond("I feel pressure at work.")
+        ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+            "I feel pressure at work."
+        )
 
     active = store.active_session()
     assert active is not None
@@ -79,15 +79,13 @@ def test_staged_action_commits_after_model_repairs_invalid_final_reply(
         yield "x" * 1_201 if reply_attempts == 1 else "What creates the most pressure?"
 
     store = MemoryStore(tmp_path)
-    turn = ChatSession(
-        FunctionModel(stream_function=stream), _pack(), store, "en-US"
-    ).respond("I feel pressure at work.")
+    turn = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        "I feel pressure at work."
+    )
 
     assert reply_attempts == 2
     assert turn.text == "What creates the most pressure?"
-    assert [item.content for item in store.list_memory()] == [
-        "The user felt pressure at work."
-    ]
+    assert [item.content for item in store.list_memory()] == ["The user felt pressure at work."]
     assert "What creates the most pressure?" in store.session_transcript(
         store.active_session().id  # type: ignore[union-attr]
     )
@@ -104,21 +102,19 @@ def test_next_turn_receives_canonical_history_without_tool_trace(
         )
 
     store = MemoryStore(tmp_path)
-    ChatSession(
-        FunctionModel(stream_function=first_stream), _pack(), store, "en-US"
-    ).respond("I feel pressure at work.")
+    ChatSession(FunctionModel(stream_function=first_stream), _pack(), store, "en-US").respond(
+        "I feel pressure at work."
+    )
 
     received_part_kinds: list[str] = []
 
     async def second_stream(messages: list[Any], _info: Any):
-        received_part_kinds.extend(
-            part.part_kind for message in messages for part in message.parts
-        )
+        received_part_kinds.extend(part.part_kind for message in messages for part in message.parts)
         yield "We can take this slowly."
 
-    ChatSession(
-        FunctionModel(stream_function=second_stream), _pack(), store, "en-US"
-    ).respond("I need a moment.")
+    ChatSession(FunctionModel(stream_function=second_stream), _pack(), store, "en-US").respond(
+        "I need a moment."
+    )
 
     assert received_part_kinds == ["user-prompt", "text", "user-prompt"]
 
@@ -139,9 +135,9 @@ def test_tool_budget_rejects_seventh_call_before_state_can_commit(
     store = MemoryStore(tmp_path)
 
     with pytest.raises(UsageLimitExceeded, match="tool_calls_limit of 6"):
-        ChatSession(
-            FunctionModel(stream_function=stream), _pack(), store, "en-US"
-        ).respond("Please help me make sense of this.")
+        ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+            "Please help me make sense of this."
+        )
 
     active = store.active_session()
     assert active is not None

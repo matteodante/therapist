@@ -15,6 +15,7 @@ from therapist.memory import (
     MemoryObservation,
     MemoryStatus,
     MemoryStore,
+    _lexical_score,
 )
 
 
@@ -22,18 +23,18 @@ def test_memory_round_trip_never_writes_plaintext(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
     message_id = store.save_turn(
-        session, "Una cosa molto privata", "Ti ascolto", [], datetime(2026, 1, 1, tzinfo=UTC)
+        session, "A very private detail", "I am listening", [], datetime(2026, 1, 1, tzinfo=UTC)
     )
     store.add_observations(
-        [MemoryObservation(kind=MemoryKind.EVENT, content="Stress da lavoro")], message_id
+        [MemoryObservation(kind=MemoryKind.EVENT, content="Work stress")], message_id
     )
-    store.save_formulation(CaseFormulation(presenting_concerns=["Stress da lavoro"]))
+    store.save_formulation(CaseFormulation(presenting_concerns=["Work stress"]))
 
-    assert "Una cosa molto privata" in store.session_transcript(session.id)
-    assert store.list_memory()[0].content == "Stress da lavoro"
+    assert "A very private detail" in store.session_transcript(session.id)
+    assert store.list_memory()[0].content == "Work stress"
     database = (tmp_path / "thera.db").read_bytes()
-    assert b"Una cosa molto privata" not in database
-    assert b"Stress da lavoro" not in database
+    assert b"A very private detail" not in database
+    assert b"Work stress" not in database
     assert (tmp_path / "memory.key").stat().st_mode & 0o777 == 0o600
 
 
@@ -42,14 +43,12 @@ def test_hypotheses_require_confirmation_and_corrections_override_derived_text(
 ) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
-    message_id = store.save_turn(session, "Evito sempre Marco", "Ti chiedi perché.", [])
+    message_id = store.save_turn(session, "I always avoid Marco", "You wonder why.", [])
     item = store.add_observations(
         [MemoryObservation(kind=MemoryKind.PATTERN, content="The user always avoids Marco")],
         message_id,
     )[0]
-    store.save_formulation(
-        CaseFormulation(relationship_patterns=["The user always avoids Marco"])
-    )
+    store.save_formulation(CaseFormulation(relationship_patterns=["The user always avoids Marco"]))
     store.close_session(session, summary="The user always avoids Marco")
 
     assert item.status is MemoryStatus.AGENT_HYPOTHESIS
@@ -207,8 +206,7 @@ def test_session_gap_and_context_are_bounded(tmp_path: Path) -> None:
     assert store.session_expired(session, started + timedelta(hours=13))
     assert len(store.working_context("work pressure").relevant_excerpts) == 5
     assert store.working_context("work pressure").relevant_excerpts == [
-        f"Archive message {index} about recurring work pressure"
-        for index in range(249, 244, -1)
+        f"Archive message {index} about recurring work pressure" for index in range(249, 244, -1)
     ]
 
 
@@ -239,10 +237,7 @@ class MeaningEmbedder:
     @staticmethod
     def _vector(text: str) -> list[float]:
         lowered = text.casefold()
-        if any(
-            term in lowered
-            for term in ("calls", "telephone", "appointments", "telefonate")
-        ):
+        if any(term in lowered for term in ("calls", "telephone", "appointments")):
             return [1.0, 0.0]
         return [0.0, 1.0]
 
@@ -264,10 +259,10 @@ def test_semantic_index_ranks_meaning_and_is_encrypted_and_rebuildable(
     january = datetime(2026, 1, 1, tzinfo=UTC)
     session = store.start_session(january)
     old_message = store.save_turn(
-        session, "Rimando le telefonate", "Dimmi di più", [], january
+        session, "I postpone telephone appointments", "Tell me more", [], january
     )
     calls = store.add_observations(
-        [MemoryObservation(kind=MemoryKind.FACT, content="Le telefonate vengono rimandate")],
+        [MemoryObservation(kind=MemoryKind.FACT, content="Telephone appointments are postponed")],
         old_message,
         january,
     )[0]
@@ -287,27 +282,78 @@ def test_semantic_index_ranks_meaning_and_is_encrypted_and_rebuildable(
     context = store.working_context("telephone appointments")
 
     assert context.confirmed_memory[0].id == calls.id
-    assert len(embedder.document_calls) == 1
+    assert len(embedder.document_calls) == 2
     database_bytes = store.database_path.read_bytes()
-    assert b"Le telefonate" not in database_bytes
+    assert b"Telephone appointments" not in database_bytes
     assert b"[1.0,0.0]" not in database_bytes
 
     restarted = MemoryStore(  # type: ignore[arg-type]
         tmp_path, embedding_model="test:meaning", embedder=embedder
     )
     assert restarted.working_context("telephone appointments").confirmed_memory[0].id == calls.id
-    assert len(embedder.document_calls) == 1
+    assert len(embedder.document_calls) == 2
 
     restarted.correct_memory(calls.id, "Telephone appointments are now manageable")
     restarted.working_context("appointments")
-    assert len(embedder.document_calls) == 2
+    assert len(embedder.document_calls) == 3
 
     restarted.forget_memory(calls.id)
     with sqlite3.connect(restarted.database_path) as database:
         remaining = database.execute(
-            "SELECT COUNT(*) FROM semantic_index WHERE memory_id = ?", (calls.id,)
+            "SELECT COUNT(*) FROM semantic_index WHERE entity_type = 'memory' AND entity_id = ?",
+            (calls.id,),
         ).fetchone()[0]
     assert remaining == 0
+
+
+def test_semantic_archive_and_intervention_retrieval_crosses_languages(
+    tmp_path: Path,
+) -> None:
+    embedder = MeaningEmbedder()
+    store = MemoryStore(  # type: ignore[arg-type]
+        tmp_path, embedding_model="test:meaning", embedder=embedder
+    )
+    session = store.start_session(datetime(2026, 1, 1, tzinfo=UTC))
+    call_message = store.save_turn(
+        session,
+        "I postpone difficult calls with my manager.",
+        "I hear you.",
+        [],
+        datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    garden_message = store.save_turn(
+        session,
+        "Gardening feels restful.",
+        "Noted.",
+        [],
+        datetime(2026, 2, 1, tzinfo=UTC),
+    )
+    call_intervention = store.create_intervention(
+        skill="problem-solving",
+        description="Prepare one difficult telephone appointment.",
+        prediction=None,
+        state=InterventionState.OFFERED,
+        linked_memory_ids=[],
+        evidence_message_id=call_message,
+    )
+    store.create_intervention(
+        skill="behavioral-change",
+        description="Spend ten minutes in the garden.",
+        prediction=None,
+        state=InterventionState.OFFERED,
+        linked_memory_ids=[],
+        evidence_message_id=garden_message,
+    )
+
+    context = store.working_context("telephone appointments")
+
+    assert context.relevant_excerpts[0].startswith("I postpone difficult calls")
+    assert context.active_interventions[0].id == call_intervention.id
+
+
+def test_lexical_tokens_support_cjk_and_thai_without_spaces() -> None:
+    assert _lexical_score("上司への電話を延期する", "上司との電話が怖い") > 0
+    assert _lexical_score("เลื่อนการโทรหาหัวหน้า", "กลัวการโทรหาหัวหน้า") > 0
 
 
 def test_semantic_failure_fails_closed_instead_of_silently_using_lexical(
@@ -501,9 +547,7 @@ def test_formulation_is_derived_from_active_claims_and_tracks_corrections(
     assert store.load_formulation().evidence == {"maintaining_factors": [claim.id]}
 
     store.correct_memory(claim.id, "Some work calls may trigger avoidance")
-    assert store.load_formulation().maintaining_factors == [
-        "Some work calls may trigger avoidance"
-    ]
+    assert store.load_formulation().maintaining_factors == ["Some work calls may trigger avoidance"]
 
     store.forget_memory(claim.id)
     assert store.load_formulation().maintaining_factors == []
@@ -525,9 +569,7 @@ def test_formulation_merge_preserves_omissions_and_supports_explicit_unlink(
     )
     store.save_formulation_links({"preferred_help": [old.id]})
 
-    preserved = store.save_formulation_links(
-        {"presenting_concerns": [new.id]}, merge_existing=True
-    )
+    preserved = store.save_formulation_links({"presenting_concerns": [new.id]}, merge_existing=True)
     revised = store.save_formulation_links(
         {},
         merge_existing=True,
@@ -544,13 +586,13 @@ def test_formulation_merge_preserves_omissions_and_supports_explicit_unlink(
 def test_intervention_and_alias_retrieval_survive_restart_encrypted(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
-    message_id = store.save_turn(session, "Rimando le chiamate al capo", "Capisco", [])
+    message_id = store.save_turn(session, "I postpone calls with my manager", "I understand", [])
     claim = store.add_observations(
         [
             MemoryObservation(
                 kind=MemoryKind.PATTERN,
                 content="Avoiding calls brings short-term relief",
-                aliases=["responsabile", "rimandare", "work calls"],
+                aliases=["manager", "postpone", "work calls"],
             )
         ],
         message_id,
@@ -565,7 +607,7 @@ def test_intervention_and_alias_retrieval_survive_restart_encrypted(tmp_path: Pa
     )
 
     restarted = MemoryStore(tmp_path)
-    context = restarted.working_context("parlare con il responsabile")
+    context = restarted.working_context("talking with my manager")
 
     assert context.hypotheses[0].id == claim.id
     assert context.active_interventions[0].id == intervention.id

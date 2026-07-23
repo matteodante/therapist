@@ -44,6 +44,8 @@ Included in this milestone:
 
 - interactive terminal chat;
 - private text-only Telegram chat using long polling and the standard Bot API;
+- native per-user Telegram background installation for macOS launchd, Linux systemd, and Windows
+  Task Scheduler;
 - one PydanticAI conversational agent and one end-of-session consolidation pass;
 - device-code ChatGPT OAuth, encrypted token storage, and automatic refresh for the experimental
   `codex:` provider;
@@ -149,16 +151,19 @@ Consolidation preserves valid formulation links when the model omits them and re
 through an explicit `formulation_unlinks` entry. Existing evidence is retained before new links when
 a field reaches its five-claim bound, so omission or overflow cannot silently evict history.
 
-Memory retrieval uses local hybrid ranking over validated claims by default: lexical overlap plus
-semantic similarity through PydanticAI `Embedder`, with recency as a tie-breaker. The semantic index
-is an encrypted, derived SQLite cache tied to claim IDs and keyed content hashes; it is rebuilt after
-content or model changes and deleted on forgetting. SQLite/Fernet remains the source of truth.
+Memory retrieval uses local hybrid ranking over validated claims, active interventions, and up to
+1,000 recent user archive messages by default: lexical overlap plus semantic similarity through
+PydanticAI `Embedder`, with recency as a tie-breaker. The semantic index is an encrypted, derived
+SQLite cache keyed by entity type, entity ID, exact model revision, and keyed content hash; it is
+rebuilt after content or model changes and its affected rows are deleted on correction or
+forgetting. SQLite/Fernet remains the source of truth.
 Semantic retrieval is a required memory capability: setup downloads and verifies the local model,
 and conversation fails closed with setup guidance when embeddings are unavailable rather than
-silently switching to lexical-only claim ranking. Historical excerpts remain lexical and prefer
-recency on equal scores. Context is reduced by complete structured items and serialized only as
-valid JSON; model history and consolidation retain complete turns instead of slicing messages
-mid-run.
+silently switching to lexical-only ranking. Historical excerpts use the same hybrid ranking and a
+minimum semantic relevance threshold; lexical tokenization adds standard-library character bigrams
+for Chinese, Japanese, and Thai text without spaces. Context is reduced by complete structured items
+and serialized only as valid JSON; model history and consolidation retain complete turns instead of
+slicing messages mid-run.
 
 ## Memory model
 
@@ -177,8 +182,9 @@ model on every turn.
   prediction, outcome, user appraisal, and follow-up information. It is not a goal.
 - `WorkingContext`: formulation, bounded confirmed memory, unresolved hypotheses, the latest three
   completed sessions, at most five active interventions, and five historical excerpts.
-- `SemanticIndex`: encrypted vectors for active `MemoryItem` records only. It is derived,
-  excluded from export, safe to discard, and never establishes truth or provenance.
+- `SemanticIndex`: encrypted vectors for active memory items, active interventions, and bounded
+  candidate user messages. It is derived, excluded from export, safe to discard, and never
+  establishes truth or provenance.
 
 Memory states:
 
@@ -212,6 +218,10 @@ Primary commands:
 thera setup
 thera chat --model <provider:model> --locale it-IT|en-US
 thera telegram --model <provider:model> --locale it-IT|en-US --allowed-user-id <numeric-id>
+thera telegram-service install
+thera telegram-service status
+thera telegram-service restart
+thera telegram-service uninstall
 thera auth login
 thera auth status
 thera auth logout
@@ -232,14 +242,15 @@ thera doctor
 thera protocol validate [path]
 ```
 
-`setup` downloads and verifies the local multilingual
-`sentence-transformers:jinaai/jina-embeddings-v5-text-small-retrieval` model by default. The model
-then runs on-device for every `chat` and `telegram` conversation. Semantic claim retrieval has no
-off switch in the product CLI. `memory model status` inspects the local Hugging Face cache without
-network access, `verify` checks the cached revision against Hub checksums and performs local
-inference, `install` downloads or repairs the model and runs the same inference smoke test, and
-`remove` deletes only that model from the shared Hugging Face cache after confirmation. Removing the
-derived model files does not delete encrypted conversations or structured memory.
+`setup` downloads and verifies the local multilingual Apache-2.0
+`sentence-transformers:Qwen/Qwen3-Embedding-0.6B` model at the repository-pinned revision. The model
+then runs on-device for every `chat` and `telegram` conversation. Semantic retrieval has no off
+switch in the product CLI. `memory model status` inspects the exact revision in the local Hugging
+Face cache without network access, `verify` checks it against Hub checksums and performs local
+inference, `install` downloads or repairs it, runs the same inference smoke test, and updates an
+existing encrypted app configuration, and `remove` deletes only that revision from the shared cache
+after confirmation. Removing the derived model files does not delete encrypted conversations or
+structured memory.
 
 `thera setup` is the normal first-run path. Questionary arrow-key menus select a supported provider,
 current documented model preset, locale, Telegram, and confirmation choices. ChatGPT uses device-code
@@ -290,17 +301,33 @@ single-use deep link, waits for the matching private `/start` update, displays t
 and asks for confirmation before storing its ID. A phone number cannot be used to look up a Bot API
 user and is neither requested nor stored.
 Startup validates the token, removes any webhook without discarding pending updates, installs the
-`/start`, `/help`, and `/end` menu, then long-polls text messages sequentially. The runtime ignores
-groups, bots, media, and every sender except the configured numeric user ID. Telegram consent is
-separate from terminal consent and explains that Telegram and any remote model provider receive
-message content.
+allowlisted chat's localized command menu and transparent bot description, then long-polls text
+messages sequentially. The runtime ignores groups, bots, and every sender except the configured
+numeric user ID. Unsupported media receives a clear text-only notice without model invocation or
+storage. Telegram consent is separate from terminal consent and explains that Telegram receives
+messages, replies, and any local data the user requests to inspect there, while any remote model
+provider receives message content and selected context.
 
-Telegram is a conversation transport, not a remote administration surface. Only `/start`, `/help`,
-and `/end` are available there; memory inspection and mutation, auth, export, and deletion remain
-local CLI operations. Incoming text and outgoing chunks stay below Telegram's message limit and use
-plain text without a parse mode. The encrypted update offset survives restarts. A crash between model
-state commit and offset persistence can still cause one update to be processed again; full durable
-inbox idempotency is deferred until `ChatSession` can atomically accept an external idempotency key.
+Telegram is a conversation and read-only transparency surface, not a remote administration surface.
+`/status`, `/case`, `/memory [page]`, `/sessions [page|id]`, `/interventions [page]`, and `/privacy`
+show the agent identity, active session, bounded paginated structured state, evidence links, data
+flow, and limitations. `/start`, `/help`, and `/end` manage consent, guidance, and the conversational
+session. After each normal reply, the bot reports any durable memory, focus, or intervention changes
+committed for that turn. Correcting or forgetting memory, auth, export, and deletion remain local CLI
+operations. Internal prompts, secrets, and private model reasoning are never exposed. Incoming text
+and outgoing chunks stay below Telegram's message limit and use plain text without a parse mode. The
+encrypted update offset survives restarts. A crash between model state commit and offset persistence
+can still cause one update to be processed again; full durable inbox idempotency is deferred until
+`ChatSession` can atomically accept an external idempotency key.
+
+`thera telegram-service install` validates the saved configuration and starts the listener without
+putting secrets in process arguments. It writes a mode-`0600` LaunchAgent in
+`~/Library/LaunchAgents` on macOS, a mode-`0600` user unit in `~/.config/systemd/user` on Linux, or a
+limited-privilege per-user scheduled task on Windows. The listener starts with the user's login;
+Linux operation beyond logout depends on the host's user manager/lingering policy. `status`,
+`restart`, and `uninstall` inspect, restart, or stop the process and remove only this native
+definition. macOS operational output is written to the application data directory's
+`telegram-service.log`; Linux output is available through the user journal.
 
 Minimal setup:
 
@@ -308,7 +335,9 @@ Minimal setup:
    defense in depth.
 2. Run `thera setup`, choose the model and locale, then paste the bot token in the hidden prompt.
 3. Open the one-time `t.me` link printed by setup, press Start, and confirm the detected account.
-4. Run `thera doctor`, then `thera telegram`. Only one poller may use a bot token at a time.
+4. Run `thera doctor`, then either `thera telegram` in the foreground or
+   `thera telegram-service install` for automatic background startup. Only one poller may use a bot
+   token at a time.
 5. In the private bot chat, enter the exact consent command shown there.
 
 `export` returns decrypted user-owned application state, formulation, memory items, sessions, and
@@ -378,7 +407,9 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   the standard library and native features, then installed dependencies, and write new abstractions
   only as a last resort. Never simplify away validation, data-loss prevention, encryption, or
   required error handling.
-- Write code, documentation, prompts, schema names, and protocol content in English.
+- Write code, documentation, prompts, schema names, protocol content, tests, and test fixtures in
+  English. Use another language in a test only when that language is required to verify localized
+  behavior or multilingual retrieval.
 - Support Italian and English at runtime.
 - Before changing code, consult the current official documentation for affected libraries.
 - Work directly on `main` and push commits to `origin/main`. Do not create agent or feature branches
@@ -414,13 +445,18 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - Selective forgetting and full deletion work; sensitive plaintext is absent from SQLite.
 - Eight-hour segmentation, `/end`, interrupted consolidation, and session resumption preserve data.
 - Context stays bounded with hundreds of sessions.
-- Semantic retrieval ranks meaning-equivalent bilingual claims without weakening evidence,
-  encryption, correction, or forgetting contracts, and setup fails if the model is unavailable.
+- Semantic retrieval ranks meaning-equivalent claims, archive excerpts, and interventions across the
+  evaluated Latin, Arabic, Devanagari, Han, Japanese, Thai, and Cyrillic scripts without weakening
+  evidence, encryption, correction, or forgetting contracts; setup fails if the model is unavailable.
 - Italian and English golden conversations cover listening, continuity, gentle challenge, technique
   choice, AI transparency, and refusal to diagnose.
 - An explicit matched danger disclosure bypasses the normal model response.
 - Telegram rejects unauthorized/non-private input before model invocation, requires channel-specific
-  consent, persists its update offset, and keeps privileged memory operations local.
+  consent, persists its update offset, exposes read-only state with evidence and pagination, reports
+  durable turn changes, and keeps privileged memory operations local.
+- Telegram background installation uses the native per-user service or task manager, keeps secrets
+  out of process arguments and native definitions, and supports status, restart, and clean removal
+  on macOS, Linux, and Windows.
 - Interactive setup persists defaults and secrets encrypted, does not echo the Telegram token, and
   lets chat and Telegram start without environment configuration.
 
@@ -432,6 +468,8 @@ matrix live in `tests/TEST_PLAN.md`. Deterministic datasets execute tool, eviden
 contracts as well as auditing each therapeutic-skill file; live datasets evaluate integrated
 conversation behavior. They use
 synthetic people and events only; never put real user data, access tokens, or API keys in test files.
+Test code and fixtures are English by default. Non-English text is limited to cases that explicitly
+verify localized behavior or multilingual retrieval.
 
 Longitudinal tests must cover retrieval after several months, encrypted persistence across process
 restart, evidence provenance, fact/hypothesis separation, correction precedence, selective
@@ -467,6 +505,19 @@ THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
 The deterministic semantic-memory Pydantic Evals dataset remains offline by using a fixed bilingual
 embedding test model; it verifies ranking, index reuse, bounds, and absence of sensitive plaintext.
 
+An opt-in local-model Pydantic Evals dataset verifies claim, archive-excerpt, and intervention
+retrieval across Italian, English, Spanish, French, German, Portuguese, Arabic, Hindi, Chinese,
+Japanese, Thai, and Ukrainian paths. It runs sequentially because Pydantic Evals otherwise executes
+all cases concurrently and can exhaust RAM with a local model:
+
+```bash
+THERA_RUN_MULTILINGUAL_EMBEDDING_EVALS=1 \
+  uv run pytest tests/test_multilingual_embedding_eval.py -m live
+```
+
+`THERA_MULTILINGUAL_EVAL_OFFSET` and `THERA_MULTILINGUAL_EVAL_LIMIT` can split the matrix into
+resource-bounded batches without changing the dataset.
+
 Run before handing off a change:
 
 ```bash
@@ -480,10 +531,12 @@ uv run ruff check .
 - PydanticAI message history: https://pydantic.dev/docs/ai/core-concepts/message-history/
 - PydanticAI structured output: https://pydantic.dev/docs/ai/core-concepts/output/
 - PydanticAI embeddings: https://pydantic.dev/docs/ai/guides/embeddings/
+- Pydantic Evals concurrency: https://pydantic.dev/docs/ai/evals/how-to/concurrency/
 - PydanticAI OpenAI Responses provider: https://pydantic.dev/docs/ai/models/openai/
 - Pydantic Evals datasets: https://ai.pydantic.dev/evals/how-to/dataset-serialization/
 - Python sqlite3: https://docs.python.org/3.12/library/sqlite3.html
 - Cryptography Fernet: https://cryptography.io/en/latest/fernet/
+- Qwen3-Embedding-0.6B: https://huggingface.co/Qwen/Qwen3-Embedding-0.6B
 - WHO responsible AI for mental health, 2026:
   https://www.who.int/news/item/20-03-2026-towards-responsible-ai-for-mental-health-and-well-being--experts-chart-a-way-forward
 - WHO-5: https://www.who.int/publications/m/item/WHO-UCN-MSD-MHE-2024.01
@@ -500,5 +553,10 @@ uv run ruff check .
   https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/providers.md
 - Telegram Bot API: https://core.telegram.org/bots/api
 - Telegram Bots FAQ: https://core.telegram.org/bots/faq
+- Apple launchd jobs:
+  https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html
+- systemd user services: https://www.freedesktop.org/software/systemd/man/latest/systemd.service.html
+- Windows Task Scheduler:
+  https://learn.microsoft.com/en-us/windows-server/administration/windows-commands/schtasks
 - OpenClaw Telegram channel:
   https://github.com/openclaw/openclaw/blob/main/docs/channels/telegram.md

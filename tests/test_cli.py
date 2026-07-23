@@ -4,7 +4,13 @@ from types import SimpleNamespace
 
 import pytest
 
-from therapist.cli import DEFAULT_EMBEDDING_MODEL, build_parser, main
+from therapist.cli import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_REPO,
+    DEFAULT_EMBEDDING_REVISION,
+    build_parser,
+    main,
+)
 from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
 
 
@@ -13,14 +19,15 @@ def test_embedding_model_commands_manage_only_the_model_cache(
 ) -> None:
     snapshot = tmp_path / "snapshot"
     revision = SimpleNamespace(
-        commit_hash="abc123",
+        commit_hash=DEFAULT_EMBEDDING_REVISION,
         refs={"main"},
         last_modified=1,
         snapshot_path=snapshot,
+        size_on_disk=1024,
     )
     model = SimpleNamespace(
         repo_type="model",
-        repo_id="jinaai/jina-embeddings-v5-text-small-retrieval",
+        repo_id=DEFAULT_EMBEDDING_REPO,
         repo_path=tmp_path / "cache" / "model",
         size_on_disk=1024,
         revisions=[revision],
@@ -36,12 +43,10 @@ def test_embedding_model_commands_manage_only_the_model_cache(
     strategy = Strategy()
     cache = SimpleNamespace(
         delete_revisions=lambda *revisions: (
-            strategy if revisions == ("abc123",) else None
+            strategy if revisions == (DEFAULT_EMBEDDING_REVISION,) else None
         )
     )
-    monkeypatch.setattr(
-        "therapist.cli._embedding_cache_info", lambda: (cache, model, [])
-    )
+    monkeypatch.setattr("therapist.cli._embedding_cache_info", lambda: (cache, model, []))
 
     prefix = ["--data-dir", str(tmp_path), "memory", "model"]
     assert main([*prefix, "status"]) == 0
@@ -49,7 +54,7 @@ def test_embedding_model_commands_manage_only_the_model_cache(
 
     output = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "Status: installed" in output
-    assert "abc123" in output
+    assert DEFAULT_EMBEDDING_REVISION in output
     assert "Encrypted memory data was not changed" in output
     assert strategy.executed
     assert not (tmp_path / "thera.db").exists()
@@ -59,10 +64,11 @@ def test_embedding_model_verify_checks_checksums_and_local_inference(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:
     revision = SimpleNamespace(
-        commit_hash="abc123",
+        commit_hash=DEFAULT_EMBEDDING_REVISION,
         refs={"main"},
         last_modified=1,
         snapshot_path=tmp_path / "snapshot",
+        size_on_disk=1024,
     )
     model = SimpleNamespace(revisions=[revision])
     result = SimpleNamespace(mismatches=[], checked_count=11)
@@ -74,32 +80,37 @@ def test_embedding_model_verify_checks_checksums_and_local_inference(
         "therapist.cli.HfApi",
         lambda: SimpleNamespace(verify_repo_checksums=lambda *args, **kwargs: result),
     )
-    inferred_models: list[str] = []
+    inferred_models: list[object] = []
     monkeypatch.setattr(
         "therapist.cli._verify_embedding_inference",
-        lambda model_name: inferred_models.append(model_name) or 1024,
+        lambda embedder: inferred_models.append(embedder) or 1024,
     )
 
     assert main(["memory", "model", "verify"]) == 0
 
-    assert inferred_models == [f"sentence-transformers:{revision.snapshot_path}"]
+    assert len(inferred_models) == 1
     assert "11 files, 1024 dimensions" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 
 def test_embedding_model_install_uses_setup_smoke_test(
-    monkeypatch: pytest.MonkeyPatch, capsys: object
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:
     prepared: list[bool] = []
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.embedding_model = "old:model"
+    store.save_app_state(state)
     monkeypatch.setattr(
         "therapist.cli._prepare_semantic_memory",
         lambda: prepared.append(True) or True,
     )
     monkeypatch.setattr("therapist.cli._print_embedding_model_status", lambda: True)
 
-    assert main(["memory", "model", "install"]) == 0
+    assert main(["--data-dir", str(tmp_path), "memory", "model", "install"]) == 0
 
     assert prepared == [True]
-    assert capsys.readouterr().out == ""  # type: ignore[attr-defined]
+    assert MemoryStore(tmp_path).load_app_state().embedding_model == DEFAULT_EMBEDDING_MODEL
+    assert "configuration updated" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 
 def test_memory_commands_expose_and_correct_structured_memory(
@@ -155,21 +166,65 @@ def test_doctor_does_not_create_memory(tmp_path: Path) -> None:
     assert not data_dir.exists()
 
 
+def test_telegram_service_install_uses_saved_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.default_model = "test:model"
+    state.default_locale = "it-IT"
+    state.embedding_model = DEFAULT_EMBEDDING_MODEL
+    state.telegram_allowed_user_id = 42
+    store.save_secret("telegram_bot_token", b"secret")
+    store.save_app_state(state)
+    captured: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(
+        "therapist.cli.telegram_service.install",
+        lambda command, data_dir: (
+            captured.append((command, data_dir)) or tmp_path / "service.plist"
+        ),
+    )
+    monkeypatch.setattr("therapist.cli.sys.argv", [str(tmp_path / "thera")])
+    (tmp_path / "thera").write_text("#!/bin/sh\n")
+    (tmp_path / "thera").chmod(0o755)
+
+    assert main(["--data-dir", str(tmp_path), "telegram-service", "install"]) == 0
+
+    command, data_dir = captured[0]
+    assert command[0] == str((tmp_path / "thera").resolve())
+    assert command[-1] == "telegram"
+    assert command[1:3] == ["--data-dir", str(tmp_path.resolve())]
+    assert data_dir == tmp_path.resolve()
+    assert "installed and started" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_telegram_service_status_does_not_create_memory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    monkeypatch.setattr(
+        "therapist.cli.telegram_service.status",
+        lambda: SimpleNamespace(installed=False, running=False, detail=""),
+    )
+
+    assert main(["--data-dir", str(tmp_path), "telegram-service", "status"]) == 1
+
+    assert not (tmp_path / "thera.db").exists()
+    assert "Installed: no" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
 def test_semantic_memory_is_mandatory_for_conversation_commands(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     configured_models: list[str | None] = []
 
-    def memory_store(
-        directory: Path, *, embedding_model: str | None = None
-    ) -> MemoryStore:
+    def memory_store(directory: Path, *, embedding_model: str | None = None) -> MemoryStore:
         configured_models.append(embedding_model)
         return MemoryStore(directory)
 
     monkeypatch.setattr("therapist.cli.MemoryStore", memory_store)
 
     assert main(["--data-dir", str(tmp_path), "telegram", "--model", "test"]) == 2
-    assert configured_models == [DEFAULT_EMBEDDING_MODEL]
+    assert configured_models == [None]
     with pytest.raises(SystemExit):
         build_parser().parse_args(["chat", "--model", "test", "--no-semantic-memory"])
 
@@ -183,13 +238,13 @@ def test_telegram_fails_closed_without_channel_credentials(
     state.default_locale = "en-US"
     state.embedding_model = DEFAULT_EMBEDDING_MODEL
     store.save_app_state(state)
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        "therapist.cli._default_embedder", lambda **_: object()
+    )
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)  # type: ignore[attr-defined]
     monkeypatch.delenv("TELEGRAM_ALLOWED_USER_ID", raising=False)  # type: ignore[attr-defined]
 
-    assert (
-        main(["--data-dir", str(tmp_path), "telegram", "--model", "test"])
-        == 2
-    )
+    assert main(["--data-dir", str(tmp_path), "telegram", "--model", "test"]) == 2
     assert "Run `thera setup`" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 
@@ -214,9 +269,7 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.password",
-        lambda *args, **kwargs: type(
-            "Prompt", (), {"ask": lambda _: "secret-bot-token"}
-        )(),
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: "secret-bot-token"})(),
     )
     monkeypatch.setattr("therapist.cli.secrets.token_urlsafe", lambda _: "pair-code")  # type: ignore[attr-defined]
 
@@ -248,6 +301,9 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.TelegramChannel.run", lambda _: None
     )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
+        "therapist.cli._default_embedder", lambda **_: object()
+    )
     monkeypatch.delenv("THERA_MODEL", raising=False)  # type: ignore[attr-defined]
     monkeypatch.delenv("THERA_LOCALE", raising=False)  # type: ignore[attr-defined]
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)  # type: ignore[attr-defined]
@@ -269,9 +325,7 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     assert "Configuration saved securely" in output
 
 
-def test_setup_stores_remote_provider_key_encrypted(
-    tmp_path: Path, monkeypatch: object
-) -> None:
+def test_setup_stores_remote_provider_key_encrypted(tmp_path: Path, monkeypatch: object) -> None:
     selections = iter(["openai:gpt-5.6-sol", "it-IT", False])
     monkeypatch.setattr("therapist.cli._prepare_semantic_memory", lambda: True)  # type: ignore[attr-defined]
     monkeypatch.setattr(  # type: ignore[attr-defined]
@@ -303,9 +357,7 @@ def test_setup_does_not_persist_provider_secret_when_later_cancelled(
     )
     monkeypatch.setattr(
         "therapist.cli.questionary.password",
-        lambda *args, **kwargs: type(
-            "Prompt", (), {"ask": lambda _: "must-not-persist"}
-        )(),
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: "must-not-persist"})(),
     )
 
     assert main(["--data-dir", str(tmp_path), "setup"]) == 1

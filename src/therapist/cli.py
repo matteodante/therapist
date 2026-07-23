@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import secrets
+import sys
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -11,10 +12,11 @@ from typing import Literal
 from urllib.request import urlopen
 
 import questionary
-from huggingface_hub import HfApi, scan_cache_dir
+from huggingface_hub import HfApi, scan_cache_dir, snapshot_download
 from huggingface_hub.errors import CacheNotFound
 from pydantic_ai import Embedder
 
+from therapist import telegram_service
 from therapist.auth import (
     AuthError,
     codex_model,
@@ -31,11 +33,10 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic"
 TELEGRAM_SECRET = "telegram_bot_token"
 DEFAULT_CODEX_MODEL = "codex:gpt-5.6-sol"
+DEFAULT_EMBEDDING_REPO = "Qwen/Qwen3-Embedding-0.6B"
+DEFAULT_EMBEDDING_REVISION = "97b0c614be4d77ee51c0cef4e5f07c00f9eb65b3"
 DEFAULT_EMBEDDING_MODEL = (
-    "sentence-transformers:jinaai/jina-embeddings-v5-text-small-retrieval"
-)
-DEFAULT_EMBEDDING_REPO = DEFAULT_EMBEDDING_MODEL.removeprefix(
-    "sentence-transformers:"
+    f"sentence-transformers:{DEFAULT_EMBEDDING_REPO}@{DEFAULT_EMBEDDING_REVISION}"
 )
 CUSTOM_MODEL = "__custom__"
 LOCAL_OLLAMA = "__local_ollama__"
@@ -73,6 +74,16 @@ def build_parser() -> argparse.ArgumentParser:
     telegram.add_argument("--model")
     telegram.add_argument("--locale", choices=("it-IT", "en-US"))
     telegram.add_argument("--allowed-user-id", type=int)
+
+    service = commands.add_parser(
+        "telegram-service",
+        help="Run Telegram automatically as a per-user background service",
+    )
+    service_commands = service.add_subparsers(dest="service_command", required=True)
+    service_commands.add_parser("install", help="Install and start the service")
+    service_commands.add_parser("status", help="Show installation and runtime status")
+    service_commands.add_parser("restart", help="Restart the installed service")
+    service_commands.add_parser("uninstall", help="Stop and remove the service")
 
     auth = commands.add_parser("auth", help="Manage experimental ChatGPT Codex login")
     auth_commands = auth.add_subparsers(dest="auth_command", required=True)
@@ -136,6 +147,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _memory_model(args)
 
     database_exists = (args.data_dir / "thera.db").exists()
+    if args.command == "telegram-service":
+        return _telegram_service(args, database_exists)
     if args.command == "doctor":
         store = MemoryStore(args.data_dir) if database_exists else None
         state = store.load_app_state() if store else None
@@ -152,7 +165,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         _, cached_model, cache_warnings = _embedding_cache_info()
         semantic_model = (
             "installed"
-            if cached_model and not cache_warnings
+            if _embedding_revision(cached_model) and not cache_warnings
             else "corrupted"
             if cache_warnings
             else "not installed"
@@ -165,14 +178,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.command == "setup" and not _prepare_semantic_memory():
         return 2
-    store = MemoryStore(
-        args.data_dir,
-        embedding_model=(
-            DEFAULT_EMBEDDING_MODEL
-            if args.command in {"chat", "telegram"}
-            else None
-        ),
-    )
+    store = MemoryStore(args.data_dir)
     if args.command == "setup":
         return _setup(store)
     if args.command == "auth":
@@ -181,6 +187,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         state = store.load_app_state()
         if state.embedding_model != DEFAULT_EMBEDDING_MODEL:
             print("Semantic memory is not configured. Run `thera setup`.")
+            return 2
+        try:
+            store = MemoryStore(
+                args.data_dir,
+                embedding_model=DEFAULT_EMBEDDING_MODEL,
+                embedder=_default_embedder(local_files_only=True),
+            )
+        except Exception as error:
+            print(
+                f"Semantic memory is unavailable ({type(error).__name__}). "
+                "Run `thera memory model install`."
+            )
             return 2
         selected_model = args.model or state.default_model
         if not selected_model and load_credential(store):
@@ -214,9 +232,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Telegram is not configured. Run `thera setup`.")
             return 2
         try:
-            TelegramChannel(
-                TelegramBot(token), session, store, allowed_user_id, locale
-            ).run()
+            TelegramChannel(TelegramBot(token), session, store, allowed_user_id, locale).run()
         except TelegramError as error:
             print(f"Telegram startup error: {error}")
             return 2
@@ -234,9 +250,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(content)
         return 0
     if args.command == "delete-data":
-        confirmed = args.yes or input(
-            "Delete all local conversation and memory data? [y/N] "
-        ).lower() == "y"
+        confirmed = (
+            args.yes
+            or input("Delete all local conversation and memory data? [y/N] ").lower() == "y"
+        )
         if not confirmed:
             print("Cancelled.")
             return 1
@@ -244,6 +261,60 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("Local conversation and memory data deleted.")
         return 0
     return 2
+
+
+def _telegram_service(args: argparse.Namespace, database_exists: bool) -> int:
+    try:
+        if args.service_command == "status":
+            current = telegram_service.status()
+            print(f"Installed: {'yes' if current.installed else 'no'}")
+            print(f"Running: {'yes' if current.running else 'no'}")
+            if current.detail:
+                print(current.detail)
+            return 0 if current.running else 1
+        if args.service_command == "uninstall":
+            removed = telegram_service.uninstall()
+            print(
+                "Telegram background service removed."
+                if removed
+                else "Telegram background service was not installed."
+            )
+            return 0
+        if args.service_command == "restart":
+            telegram_service.restart()
+            print("Telegram background service restarted.")
+            return 0
+        if not database_exists:
+            print("Telegram is not configured. Run `thera setup` first.")
+            return 2
+        store = MemoryStore(args.data_dir)
+        state = store.load_app_state()
+        if (
+            not _telegram_config(store)
+            or not state.default_model
+            or state.embedding_model != DEFAULT_EMBEDDING_MODEL
+        ):
+            print("Telegram is not fully configured. Run `thera setup` first.")
+            return 2
+        executable = Path(sys.argv[0]).resolve()
+        if not executable.is_file() or not os.access(executable, os.X_OK):
+            print("Cannot locate the `thera` executable. Install the project and try again.")
+            return 2
+        command = [
+            str(executable),
+            "--data-dir",
+            str(args.data_dir.resolve()),
+            "--protocol",
+            str(args.protocol.resolve()),
+            "telegram",
+        ]
+        path = telegram_service.install(command, args.data_dir.resolve())
+        print(f"Telegram background service installed and started: {path}")
+        print("Use `thera telegram-service status` to inspect it.")
+        return 0
+    except telegram_service.TelegramServiceError as error:
+        print(f"Telegram service error: {error}")
+        return 2
 
 
 def _setup(store: MemoryStore) -> int:
@@ -344,9 +415,7 @@ def _select_model(current: str | None) -> str:
         questionary.Choice("OpenAI API", value="openai:gpt-5.6-sol"),
         questionary.Choice("Anthropic API", value="anthropic:claude-sonnet-4-6"),
         questionary.Choice("Google Gemini API", value="google:gemini-3-pro-preview"),
-        questionary.Choice(
-            "OpenRouter API", value="openrouter:anthropic/claude-sonnet-4.6"
-        ),
+        questionary.Choice("OpenRouter API", value="openrouter:anthropic/claude-sonnet-4.6"),
         questionary.Choice("Ollama on this computer", value=LOCAL_OLLAMA),
         questionary.Choice("Other PydanticAI model", value=CUSTOM_MODEL),
     ]
@@ -365,8 +434,7 @@ def _select_model(current: str | None) -> str:
             models = _ollama_models()
             if not models:
                 print(
-                    "No installed Ollama models found. "
-                    "Start Ollama and run `ollama pull <model>`."
+                    "No installed Ollama models found. Start Ollama and run `ollama pull <model>`."
                 )
                 continue
             name = _ask(questionary.select("Ollama model", choices=models))
@@ -441,10 +509,13 @@ def _pair_telegram_user(token: str) -> tuple[int, int]:
         raise TelegramError("Telegram returned a bot without a username.")
     bot.delete_webhook()
     pending = bot.get_updates(-1, timeout=0)
-    offset = max(
-        (update["update_id"] for update in pending if isinstance(update.get("update_id"), int)),
-        default=-1,
-    ) + 1
+    offset = (
+        max(
+            (update["update_id"] for update in pending if isinstance(update.get("update_id"), int)),
+            default=-1,
+        )
+        + 1
+    )
     code = secrets.token_urlsafe(6)
     print(f"Open https://t.me/{username}?start={code} and press Start.")
     print("Waiting for your private Telegram message (Ctrl-C to cancel)...")
@@ -520,7 +591,7 @@ def _auth(args: argparse.Namespace, store: MemoryStore) -> int:
 def _prepare_semantic_memory() -> bool:
     print("Preparing local semantic memory (the model downloads on first setup)...")
     try:
-        _verify_embedding_inference(DEFAULT_EMBEDDING_MODEL)
+        _verify_embedding_inference(_default_embedder(local_files_only=False))
     except Exception as error:
         print(f"Semantic memory setup failed: {type(error).__name__}: {error}")
         return False
@@ -546,8 +617,31 @@ def _embedding_cache_info():
     return cache, model, warnings
 
 
-def _verify_embedding_inference(model: str) -> int:
-    embedder = Embedder(model)
+def _embedding_revision(model):
+    return (
+        next(
+            (
+                revision
+                for revision in model.revisions
+                if revision.commit_hash == DEFAULT_EMBEDDING_REVISION
+            ),
+            None,
+        )
+        if model
+        else None
+    )
+
+
+def _default_embedder(*, local_files_only: bool) -> Embedder:
+    snapshot = snapshot_download(
+        DEFAULT_EMBEDDING_REPO,
+        revision=DEFAULT_EMBEDDING_REVISION,
+        local_files_only=local_files_only,
+    )
+    return Embedder(f"sentence-transformers:{snapshot}")
+
+
+def _verify_embedding_inference(embedder: Embedder) -> int:
     document = embedder.embed_documents_sync(
         ["Rimando spesso le telefonate difficili."]
     ).embeddings[0]
@@ -574,14 +668,15 @@ def _print_embedding_model_status() -> bool:
         for warning in warnings:
             print(f"Warning: {warning}")
         return False
-    if model is None or not model.revisions:
+    revision = _embedding_revision(model)
+    if revision is None:
         print("Status: not installed")
+        print(f"Required revision: {DEFAULT_EMBEDDING_REVISION}")
         return False
-    revisions = sorted(revision.commit_hash for revision in model.revisions)
     print("Status: installed")
     print(f"Location: {model.repo_path}")
-    print(f"Size: {_format_size(model.size_on_disk)}")
-    print(f"Revision: {', '.join(revisions)}")
+    print(f"Size: {_format_size(revision.size_on_disk)}")
+    print(f"Revision: {revision.commit_hash}")
     return True
 
 
@@ -591,6 +686,12 @@ def _memory_model(args: argparse.Namespace) -> int:
     if args.model_command == "install":
         if not _prepare_semantic_memory():
             return 2
+        if (args.data_dir / "thera.db").exists():
+            store = MemoryStore(args.data_dir)
+            state = store.load_app_state()
+            state.embedding_model = DEFAULT_EMBEDDING_MODEL
+            store.save_app_state(state)
+            print("Semantic memory configuration updated.")
         _print_embedding_model_status()
         return 0
 
@@ -598,49 +699,43 @@ def _memory_model(args: argparse.Namespace) -> int:
     if warnings:
         _print_embedding_model_status()
         return 2
-    if cache is None or model is None or not model.revisions:
+    revision = _embedding_revision(model)
+    if cache is None or revision is None:
         print("Embedding model is not installed.")
         return 1 if args.model_command == "verify" else 0
 
     if args.model_command == "verify":
         try:
-            checked = 0
-            for revision in model.revisions:
-                result = HfApi().verify_repo_checksums(
-                    DEFAULT_EMBEDDING_REPO,
-                    revision=revision.commit_hash,
-                    token=False,
-                )
-                if result.mismatches:
-                    raise RuntimeError(f"{len(result.mismatches)} checksum mismatch(es)")
-                checked += result.checked_count
-            active_revision = next(
-                (
-                    revision
-                    for revision in model.revisions
-                    if "main" in revision.refs
-                ),
-                max(model.revisions, key=lambda revision: revision.last_modified),
+            result = HfApi().verify_repo_checksums(
+                DEFAULT_EMBEDDING_REPO,
+                revision=DEFAULT_EMBEDDING_REVISION,
+                token=False,
             )
+            if result.mismatches:
+                raise RuntimeError(f"{len(result.mismatches)} checksum mismatch(es)")
             dimensions = _verify_embedding_inference(
-                f"sentence-transformers:{active_revision.snapshot_path}"
+                Embedder(f"sentence-transformers:{revision.snapshot_path}")
             )
         except Exception as error:
             print(f"Embedding model verification failed: {type(error).__name__}: {error}")
             return 2
         print(
-            f"Embedding model verified: {checked} files, "
+            f"Embedding model verified: {result.checked_count} files, "
             f"{dimensions} dimensions, local inference OK."
         )
         return 0
 
-    strategy = cache.delete_revisions(
-        *(revision.commit_hash for revision in model.revisions)
+    strategy = cache.delete_revisions(DEFAULT_EMBEDDING_REVISION)
+    confirmed = (
+        args.yes
+        or input(
+            f"Delete only {DEFAULT_EMBEDDING_REPO} from the shared Hugging Face cache "
+            f"and free {strategy.expected_freed_size_str}? [y/N] "
+        )
+        .strip()
+        .lower()
+        == "y"
     )
-    confirmed = args.yes or input(
-        f"Delete only {DEFAULT_EMBEDDING_REPO} from the shared Hugging Face cache "
-        f"and free {strategy.expected_freed_size_str}? [y/N] "
-    ).strip().lower() == "y"
     if not confirmed:
         print("Cancelled.")
         return 1
@@ -747,9 +842,7 @@ def _chat_command(command: str, session: ChatSession, store: MemoryStore) -> boo
         elif name == "/end":
             closed = session.end()
             message = (
-                "No active session."
-                if closed is None
-                else "Session closed; transcript preserved."
+                "No active session." if closed is None else "Session closed; transcript preserved."
             )
             print(message)
         else:

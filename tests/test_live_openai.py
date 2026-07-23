@@ -57,7 +57,7 @@ class LiveLongitudinalContract(Evaluator[dict[str, Any], dict[str, Any], dict[st
             "no_routine_identity_disclaimer": all(
                 phrase not in reply.casefold()
                 for reply in ctx.output["replies"]
-                for phrase in ("non sono uno psicoterapeuta", "non posso fare diagnosi")
+                for phrase in ("i am not a psychotherapist", "i cannot diagnose")
             ),
         }
 
@@ -70,7 +70,7 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
         started_at = datetime.fromisoformat(inputs["started_at"])
         with tempfile.TemporaryDirectory(dir=tmp_path) as data_directory:
             store = MemoryStore(Path(data_directory))
-            chat = ChatSession(inputs["model"], pack, store, inputs.get("locale", "it-IT"))
+            chat = ChatSession(inputs["model"], pack, store, inputs.get("locale", "en-US"))
             transcript: list[str] = []
             replies: list[str] = []
             for index, message in enumerate(inputs["initial_messages"]):
@@ -81,7 +81,7 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
 
             restarted = MemoryStore(Path(data_directory))
             returning_chat = ChatSession(
-                inputs["model"], pack, restarted, inputs.get("locale", "it-IT")
+                inputs["model"], pack, restarted, inputs.get("locale", "en-US")
             )
             for index, message in enumerate(inputs["return_messages"]):
                 turn = returning_chat.respond(

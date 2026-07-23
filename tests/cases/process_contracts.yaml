@@ -37,15 +37,15 @@ cases:
       reply: ""
       tool_path: [record_memory]
 
-  - name: italian-repair
+  - name: repair
     inputs:
-      locale: it-IT
-      user_text: Mi stai leggendo attraverso una lente che non è la mia.
-      model_reply: Hai ragione, ho imposto una lettura che non ti appartiene. Cosa non ho colto?
+      locale: en-US
+      user_text: You are viewing me through a lens that is not mine.
+      model_reply: You are right. I imposed an interpretation that does not belong to you. What did I miss?
     expected_output:
       completed: true
       memory_count: 0
-      reply: Hai ragione, ho imposto una lettura che non ti appartiene. Cosa non ho colto?
+      reply: You are right. I imposed an interpretation that does not belong to you. What did I miss?
       tool_path: []
 
   - name: ordinary-presence-without-state-change

@@ -20,9 +20,8 @@ def test_us_safety_concern_uses_988_without_predicting_a_level() -> None:
 
 def test_ordinary_distress_does_not_enter_crisis_flow() -> None:
     result = SafetyController().assess(
-        "Sono stanco e questa settimana mi sento sotto pressione.", "it-IT"
+        "I am tired and have felt under pressure this week.", "en-US"
     )
 
     assert result.state is SafetyState.CLEAR
     assert result.resource is None
-
