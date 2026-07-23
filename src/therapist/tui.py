@@ -151,22 +151,22 @@ class TherapistApp(App[None]):
     def process_submission(self, text: str) -> None:
         try:
             if text.startswith("/"):
-                handled = self.command_handler(
-                    text,
-                    lambda output: self.post_message(self.CommandOutput(output)),
-                )
+                handled = self.command_handler(text, self._post_command_output)
                 if not handled:
                     self.post_message(self.CommandOutput("Unknown command. Use /help."))
                 self.post_message(self.Finished())
                 return
-            turn = self.session.respond(
-                text,
-                on_event=lambda event: self.post_message(self.Streamed(event)),
-            )
+            turn = self.session.respond(text, on_event=self._post_stream_event)
         except Exception as error:  # Provider SDKs expose different error types.
             self.post_message(self.Finished(error=error))
         else:
             self.post_message(self.Finished(turn=turn))
+
+    def _post_command_output(self, output: str) -> None:
+        self.post_message(self.CommandOutput(output))
+
+    def _post_stream_event(self, event: TurnStreamEvent) -> None:
+        self.post_message(self.Streamed(event))
 
     @on(Streamed)
     async def show_stream(self, message: Streamed) -> None:

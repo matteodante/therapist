@@ -27,7 +27,8 @@ clinical validation, legal approval, or a safety certification.
 | --- | --- |
 | Ruff lint | Passed |
 | Ruff formatting | Passed |
-| Offline deterministic suite | 127 passed, 5 live tests deselected |
+| ty static type check | Passed for `src/therapist` |
+| Offline deterministic suite | 128 passed, 5 live tests deselected |
 | Protocol validation | Passed for `therapist.transdiagnostic` |
 | Root, nested skill, and reference hash enforcement | Passed |
 | POSIX installer syntax | Passed |
@@ -62,6 +63,7 @@ provider's product terms.
 - pull requests receive GitHub dependency review, web commits require a DCO sign-off, releases are
   immutable, and the manual candidate workflow produces checksums, a locked-runtime CycloneDX SBOM,
   and signed provenance and SBOM attestations without publishing a release;
+- `main` rejects force pushes and deletion while preserving the documented direct-push workflow;
 - uv's release manifest, selected archive, and chosen MIT license text are independently verified;
   the license is preserved next to an installer-provided binary;
 - the repository has a Code of Conduct, constrained reporting routes, DCO, governance, security,

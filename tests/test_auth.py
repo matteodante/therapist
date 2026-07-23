@@ -46,6 +46,25 @@ def test_device_login_saves_encrypted_tokens(tmp_path: Path, monkeypatch: object
     assert access.encode() not in database
 
 
+def test_device_login_rejects_invalid_poll_interval(tmp_path: Path, monkeypatch: object) -> None:
+    monkeypatch.setattr(
+        auth,
+        "_request_json",
+        lambda *_args, **_kwargs: {
+            "device_auth_id": "device",
+            "user_code": "ABCD",
+            "interval": "immediate",
+        },
+    )  # type: ignore[attr-defined]
+
+    try:
+        auth.login_codex(MemoryStore(tmp_path))
+    except auth.AuthError as error:
+        assert "invalid interval" in str(error)
+    else:
+        raise AssertionError("Invalid polling intervals must be rejected.")
+
+
 def test_expired_token_is_refreshed_when_building_model(
     tmp_path: Path, monkeypatch: object
 ) -> None:

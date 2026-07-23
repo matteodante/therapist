@@ -8,7 +8,7 @@ from collections.abc import AsyncIterable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import (
@@ -71,9 +71,9 @@ ShortText = Annotated[str, Field(min_length=1, max_length=500)]
 
 
 async def _consume_model_events(
-    _: RunContext[None], events: AsyncIterable[AgentStreamEvent]
+    _context: RunContext[Any], events: AsyncIterable[AgentStreamEvent]
 ) -> None:
-    async for _ in events:
+    async for _event in events:
         pass
 
 
@@ -756,7 +756,7 @@ class ChatSession:
             + "\n\nAvailable claims:\n"
             + "\n".join(item.model_dump_json() for item in memories)
         )
-        agent = Agent(
+        agent = Agent[None, SessionReflection](
             self.model,
             output_type=SessionReflection,
             instructions=instructions,

@@ -525,8 +525,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - Work directly on `main` and push commits to `origin/main`. Do not create agent or feature branches
   or open pull requests unless the user explicitly requests that workflow.
 - Prefer the standard library, native platform behavior, and installed dependencies.
-- Keep `ruff check`, `ruff format --check`, the offline test suite, protocol validation, and package
-  build green in CI.
+- Keep `ruff check`, `ruff format --check`, `ty check`, the offline test suite, protocol validation,
+  and package build green in CI.
 - Keep the pinned OpenSSF Scorecard workflow green and treat its results as diagnostics rather than
   certification; do not hide findings caused by the documented direct-push workflow.
 - Do not add infrastructure or abstractions for deferred milestones.

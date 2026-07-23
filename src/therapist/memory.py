@@ -452,7 +452,9 @@ class MemoryStore:
                 "VALUES (?, 'user', ?, ?)",
                 (session.id, timestamp, user_payload),
             )
-            user_message_id = int(cursor.lastrowid)
+            if cursor.lastrowid is None:
+                raise RuntimeError("SQLite did not return an ID for the inserted user message.")
+            user_message_id = cursor.lastrowid
             database.execute(
                 "INSERT INTO messages(session_id, role, created_at, payload) "
                 "VALUES (?, 'assistant', ?, ?)",

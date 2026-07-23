@@ -58,7 +58,10 @@ def login_codex(
     device = _request_json(DEVICE_USER_CODE_URL, {"client_id": CLIENT_ID})
     device_id = _required_str(device, "device_auth_id")
     user_code = _required_str(device, "user_code")
-    interval = max(1.0, float(device.get("interval", 5)))
+    interval_value = device.get("interval", 5)
+    if not isinstance(interval_value, int | float) or isinstance(interval_value, bool):
+        raise AuthError("OpenAI authentication response contains an invalid interval.")
+    interval = max(1.0, float(interval_value))
     notify(f"Open {DEVICE_VERIFICATION_URI} and enter code: {user_code}")
     open_browser(DEVICE_VERIFICATION_URI)
 

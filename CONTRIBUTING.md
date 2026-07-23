@@ -11,6 +11,7 @@ Use Python 3.12 or newer and `uv`:
 uv sync --all-groups --extra dev
 uv run ruff check src tests
 uv run ruff format --check src tests
+uv run ty check src/therapist
 uv run pytest -q
 uv run thera protocol validate
 uv build

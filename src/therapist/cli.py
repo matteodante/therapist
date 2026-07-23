@@ -425,7 +425,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
                     questionary.Choice("Yes", value=True),
                     questionary.Choice("No", value=False),
                 ],
-                default=has_telegram,
+                default=questionary.Choice("Yes" if has_telegram else "No", value=has_telegram),
             )
         )
         if configure_telegram:
@@ -457,7 +457,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
                         questionary.Choice("Yes", value=True),
                         questionary.Choice("No", value=False),
                     ],
-                    default=False,
+                    default=questionary.Choice("No", value=False),
                 )
             )
         else:
@@ -475,7 +475,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
                         questionary.Choice("Yes", value=True),
                         questionary.Choice("No", value=False),
                     ],
-                    default=True,
+                    default=questionary.Choice("Yes", value=True),
                 )
             )
             if login_now:
@@ -690,7 +690,7 @@ def _pair_telegram_user(token: str) -> tuple[int, int]:
                         questionary.Choice("Yes", value=True),
                         questionary.Choice("No", value=False),
                     ],
-                    default=True,
+                    default=questionary.Choice("Yes", value=True),
                 )
             )
             if confirmed:

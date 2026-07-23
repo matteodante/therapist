@@ -34,6 +34,8 @@ jobs:
         run: uv run ruff check src tests
       - name: Check formatting
         run: uv run ruff format --check src tests
+      - name: Type check
+        run: uv run ty check src/therapist
       - name: Test
         run: uv run pytest -q
       - name: Validate protocol packs
