@@ -6,11 +6,11 @@ from typing import Any
 import pytest
 from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart, models
 from pydantic_ai.exceptions import AgentRunError
-from pydantic_ai.messages import TextPart
+from pydantic_ai.messages import TextPart, ThinkingPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from therapist.chat import TURN_LIMITS, ChatSession
+from therapist.chat import TURN_LIMITS, ChatSession, _persisted_run_messages
 from therapist.memory import (
     CaseFormulation,
     InterventionState,
@@ -256,6 +256,30 @@ def test_context_budget_reserves_ten_percent_for_output(tmp_path: Path) -> None:
 
     assert session.output_token_reserve == 12_800
     assert session.input_token_budget == 115_200
+
+
+def test_persisted_history_removes_internal_instructions_and_thinking() -> None:
+    messages = [
+        ModelRequest(
+            parts=[UserPromptPart(content="Visible user text.")],
+            instructions="Hidden instructions.",
+        ),
+        ModelResponse(
+            parts=[
+                ThinkingPart(content="Hidden reasoning."),
+                TextPart(content="Visible reply."),
+            ]
+        ),
+    ]
+
+    persisted = _persisted_run_messages(messages)
+
+    assert isinstance(persisted[0], ModelRequest)
+    assert persisted[0].instructions is None
+    assert [part.part_kind for message in persisted for part in message.parts] == [
+        "user-prompt",
+        "text",
+    ]
 
 
 def test_active_session_history_is_not_truncated_after_ten_turns(tmp_path: Path) -> None:
@@ -504,6 +528,65 @@ def test_hypothesis_tools_offer_then_confirm_the_same_claim(tmp_path: Path) -> N
     confirmed_item = store.list_memory()[0]
     assert confirmed_item.status is MemoryStatus.USER_CONFIRMED
     assert len(confirmed_item.evidence_message_ids) == 2
+
+
+def test_directly_stated_pattern_can_be_saved_as_user_confirmed(tmp_path: Path) -> None:
+    quote = "Fear of judgment drives my postponement."
+    model = _tool_model(
+        [
+            (
+                "record_memory",
+                {
+                    "observations": [
+                        {
+                            "kind": "pattern",
+                            "content": quote,
+                            "evidence_quote": quote,
+                            "confirmed_by_user": True,
+                        }
+                    ]
+                },
+            )
+        ],
+        "That gives us a clear pattern to keep in view.",
+    )
+    store = MemoryStore(tmp_path)
+
+    ChatSession(model, _pack(), store, "en-US").respond(quote)
+
+    item = store.list_memory()[0]
+    assert item.content == quote
+    assert item.status is MemoryStatus.USER_CONFIRMED
+
+
+def test_agent_inference_cannot_be_marked_as_user_confirmed(tmp_path: Path) -> None:
+    async def stream(_messages: list[Any], _info: Any):
+        yield {
+            0: DeltaToolCall(
+                name="record_memory",
+                json_args=json.dumps(
+                    {
+                        "observations": [
+                            {
+                                "kind": "pattern",
+                                "content": "Fear of judgment drives the user's avoidance.",
+                                "evidence_quote": "I postponed the call.",
+                                "confirmed_by_user": True,
+                            }
+                        ]
+                    }
+                ),
+                tool_call_id="unsupported-confirmation",
+            )
+        }
+
+    store = MemoryStore(tmp_path)
+    with pytest.raises(AgentRunError):
+        ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+            "I postponed the call."
+        )
+
+    assert store.list_memory() == []
 
 
 def test_unsupported_direct_observation_is_rejected_before_persistence(

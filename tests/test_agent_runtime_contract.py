@@ -38,6 +38,31 @@ def _record_memory_call() -> dict[int, DeltaToolCall]:
     }
 
 
+def _invalid_record_memory_call(attempt: int) -> dict[int, DeltaToolCall]:
+    return {
+        0: DeltaToolCall(
+            name="record_memory",
+            json_args=json.dumps(
+                {
+                    "observations": [
+                        {
+                            "kind": "pattern",
+                            "content": "The user may overprepare when feeling judged.",
+                            "evidence_quote": "pressure at work",
+                        },
+                        {
+                            "kind": "hypothesis",
+                            "content": "Fear of mistakes may sustain the pressure.",
+                            "evidence_quote": "pressure at work",
+                        },
+                    ]
+                }
+            ),
+            tool_call_id=f"invalid-record-{attempt}",
+        )
+    }
+
+
 def _has_tool_return(messages: list[Any]) -> bool:
     return any(
         getattr(part, "part_kind", "") == "tool-return"
@@ -89,6 +114,37 @@ def test_staged_action_commits_after_model_repairs_invalid_final_reply(
     assert "What creates the most pressure?" in store.session_transcript(
         store.active_session().id  # type: ignore[union-attr]
     )
+
+
+def test_tool_can_repair_two_validation_errors_within_global_budget(
+    tmp_path: Path,
+) -> None:
+    invalid_attempts = 0
+
+    async def stream(messages: list[Any], _info: Any):
+        nonlocal invalid_attempts
+        retry_count = sum(
+            getattr(part, "part_kind", "") == "retry-prompt"
+            and getattr(part, "tool_name", "") == "record_memory"
+            for message in messages
+            for part in message.parts
+        )
+        if _has_tool_return(messages):
+            yield "What creates the most pressure?"
+        elif retry_count < 2:
+            invalid_attempts += 1
+            yield _invalid_record_memory_call(invalid_attempts)
+        else:
+            yield _record_memory_call()
+
+    store = MemoryStore(tmp_path)
+    turn = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        "I feel pressure at work."
+    )
+
+    assert invalid_attempts == 2
+    assert turn.text == "What creates the most pressure?"
+    assert [item.content for item in store.list_memory()] == ["The user felt pressure at work."]
 
 
 def test_next_turn_receives_complete_history_with_tool_trace(

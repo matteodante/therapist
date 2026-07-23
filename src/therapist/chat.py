@@ -22,7 +22,7 @@ from pydantic_ai import (
     UsageLimits,
 )
 from pydantic_ai.exceptions import AgentRunError
-from pydantic_ai.messages import RetryPromptPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import RetryPromptPart, ThinkingPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import Model
 
 from therapist.memory import (
@@ -260,7 +260,11 @@ class ChatSession:
             "Call record_memory only for stable facts, preferences, consequential events, or "
             "reusable tentative patterns likely to matter later. Use correct_memory instead of "
             "adding a conflicting observation. Use confirm_hypotheses only when the user confirms "
-            "an active hypothesis. Use set_focus in accept mode only for the user's own accepted "
+            "an active hypothesis. If the user directly states a pattern and no matching active "
+            "hypothesis exists, record it with confirmed_by_user=true and copy the user's exact "
+            "words into both content and evidence_quote; never mark an agent inference this way. "
+            "The total of observations plus offered_hypothesis must be at most two. "
+            "Use set_focus in accept mode only for the user's own accepted "
             "wording. Use record_intervention for at most one intervention lifecycle update. "
             "Call independent action tools together when possible. Tool validation errors explain "
             "what must be corrected. Do not describe a durable state change without calling its "
@@ -278,7 +282,7 @@ class ChatSession:
             deps_type=TurnContext,
             output_type=str,
             instructions=instructions,
-            retries={"output": 2},
+            retries={"tools": 2, "output": 2},
         )
 
         @agent.tool(sequential=True)
@@ -312,6 +316,15 @@ class ChatSession:
             if hypotheses > 1:
                 raise ModelRetry("Record at most one tentative pattern or hypothesis.")
             for observation in observations:
+                if observation.confirmed_by_user and (
+                    not _quote_in_text(observation.content, ctx.deps.user_text)
+                    or observation.evidence_quote != observation.content
+                ):
+                    raise ModelRetry(
+                        "A user-confirmed observation requires the same exact current-user "
+                        "quote in content and evidence_quote; never mark an inference as "
+                        "confirmed."
+                    )
                 if observation.kind in {
                     MemoryKind.FACT,
                     MemoryKind.PREFERENCE,
@@ -467,12 +480,7 @@ class ChatSession:
         )
         reply = result.output
         actions = deps.actions
-        run_messages = [
-            replace(message, instructions=None)
-            if isinstance(message, ModelRequest)
-            else message
-            for message in result.new_messages()
-        ]
+        run_messages = _persisted_run_messages(result.new_messages())
         tool_trace = _format_tool_trace(run_messages)
         session.last_context_tokens = _estimate_context_tokens(
             self.protocol.instructions,
@@ -528,6 +536,12 @@ class ChatSession:
                 now,
                 evidence_text=text,
             )
+            for item in saved_observations:
+                if (
+                    item.status is MemoryStatus.USER_CONFIRMED
+                    and item.id == app_state.pending_hypothesis_id
+                ):
+                    app_state.pending_hypothesis_id = None
             if actions.confirmed_memory_ids:
                 self.memory.add_observations(
                     [
@@ -779,6 +793,20 @@ def _format_tool_trace(messages: list[ModelRequest | ModelResponse]) -> str | No
                     f"{_format_tool_value(part.content)}"
                 )
     return "\n\n".join(blocks) or None
+
+
+def _persisted_run_messages(
+    messages: list[ModelRequest | ModelResponse],
+) -> list[ModelRequest | ModelResponse]:
+    return [
+        replace(message, instructions=None)
+        if isinstance(message, ModelRequest)
+        else replace(
+            message,
+            parts=[part for part in message.parts if not isinstance(part, ThinkingPart)],
+        )
+        for message in messages
+    ]
 
 
 def _format_tool_value(value: object) -> str:

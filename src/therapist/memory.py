@@ -11,7 +11,7 @@ import re
 import sqlite3
 import unicodedata
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
 from enum import StrEnum
@@ -130,6 +130,13 @@ class MemoryObservation(BaseModel):
     kind: MemoryKind
     content: str = Field(min_length=1, max_length=500)
     evidence_quote: str | None = Field(default=None, max_length=500)
+    confirmed_by_user: bool = Field(
+        default=False,
+        description=(
+            "True only when content and evidence_quote are the same exact words from the current "
+            "user message; never for an agent inference."
+        ),
+    )
     aliases: list[str] = Field(default_factory=list, max_length=5)
     merge_into_id: str | None = None
 
@@ -560,6 +567,8 @@ class MemoryStore:
                 duplicate.last_seen_at = _iso(now)
                 if evidence_message_id not in duplicate.evidence_message_ids:
                     duplicate.evidence_message_ids.append(evidence_message_id)
+                if observation.confirmed_by_user:
+                    duplicate.status = MemoryStatus.USER_CONFIRMED
                 duplicate.aliases = list(dict.fromkeys([*duplicate.aliases, *observation.aliases]))[
                     :5
                 ]
@@ -567,9 +576,13 @@ class MemoryStore:
                 saved.append(duplicate)
                 continue
             status = (
-                MemoryStatus.AGENT_HYPOTHESIS
-                if observation.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
-                else MemoryStatus.USER_CONFIRMED
+                MemoryStatus.USER_CONFIRMED
+                if (
+                    observation.confirmed_by_user
+                    or observation.kind
+                    not in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
+                )
+                else MemoryStatus.AGENT_HYPOTHESIS
             )
             timestamp = _iso(now)
             item = MemoryItem(
@@ -863,26 +876,28 @@ class MemoryStore:
                 "created_at": row[3],
                 "content": payload.get("content", ""),
             }
-            tool_exchanges = [
-                {
-                    "direction": "input" if part["part_kind"] == "tool-call" else "output",
-                    "tool_name": part.get("tool_name"),
-                    "content": (
-                        part.get("args")
-                        if part["part_kind"] == "tool-call"
-                        else part.get("content")
-                    ),
-                    **(
-                        {"outcome": part.get("outcome", "retry")}
-                        if part["part_kind"] != "tool-call"
-                        else {}
-                    ),
-                }
-                for model_message in payload.get("model_messages", [])
-                for part in model_message.get("parts", [])
-                if part.get("part_kind") in {"tool-call", "tool-return", "retry-prompt"}
-                and (part.get("part_kind") != "retry-prompt" or part.get("tool_name"))
-            ]
+            tool_exchanges = []
+            for model_message in payload.get("model_messages", []):
+                for part in model_message.get("parts", []):
+                    part_kind = part.get("part_kind")
+                    if part_kind not in {"tool-call", "tool-return", "retry-prompt"}:
+                        continue
+                    if part_kind == "retry-prompt" and not part.get("tool_name"):
+                        continue
+                    content = (
+                        part.get("args") if part_kind == "tool-call" else part.get("content")
+                    )
+                    if part_kind == "tool-call" and isinstance(content, str):
+                        with suppress(json.JSONDecodeError):
+                            content = json.loads(content)
+                    exchange = {
+                        "direction": "input" if part_kind == "tool-call" else "output",
+                        "tool_name": part.get("tool_name"),
+                        "content": content,
+                    }
+                    if part_kind != "tool-call":
+                        exchange["outcome"] = part.get("outcome", "retry")
+                    tool_exchanges.append(exchange)
             if tool_exchanges:
                 message["tool_exchanges"] = tool_exchanges
             messages.append(message)

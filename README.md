@@ -111,8 +111,9 @@ confirmations, focus changes, or one intervention update. The transcript and sta
 committed atomically only after a successful final reply. Conversation history contains the complete
 successful run, including paired function-tool inputs and outputs. CLI and Telegram display those
 exchanges before the final reply, and export exposes them without internal prompts or private model
-reasoning. Slash commands such as `/start`, `/status`, and `/quit`, their displayed output, and
-context lifecycle notices remain outside the conversation archive and model history. There is no
+reasoning. Repeated internal instructions and provider thinking are discarded before persistence.
+Slash commands such as `/start`, `/status`, and `/quit`, their displayed output, and context
+lifecycle notices remain outside the conversation archive and model history. There is no
 intra-session compaction: complete successful runs remain available until a warning near the
 effective context limit, followed by consolidation and a fresh session before the next message would
 exceed it. End-of-session

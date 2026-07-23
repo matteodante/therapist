@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 from pydantic_ai import models
+from pydantic_ai.messages import RetryPromptPart, ToolReturnPart
 from pydantic_evals import Dataset
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 
@@ -36,6 +37,21 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
         context = ctx.output["context"].casefold()
         reply = ctx.output["return_reply"].casefold()
         return {
+            "all_replies_non_empty": all(
+                reply.strip() and len(reply) <= 1_200 for reply in ctx.output["initial_replies"]
+            ),
+            "tool_io_visible": (
+                ctx.output["visible_tool_trace_count"] >= expected["minimum_tool_calls"]
+                and ctx.output["all_visible_tool_traces_paired"]
+            ),
+            "tool_history_persisted": (
+                ctx.output["history_tool_call_count"] >= expected["minimum_tool_calls"]
+                and ctx.output["history_tools_paired"]
+            ),
+            "internal_history_excluded": (
+                ctx.output["thinking_excluded"] and ctx.output["instructions_excluded"]
+            ),
+            "transcript_complete": ctx.output["transcript_complete"],
             "durable_memory_created": (
                 ctx.output["memory_count"] >= expected["minimum_memory_items"]
             ),
@@ -45,6 +61,22 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
             ),
             "evidence_provenance_preserved": ctx.output["evidence_preserved"],
             "session_consolidated": ctx.output["session_consolidated"],
+            "session_summary_complete": all(
+                any(
+                    term.casefold() in ctx.output["session_summary"].casefold()
+                    for term in group
+                )
+                for group in expected["summary_term_groups"]
+            ),
+            "tool_io_exported": (
+                ctx.output["export_tool_input_count"] >= expected["minimum_tool_calls"]
+                and ctx.output["export_tools_paired"]
+                and ctx.output["export_tool_inputs_structured"]
+                and ctx.output["export_internal_history_excluded"]
+            ),
+            "encrypted_archive_has_no_synthetic_plaintext": ctx.output[
+                "synthetic_plaintext_absent"
+            ],
             "semantic_context_retrieved": all(
                 term.casefold() in context for term in expected["context_terms"]
             ),
@@ -72,21 +104,53 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
             embedder = _default_embedder(local_files_only=True)
             store = MemoryStore(path, embedding_model=DEFAULT_EMBEDDING_MODEL, embedder=embedder)
             chat = ChatSession(model, pack, store, "en-US")
-            replies = [
-                chat.respond(message, started_at + timedelta(minutes=index * 10)).text
+            turns = [
+                chat.respond(message, started_at + timedelta(minutes=index * 10))
                 for index, message in enumerate(inputs["initial_messages"])
             ]
+            replies = [turn.text for turn in turns]
             closed = chat.end(started_at + timedelta(hours=1))
+            assert closed is not None
 
             restarted = MemoryStore(
                 path, embedding_model=DEFAULT_EMBEDDING_MODEL, embedder=embedder
             )
+            history = restarted.load_session_history(closed.id)
+            history_tool_calls = [
+                (part.tool_name, part.tool_call_id)
+                for message in history
+                for part in message.parts
+                if part.part_kind == "tool-call"
+            ]
+            history_tool_returns = [
+                (part.tool_name, part.tool_call_id)
+                for message in history
+                for part in message.parts
+                if isinstance(part, (ToolReturnPart, RetryPromptPart)) and part.tool_name
+            ]
+            transcript = restarted.session_transcript(closed.id)
+            exported = restarted.export()
+            exported_tool_exchanges = [
+                exchange
+                for message in exported["messages"]
+                for exchange in message.get("tool_exchanges", [])
+            ]
+            exported_inputs = [
+                exchange
+                for exchange in exported_tool_exchanges
+                if exchange["direction"] == "input"
+            ]
+            exported_outputs = [
+                exchange
+                for exchange in exported_tool_exchanges
+                if exchange["direction"] == "output"
+            ]
             context = restarted.working_context(inputs["semantic_query"])
+            items = restarted.list_memory()
             returned = ChatSession(model, pack, restarted, "en-US").respond(
                 inputs["return_message"],
                 started_at + timedelta(days=inputs["return_after_days"]),
             )
-            items = restarted.list_memory()
             restarted.working_context(inputs["return_message"])
             with sqlite3.connect(restarted.database_path) as database:
                 indexed = database.execute(
@@ -102,15 +166,56 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
                 "evidence_preserved": bool(items)
                 and all(item.evidence_message_ids for item in items),
                 "session_consolidated": (
-                    closed is not None
-                    and bool(closed.summary.strip())
+                    bool(closed.summary.strip())
                     and closed.consolidation_error is None
+                    and closed.end_reason is not None
+                ),
+                "session_summary": closed.summary,
+                "transcript_complete": all(
+                    text in transcript for text in [*inputs["initial_messages"], *replies]
+                ),
+                "visible_tool_trace_count": sum(bool(turn.tool_trace) for turn in turns),
+                "all_visible_tool_traces_paired": all(
+                    not turn.tool_trace
+                    or (
+                        "TOOL INPUT ·" in turn.tool_trace
+                        and "TOOL OUTPUT ·" in turn.tool_trace
+                    )
+                    for turn in turns
+                ),
+                "history_tool_call_count": len(history_tool_calls),
+                "history_tools_paired": sorted(history_tool_calls)
+                == sorted(history_tool_returns),
+                "thinking_excluded": all(
+                    part.part_kind != "thinking"
+                    for message in history
+                    for part in message.parts
+                ),
+                "instructions_excluded": all(
+                    getattr(message, "instructions", None) is None for message in history
+                ),
+                "export_tool_input_count": len(exported_inputs),
+                "export_tools_paired": sorted(
+                    exchange["tool_name"] for exchange in exported_inputs
+                )
+                == sorted(exchange["tool_name"] for exchange in exported_outputs),
+                "export_tool_inputs_structured": all(
+                    isinstance(exchange["content"], dict) for exchange in exported_inputs
+                ),
+                "export_internal_history_excluded": all(
+                    "model_messages" not in message for message in exported["messages"]
+                ),
+                "synthetic_plaintext_absent": all(
+                    message.encode() not in restarted.database_path.read_bytes()
+                    for message in inputs["initial_messages"]
                 ),
                 "context": context.model_dump_json(),
                 "semantic_index_complete": indexed >= len(items),
                 "return_reply": returned.text,
                 "session_count": len(restarted.list_sessions()),
                 "initial_replies": replies,
+                "tool_traces": [turn.tool_trace for turn in turns],
+                "transcript": transcript,
             }
 
     dataset = Dataset(
@@ -126,7 +231,12 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
         )
 
     failed = [
-        f"{case.name}:{name}: {result.reason or 'no reason'}\n{case.output}"
+        (
+            f"{case.name}:{name}: {result.reason or 'no reason'}\n"
+            f"tool_traces={case.output['tool_traces']}\n"
+            f"summary={case.output['session_summary']}\n"
+            f"transcript={case.output['transcript']}"
+        )
         for case in report.cases
         for name, result in case.assertions.items()
         if not result.value

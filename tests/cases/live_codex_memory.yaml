@@ -16,6 +16,11 @@ cases:
     expected_output:
       minimum_memory_items: 3
       minimum_sessions: 2
+      minimum_tool_calls: 1
       context_terms: [manager, judgment]
       continuity_terms: [manager, four months, before, remember]
+      summary_term_groups:
+        - [call, manager]
+        - [judgment, scrutiny]
+        - [relief, shame]
       require_confirmed_hypothesis: true

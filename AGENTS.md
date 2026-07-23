@@ -128,13 +128,14 @@ longitudinal lookup; the other five validate and stage actions without mutating 
 model run. After a valid final reply, the transcript and all staged actions are committed in one
 transaction; failure leaves both unchanged. The successful PydanticAI message sequence is retained
 in encrypted model history, including paired function-tool inputs and outputs but excluding repeated
-internal instructions, and those tool exchanges are rendered before the final reply in both CLI and
-Telegram. Slash commands such as `/start`,
+internal instructions and provider thinking, and those tool exchanges are rendered before the final
+reply in both CLI and Telegram. Slash commands such as `/start`,
 `/status`, and `/quit`, their rendered output, and transport-level notices remain excluded from the
 conversation archive and model history.
 
-A conversation run permits at most eight model requests, six successful tool calls, and two output retries
-within that global budget. All model-written strings and collections have size limits. Accepted
+A conversation run permits at most eight model requests, six successful tool calls, two validation
+retries for each invalid tool call, and two output retries within that global budget. All
+model-written strings and collections have size limits. Accepted
 focus, confirmed hypotheses, and agreed or updated interventions require exact supporting text from
 the current user message. The IDs of the last explicitly offered hypothesis and active intervention
 remain pending so confirmation, agreement, and outcome update the original records instead of
@@ -405,7 +406,9 @@ interrogation are evaluated at the conversation level. The turn has no `process_
 and the agent chooses conversational behavior and tools from meaning and context.
 
 Memory tool use is intentionally sparse: at most two durable items total per turn, with no more than
-one hypothesis.
+one hypothesis. A model-written pattern remains tentative by default. A directly stated user pattern
+may be stored as confirmed only when its content and evidence are the same exact quote from the
+current message.
 Near-identical claims merge conservatively using the standard library, while differing numbers or
 negation always remain distinct. An unaccepted proposed focus expires when the session closes.
 
@@ -531,8 +534,9 @@ per-turn tool-call budget is enforced before commit.
 
 A separate Codex-subscription memory eval exercises the configured experimental OAuth backend with
 synthetic data through the production `ChatSession`: capture, explicit hypothesis confirmation,
-consolidation, encrypted semantic indexing, restart, four-month retrieval, and continuity. It is
-opt-in and runs once by default:
+visible and persisted tool input/output, transcript and export integrity, provider-thinking
+exclusion, consolidation summary, encrypted semantic indexing, restart, four-month retrieval, and
+continuity. It is opt-in and runs once by default:
 
 ```bash
 THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
