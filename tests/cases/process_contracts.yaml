@@ -4,45 +4,43 @@ cases:
     inputs:
       locale: en-US
       user_text: I moved to Bologna last month.
-      model_output:
-        reply: How has Bologna felt so far?
-        observations:
-          - kind: fact
-            content: The user moved to Bologna last month.
-            evidence_quote: moved to Bologna last month
-            aliases: [relocation, moved city]
-        process_stage: explore
+      model_reply: How has Bologna felt so far?
+      tool_calls:
+        - name: record_memory
+          arguments:
+            observations:
+              - kind: fact
+                content: The user moved to Bologna last month.
+                evidence_quote: moved to Bologna last month
+                aliases: [relocation, moved city]
     expected_output:
       completed: true
       memory_count: 1
-      process_stage: explore
+      reply: How has Bologna felt so far?
 
   - name: unsupported-fact
     inputs:
       locale: en-US
       user_text: Work was difficult today.
-      model_output:
-        reply: What made today difficult?
-        observations:
-          - kind: fact
-            content: The user has two children.
-            evidence_quote: two children
-        process_stage: explore
+      model_reply: What made today difficult?
+      tool_calls:
+        - name: record_memory
+          arguments:
+            observations:
+              - kind: fact
+                content: The user has two children.
+                evidence_quote: two children
     expected_output:
-      completed: true
+      completed: false
       memory_count: 0
-      process_stage: explore
+      reply: ""
 
   - name: italian-repair
     inputs:
       locale: it-IT
-      user_text: Non hai capito, mi stai dando troppi consigli.
-      model_output:
-        reply: Hai ragione, sono passato ai consigli. Cosa non ho colto?
-        observations: []
-        process_stage: repair
-        selected_skill: repair-misattunement
+      user_text: Mi stai leggendo attraverso una lente che non è la mia.
+      model_reply: Hai ragione, ho imposto una lettura che non ti appartiene. Cosa non ho colto?
     expected_output:
       completed: true
       memory_count: 0
-      process_stage: repair
+      reply: Hai ragione, ho imposto una lettura che non ti appartiene. Cosa non ho colto?

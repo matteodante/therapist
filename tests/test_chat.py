@@ -1,14 +1,18 @@
+import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
-from pydantic import ValidationError
 from pydantic_ai import models
+from pydantic_ai.exceptions import AgentRunError
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from therapist.chat import ChatSession, TherapistReply
+from therapist.chat import ChatSession
 from therapist.memory import (
     CaseFormulation,
+    InterventionState,
     MemoryKind,
     MemoryObservation,
     MemoryStatus,
@@ -21,60 +25,95 @@ models.ALLOW_MODEL_REQUESTS = False
 
 
 def _pack() -> ProtocolPack:
-    return ProtocolPack.load(Path("protocols/transdiagnostic-v0.4.0"))
+    return ProtocolPack.load(Path("protocols/transdiagnostic-v0.5.0"))
 
 
-def test_normal_turn_returns_reply_and_persists_supported_observation(tmp_path: Path) -> None:
+def _text_model(reply: str) -> TestModel:
+    return TestModel(call_tools=[], custom_output_text=reply)
+
+
+def _tool_model(
+    tool_calls: list[tuple[str, dict[str, Any]]],
+    reply: str,
+) -> FunctionModel:
+    async def stream(messages: list[Any], _info: Any):
+        if any(
+            getattr(part, "part_kind", "") == "tool-return"
+            for message in messages
+            for part in message.parts
+        ):
+            yield reply
+            return
+        yield {
+            index: DeltaToolCall(
+                name=name,
+                json_args=json.dumps(arguments),
+                tool_call_id=f"call-{index}",
+            )
+            for index, (name, arguments) in enumerate(tool_calls)
+        }
+
+    return FunctionModel(stream_function=stream)
+
+
+def test_normal_turn_returns_text_and_persists_tool_staged_observation(
+    tmp_path: Path,
+) -> None:
     store = MemoryStore(tmp_path)
-    session = ChatSession(
-        TestModel(
-            custom_output_args={
-                "reply": "Sono qui. Cosa succede al lavoro?",
-                "observations": [
-                    {
-                        "kind": "event",
-                        "content": "The user feels pressure at work.",
-                        "evidence_quote": "sotto pressione al lavoro",
-                        "aliases": ["work stress", "pressione lavorativa"],
-                    }
-                ],
-                "confirmed_memory_ids": [],
-                "proposed_focus": None,
-            }
-        ),
-        _pack(),
-        store,
-        "it-IT",
+    model = _tool_model(
+        [
+            (
+                "record_memory",
+                {
+                    "observations": [
+                        {
+                            "kind": "event",
+                            "content": "The user feels pressure at work.",
+                            "evidence_quote": "sotto pressione al lavoro",
+                            "aliases": ["work stress", "pressione lavorativa"],
+                        }
+                    ],
+                    "offered_hypothesis": None,
+                },
+            )
+        ],
+        "Sono qui. Cosa succede al lavoro?",
     )
 
-    turn = session.respond("Mi sento sotto pressione al lavoro.")
+    turn = ChatSession(model, _pack(), store, "it-IT").respond(
+        "Mi sento sotto pressione al lavoro."
+    )
 
     assert turn.safety_state is SafetyState.CLEAR
     assert turn.text == "Sono qui. Cosa succede al lavoro?"
-    assert store.load_session_history(store.active_session().id)  # type: ignore[union-attr]
     assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
+    history = store.load_session_history(store.active_session().id)  # type: ignore[union-attr]
+    assert [part.part_kind for message in history for part in message.parts] == [
+        "user-prompt",
+        "text",
+    ]
 
 
 def test_turn_persistence_rolls_back_as_one_transaction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = MemoryStore(tmp_path)
-    session = ChatSession(
-        TestModel(
-            custom_output_args={
-                "reply": "I hear the pressure.",
-                "observations": [
-                    {
-                        "kind": "event",
-                        "content": "The user feels pressure at work.",
-                        "evidence_quote": "pressure at work",
-                    }
-                ],
-            }
-        ),
-        _pack(),
-        store,
-        "en-US",
+    model = _tool_model(
+        [
+            (
+                "record_memory",
+                {
+                    "observations": [
+                        {
+                            "kind": "event",
+                            "content": "The user feels pressure at work.",
+                            "evidence_quote": "pressure at work",
+                        }
+                    ]
+                },
+            )
+        ],
+        "I hear the pressure.",
     )
 
     def fail_final_write(*_: object, **__: object) -> None:
@@ -83,7 +122,9 @@ def test_turn_persistence_rolls_back_as_one_transaction(
     monkeypatch.setattr(store, "save_app_state", fail_final_write)
 
     with pytest.raises(RuntimeError, match="simulated final write failure"):
-        session.respond("I feel pressure at work.")
+        ChatSession(model, _pack(), store, "en-US").respond(
+            "I feel pressure at work."
+        )
 
     active = store.active_session()
     assert active is not None
@@ -91,12 +132,45 @@ def test_turn_persistence_rolls_back_as_one_transaction(
     assert store.list_memory() == []
 
 
+def test_failed_agent_run_commits_no_staged_actions(tmp_path: Path) -> None:
+    async def stream(_messages: list[Any], _info: Any):
+        yield {
+            0: DeltaToolCall(
+                name="record_memory",
+                json_args=json.dumps(
+                    {
+                        "observations": [
+                            {
+                                "kind": "fact",
+                                "content": "Unsupported claim",
+                                "evidence_quote": "missing",
+                            }
+                        ]
+                    }
+                ),
+                tool_call_id="invalid",
+            )
+        }
+
+    store = MemoryStore(tmp_path)
+    with pytest.raises(AgentRunError):
+        ChatSession(
+            FunctionModel(stream_function=stream), _pack(), store, "en-US"
+        ).respond("Nothing supports that claim.")
+
+    assert store.list_memory() == []
+    assert store.session_transcript(store.active_session().id) == ""  # type: ignore[union-attr]
+
+
 def test_expired_session_is_closed_before_a_new_turn(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
-    model = TestModel(
-        custom_output_args={"reply": "Bentornato.", "observations": [], "proposed_focus": None}
+
+    async def stream(_messages: list[Any], _info: Any):
+        yield "Bentornato."
+
+    session = ChatSession(
+        FunctionModel(stream_function=stream), _pack(), store, "it-IT"
     )
-    session = ChatSession(model, _pack(), store, "it-IT")
     january = datetime(2026, 1, 1, tzinfo=UTC)
 
     session.respond("A gennaio ero preoccupato per il lavoro.", january)
@@ -200,57 +274,21 @@ def test_crisis_turn_bypasses_model_and_archives_the_exchange(tmp_path: Path) ->
     assert "uccidermi" in store.session_transcript(store.active_session().id)  # type: ignore[union-attr]
 
 
-def test_explicit_user_confirmation_promotes_existing_hypothesis(tmp_path: Path) -> None:
+def test_hypothesis_tools_offer_then_confirm_the_same_claim(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
-    confirmed_at = datetime(2026, 4, 5, 12, tzinfo=UTC)
-    active = store.start_session(confirmed_at - timedelta(minutes=10))
-    evidence_id = store.save_turn(
-        active,
-        "I avoid calls",
-        "Could this be fear?",
-        [],
-        confirmed_at - timedelta(minutes=10),
-    )
-    hypothesis = store.add_observations(
+    offered = _tool_model(
         [
-            MemoryObservation(
-                kind=MemoryKind.PATTERN,
-                content="Fear may maintain call avoidance.",
+            (
+                "record_memory",
+                {
+                    "observations": [],
+                    "offered_hypothesis": (
+                        "Avoidance may protect against anticipated criticism."
+                    ),
+                },
             )
         ],
-        evidence_id,
-    )[0]
-    model = TestModel(
-        custom_output_args={
-            "reply": "That confirmation helps us refine the picture.",
-            "observations": [],
-            "confirmed_memory_ids": [hypothesis.id],
-            "confirmation_evidence_quote": "that pattern fits exactly",
-            "proposed_focus": None,
-        }
-    )
-
-    ChatSession(model, _pack(), store, "en-US").respond(
-        "Yes, that pattern fits exactly.", confirmed_at
-    )
-
-    confirmed = store.list_memory()[0]
-    assert confirmed.status is MemoryStatus.USER_CONFIRMED
-    assert confirmed.last_seen_at == confirmed_at.isoformat()
-
-
-def test_offered_hypothesis_becomes_pending_and_is_cleared_on_confirmation(
-    tmp_path: Path,
-) -> None:
-    store = MemoryStore(tmp_path)
-    offered = TestModel(
-        custom_output_args={
-            "reply": "Could avoidance be protecting you from anticipated criticism?",
-            "observations": [],
-            "offered_hypothesis": "Avoidance may protect against anticipated criticism.",
-            "process_stage": "formulate",
-            "selected_skill": "build-shared-formulation",
-        }
+        "Could avoidance be protecting you from anticipated criticism?",
     )
     ChatSession(offered, _pack(), store, "en-US").respond(
         "I put off calls when I expect criticism."
@@ -258,97 +296,92 @@ def test_offered_hypothesis_becomes_pending_and_is_cleared_on_confirmation(
     pending_id = store.load_app_state().pending_hypothesis_id
     assert pending_id is not None
 
-    confirmed = TestModel(
-        custom_output_args={
-            "reply": "That gives us a shared working explanation.",
-            "observations": [],
-            "confirmed_memory_ids": [pending_id],
-            "confirmation_evidence_quote": "that pattern fits",
-            "process_stage": "formulate",
-            "selected_skill": "build-shared-formulation",
-        }
+    confirmed = _tool_model(
+        [
+            (
+                "confirm_hypotheses",
+                {
+                    "memory_ids": [pending_id],
+                    "evidence_quote": "that explanation captures it",
+                },
+            )
+        ],
+        "That gives us a shared working explanation.",
     )
     ChatSession(confirmed, _pack(), store, "en-US").respond(
-        "Yes, that pattern fits exactly."
+        "Yes, that explanation captures it exactly."
     )
 
     assert store.load_app_state().pending_hypothesis_id is None
     assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
 
 
-def test_therapeutic_reply_allows_natural_question_count() -> None:
-    assert TherapistReply(reply="That sounds painful.").reply == "That sounds painful."
-    assert TherapistReply(
-        reply="What happened just before it? What did you notice in your body?"
-    ).reply.endswith("body?")
-
-
-def test_therapeutic_reply_limits_durable_memory_writes() -> None:
-    with pytest.raises(ValidationError, match="at most 2 items"):
-        TherapistReply(
-            reply="Tell me more.",
-            observations=[
-                {"kind": "fact", "content": f"Fact {index}"} for index in range(3)
-            ],
-        )
-
-
-def test_unsupported_direct_observation_does_not_become_memory(tmp_path: Path) -> None:
-    store = MemoryStore(tmp_path)
-    model = TestModel(
-        custom_output_args={
-            "reply": "Tell me more.",
-            "observations": [
-                {
-                    "kind": "fact",
-                    "content": "The user has two children.",
-                    "evidence_quote": "two children",
-                }
-            ],
+def test_unsupported_direct_observation_is_rejected_before_persistence(
+    tmp_path: Path,
+) -> None:
+    async def stream(_messages: list[Any], _info: Any):
+        yield {
+            0: DeltaToolCall(
+                name="record_memory",
+                json_args=json.dumps(
+                    {
+                        "observations": [
+                            {
+                                "kind": "fact",
+                                "content": "The user has two children.",
+                                "evidence_quote": "two children",
+                            }
+                        ]
+                    }
+                ),
+                tool_call_id="unsupported",
+            )
         }
-    )
 
-    ChatSession(model, _pack(), store, "en-US").respond("Work was difficult today.")
+    store = MemoryStore(tmp_path)
+    with pytest.raises(AgentRunError):
+        ChatSession(
+            FunctionModel(stream_function=stream), _pack(), store, "en-US"
+        ).respond("Work was difficult today.")
 
     assert store.list_memory() == []
 
 
-def test_natural_correction_replaces_existing_memory_without_duplicate(
+def test_correction_tool_replaces_existing_memory_without_duplicate(
     tmp_path: Path,
 ) -> None:
     store = MemoryStore(tmp_path)
     active = store.start_session()
-    evidence_id = store.save_turn(
-        active,
-        "Mia madre vive sola.",
-        "Capisco.",
-        [],
-    )
+    evidence_id = store.save_turn(active, "Mia madre vive sola.", "Capisco.", [])
     old = store.add_observations(
         [MemoryObservation(kind=MemoryKind.FACT, content="La madre vive sola.")],
         evidence_id,
     )[0]
-    model = TestModel(
-        custom_output_args={
-            "reply": "Grazie della correzione: aggiorno il quadro.",
-            "observations": [],
-            "corrections": [
+    text = (
+        "In realtà devo rivedere quel dettaglio: mia madre non vive sola; "
+        "vive con mia zia quasi tutta la settimana."
+    )
+    model = _tool_model(
+        [
+            (
+                "correct_memory",
                 {
-                    "memory_id": old.id,
-                    "replacement": "La madre vive con la zia quasi tutta la settimana.",
-                    "evidence_quote": (
-                        "Devo correggere una cosa: mia madre non vive sola; vive con mia zia "
-                        "quasi tutta la settimana."
-                    ),
-                }
-            ],
-        }
+                    "corrections": [
+                        {
+                            "memory_id": old.id,
+                            "replacement": (
+                                "La madre vive con la zia quasi tutta la settimana."
+                            ),
+                            "evidence_quote": text,
+                        }
+                    ]
+                },
+            )
+        ],
+        "Grazie della correzione: aggiorno il quadro.",
     )
 
-    ChatSession(model, _pack(), store, "it-IT").respond(
-        "Devo correggere una cosa: mia madre non vive sola; vive con mia zia quasi tutta "
-        "la settimana."
-    )
+    ChatSession(model, _pack(), store, "it-IT").respond(text)
 
     items = store.list_memory()
     assert len(items) == 1
@@ -358,44 +391,143 @@ def test_natural_correction_replaces_existing_memory_without_duplicate(
     assert "vive sola" not in store.working_context("madre zia").model_dump_json()
 
 
-def test_focus_and_intervention_require_user_evidence_and_persist(tmp_path: Path) -> None:
+def test_lookup_authorizes_an_out_of_context_correction_without_persisting_tool_results(
+    tmp_path: Path,
+) -> None:
     store = MemoryStore(tmp_path)
-    offered = TestModel(
-        custom_output_args={
-            "reply": "Would a two-minute draft be worth testing?",
-            "observations": [],
-            "proposed_focus": "Reduce avoidance around drafting",
-            "process_stage": "intervene",
-            "selected_skill": "change-avoidance-behavior",
-            "intervention": {
-                "skill": "change-avoidance-behavior",
-                "description": "Write a two-minute draft",
-                "prediction": "Anxiety may rise without preventing a start",
-                "state": "offered",
-            },
+    active = store.start_session(datetime(2026, 1, 1, tzinfo=UTC))
+    evidence_id = store.save_turn(
+        active,
+        "The oak cabin is green.",
+        "Noted.",
+        [],
+        datetime(2026, 1, 1, tzinfo=UTC),
+    )
+    target = store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="The oak cabin is green.")],
+        evidence_id,
+        datetime(2026, 1, 1, tzinfo=UTC),
+    )[0]
+    for index in range(31):
+        store.add_observations(
+            [
+                MemoryObservation(
+                    kind=MemoryKind.FACT,
+                    content=f"Unrelated durable detail number {index}.",
+                )
+            ],
+            evidence_id,
+            datetime(2026, 1, 2, tzinfo=UTC) + timedelta(days=index),
+        )
+    user_text = "The oak cabin is now blue, not green."
+
+    async def stream(messages: list[Any], _info: Any):
+        returned = {
+            part.tool_name
+            for message in messages
+            for part in message.parts
+            if getattr(part, "part_kind", "") == "tool-return"
         }
+        if "search_memory" not in returned:
+            yield {
+                0: DeltaToolCall(
+                    name="search_memory",
+                    json_args=json.dumps({"query": "oak cabin green"}),
+                    tool_call_id="search",
+                )
+            }
+        elif "correct_memory" not in returned:
+            yield {
+                0: DeltaToolCall(
+                    name="correct_memory",
+                    json_args=json.dumps(
+                        {
+                            "corrections": [
+                                {
+                                    "memory_id": target.id,
+                                    "replacement": "The oak cabin is blue.",
+                                    "evidence_quote": user_text,
+                                }
+                            ]
+                        }
+                    ),
+                    tool_call_id="correct",
+                )
+            }
+        else:
+            yield "I have updated that detail."
+
+    assert target.id not in {
+        item.id for item in store.working_context("revise an old detail").confirmed_memory
+    }
+    ChatSession(
+        FunctionModel(stream_function=stream), _pack(), store, "en-US"
+    ).respond(user_text)
+
+    corrected = next(item for item in store.list_memory() if item.id == target.id)
+    assert corrected.content == "The oak cabin is blue."
+    history = store.load_session_history(active.id)
+    assert all(
+        part.part_kind not in {"tool-call", "tool-return"}
+        for message in history
+        for part in message.parts
+    )
+
+
+def test_focus_and_intervention_tools_update_existing_records(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    offered = _tool_model(
+        [
+            (
+                "set_focus",
+                {
+                    "mode": "propose",
+                    "focus": "Reduce avoidance around drafting",
+                },
+            ),
+            (
+                "record_intervention",
+                {
+                    "action": {
+                        "skill": "change-avoidance-behavior",
+                        "description": "Write a two-minute draft",
+                        "prediction": "Anxiety may rise without preventing a start",
+                        "state": "offered",
+                    }
+                },
+            ),
+        ],
+        "Would a two-minute draft be worth testing?",
     )
     ChatSession(offered, _pack(), store, "en-US").respond(
         "I keep postponing the first draft."
     )
     intervention = store.list_interventions()[0]
 
-    accepted = TestModel(
-        custom_output_args={
-            "reply": "Good—we can treat it as a small experiment.",
-            "observations": [],
-            "accepted_focus": "reducing that avoidance",
-            "focus_evidence_quote": "focus on reducing that avoidance",
-            "process_stage": "intervene",
-            "selected_skill": "change-avoidance-behavior",
-            "intervention": {
-                "record_id": intervention.id,
-                "skill": "change-avoidance-behavior",
-                "description": intervention.description,
-                "state": "agreed",
-                "evidence_quote": "I agree to try the two-minute draft",
-            },
-        }
+    accepted = _tool_model(
+        [
+            (
+                "set_focus",
+                {
+                    "mode": "accept",
+                    "focus": "reducing that avoidance",
+                    "evidence_quote": "focus on reducing that avoidance",
+                },
+            ),
+            (
+                "record_intervention",
+                {
+                    "action": {
+                        "record_id": intervention.id,
+                        "skill": "change-avoidance-behavior",
+                        "description": intervention.description,
+                        "state": "agreed",
+                        "evidence_quote": "I agree to try the two-minute draft",
+                    }
+                },
+            ),
+        ],
+        "Good—we can treat it as a small experiment.",
     )
     ChatSession(accepted, _pack(), store, "en-US").respond(
         "I agree to try the two-minute draft; let's focus on reducing that avoidance."
@@ -403,7 +535,7 @@ def test_focus_and_intervention_require_user_evidence_and_persist(tmp_path: Path
 
     assert store.load_formulation().current_focus == "reducing that avoidance"
     assert len(store.list_interventions()) == 1
-    assert store.list_interventions()[0].state.value == "agreed"
+    assert store.list_interventions()[0].state is InterventionState.AGREED
     assert store.load_app_state().pending_intervention_id == intervention.id
 
 
@@ -428,25 +560,27 @@ def test_unaccepted_proposed_focus_expires_when_session_ends(tmp_path: Path) -> 
     assert store.load_formulation().proposed_focus is None
 
 
-def test_misattunement_forces_repair_before_another_technique(tmp_path: Path) -> None:
-    model = TestModel(
-        custom_output_args={
-            "reply": "Hai ragione: sono passato ai consigli senza capire. Cosa ho perso?",
-            "observations": [
-                {
-                    "kind": "preference",
-                    "content": "The user wants understanding before advice.",
-                    "evidence_quote": "non hai capito e mi stai dando troppi consigli",
-                }
-            ],
-            "process_stage": "repair",
-            "selected_skill": "repair-misattunement",
-        }
-    )
+def test_semantic_misattunement_reply_needs_no_process_classifier(
+    tmp_path: Path,
+) -> None:
+    turn = ChatSession(
+        _text_model(
+            "Hai ragione: ti ho letto attraverso una lente che non era la tua. "
+            "Che cosa ho mancato?"
+        ),
+        _pack(),
+        MemoryStore(tmp_path),
+        "it-IT",
+    ).respond("Mi stai leggendo attraverso una lente che non è la mia.")
 
-    turn = ChatSession(model, _pack(), MemoryStore(tmp_path), "it-IT").respond(
-        "Non hai capito e mi stai dando troppi consigli."
-    )
+    assert "che cosa ho mancato" in turn.text.casefold()
 
-    assert turn.process_stage.value == "repair"
-    assert turn.selected_skill.value == "repair-misattunement"  # type: ignore[union-attr]
+
+def test_visible_reply_must_fit_the_text_contract(tmp_path: Path) -> None:
+    with pytest.raises(AgentRunError):
+        ChatSession(
+            _text_model("x" * 1_201),
+            _pack(),
+            MemoryStore(tmp_path),
+            "en-US",
+        ).respond("Hello.")

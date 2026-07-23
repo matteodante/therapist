@@ -6,10 +6,10 @@ from therapist.protocol import ProtocolError, ProtocolPack
 
 
 def test_bundled_protocol_is_bilingual_and_experimental() -> None:
-    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.4.0"))
+    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.5.0"))
 
     assert pack.id == "therapist.transdiagnostic"
-    assert pack.version == "0.4.0"
+    assert pack.version == "0.5.0"
     assert pack.status == "experimental"
     assert set(pack.locales) == {"it-IT", "en-US"}
     assert len(pack.skills) == 6
@@ -17,6 +17,11 @@ def test_bundled_protocol_is_bilingual_and_experimental() -> None:
     assert "do not claim to be a psychologist" in pack.instructions.casefold()
     assert "do not append routine" in pack.instructions.casefold()
     assert "repair-misattunement" in pack.instructions
+    assert "Use state tools" in pack.instructions
+
+
+def test_previous_protocol_pack_still_loads() -> None:
+    assert ProtocolPack.load(Path("protocols/transdiagnostic-v0.4.0")).version == "0.4.0"
 
 
 def test_legacy_pack_without_skills_still_loads() -> None:

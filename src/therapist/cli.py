@@ -28,7 +28,7 @@ from therapist.protocol import ProtocolError, ProtocolPack
 from therapist.telegram import TelegramBot, TelegramChannel, TelegramError
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic-v0.4.0"
+DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic-v0.5.0"
 TELEGRAM_SECRET = "telegram_bot_token"
 DEFAULT_CODEX_MODEL = "codex:gpt-5.6-sol"
 DEFAULT_EMBEDDING_MODEL = (

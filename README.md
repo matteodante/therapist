@@ -13,6 +13,7 @@ It supports Italian and English through a terminal chat and a private Telegram b
 
 - Natural, varied conversation guided by an internal protocol rather than a visible script, without
   mandatory questions, goals, or forms.
+- Agent-selected memory and intervention tools with atomic local persistence.
 - Encrypted SQLite archive, structured memory, and local semantic retrieval across months or years.
 - Visible, correctable facts, hypotheses, case formulation, sessions, and interventions.
 - PydanticAI providers, local models, and experimental personal ChatGPT Codex OAuth.

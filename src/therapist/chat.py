@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import AsyncIterable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import (
     Agent,
     AgentStreamEvent,
@@ -25,10 +26,13 @@ from pydantic_ai.models import Model
 
 from therapist.memory import (
     FORMULATION_FIELDS,
+    ContextMemoryItem,
+    InterventionRecord,
     InterventionState,
     MemoryCorrection,
     MemoryKind,
     MemoryObservation,
+    MemoryStatus,
     MemoryStore,
     SessionRecord,
     WorkingContext,
@@ -38,7 +42,12 @@ from therapist.protocol import ProtocolPack
 from therapist.safety import SafetyController, SafetyState, crisis_message
 
 MAX_CONTEXT_CHARS = 12_000
-TURN_LIMITS = UsageLimits(request_limit=3, output_tokens_limit=3_000)
+MAX_LOOKUP_CHARS = 4_000
+TURN_LIMITS = UsageLimits(
+    request_limit=8,
+    tool_calls_limit=6,
+    output_tokens_limit=3_000,
+)
 CONSOLIDATION_LIMITS = UsageLimits(request_limit=3, output_tokens_limit=5_000)
 ShortText = Annotated[str, Field(min_length=1, max_length=500)]
 
@@ -48,15 +57,6 @@ async def _consume_model_events(
 ) -> None:
     async for _ in events:
         pass
-
-
-class ProcessStage(StrEnum):
-    LISTEN = "listen"
-    EXPLORE = "explore"
-    FORMULATE = "formulate"
-    INTERVENE = "intervene"
-    REVIEW = "review"
-    REPAIR = "repair"
 
 
 class TherapeuticSkill(StrEnum):
@@ -81,49 +81,32 @@ class InterventionAction(BaseModel):
     follow_up_at: str | None = None
 
 
-class TherapistReply(BaseModel):
-    reply: str = Field(min_length=1, max_length=1_200)
-    observations: list[MemoryObservation] = Field(default_factory=list, max_length=2)
-    corrections: list[MemoryCorrection] = Field(default_factory=list, max_length=2)
-    offered_hypothesis: ShortText | None = None
-    confirmed_memory_ids: list[str] = Field(default_factory=list, max_length=5)
-    confirmation_evidence_quote: ShortText | None = None
-    proposed_focus: ShortText | None = None
-    accepted_focus: ShortText | None = None
-    focus_evidence_quote: ShortText | None = None
-    process_stage: ProcessStage = ProcessStage.EXPLORE
-    selected_skill: TherapeuticSkill | None = None
-    intervention: InterventionAction | None = None
+class FocusMode(StrEnum):
+    PROPOSE = "propose"
+    ACCEPT = "accept"
 
-    @model_validator(mode="after")
-    def keep_process_coherent(self) -> TherapistReply:
-        if (
-            sum(
-                item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
-                for item in self.observations
-            )
-            > 1
-        ):
-            raise ValueError("Record at most one hypothesis per turn.")
-        if self.process_stage in {
-            ProcessStage.INTERVENE,
-            ProcessStage.REVIEW,
-            ProcessStage.REPAIR,
-        } and self.selected_skill is None:
-            raise ValueError("Intervene, review, and repair stages require one selected skill.")
-        if (
-            self.selected_skill is TherapeuticSkill.REPAIR
-            and self.process_stage is not ProcessStage.REPAIR
-        ):
-            raise ValueError("Repair skill requires repair process stage.")
-        if self.intervention and self.selected_skill != self.intervention.skill:
-            raise ValueError("Selected skill must match the intervention skill.")
-        if self.intervention and self.process_stage not in {
-            ProcessStage.INTERVENE,
-            ProcessStage.REVIEW,
-        }:
-            raise ValueError("An intervention requires intervene or review process stage.")
-        return self
+
+@dataclass
+class TurnActions:
+    observations: list[MemoryObservation] = field(default_factory=list)
+    offered_hypothesis: str | None = None
+    corrections: list[MemoryCorrection] = field(default_factory=list)
+    confirmed_memory_ids: list[str] = field(default_factory=list)
+    confirmation_evidence_quote: str | None = None
+    focus_mode: FocusMode | None = None
+    focus: str | None = None
+    focus_evidence_quote: str | None = None
+    intervention: InterventionAction | None = None
+    called_tools: set[str] = field(default_factory=set)
+
+
+@dataclass
+class TurnContext:
+    memory: MemoryStore
+    user_text: str
+    available_memory: dict[str, ContextMemoryItem]
+    active_interventions: dict[str, InterventionRecord]
+    actions: TurnActions = field(default_factory=TurnActions)
 
 
 class SessionReflection(BaseModel):
@@ -149,8 +132,6 @@ class SessionReflection(BaseModel):
 class ChatTurn:
     text: str
     safety_state: SafetyState
-    process_stage: ProcessStage = ProcessStage.LISTEN
-    selected_skill: TherapeuticSkill | None = None
 
 
 class ChatSession:
@@ -198,27 +179,15 @@ class ChatSession:
                         "what changed and, when relevant, what happened with any prior experiment. "
                         "Do not extend the old pattern to the new event until the user answers."
                     )
-        repair_needed = _needs_repair(text)
         app_state = self.memory.load_app_state()
         pending_hypothesis_id = app_state.pending_hypothesis_id
         available_hypothesis_ids = {item.id for item in context.hypotheses}
         if pending_hypothesis_id not in available_hypothesis_ids:
             pending_hypothesis_id = None
             app_state.pending_hypothesis_id = None
-        confirmation_expected = bool(
-            pending_hypothesis_id and _explicit_hypothesis_confirmation(text)
-        )
         available_memory = {
             item.id: item for item in [*context.confirmed_memory, *context.hypotheses]
         }
-        correction_candidates = {
-            item_id: item
-            for item_id, item in available_memory.items()
-            if _shares_memory_terms(text, item.content)
-        }
-        correction_expected = bool(
-            correction_candidates and _explicit_memory_correction(text)
-        )
         pending_intervention = next(
             (
                 item
@@ -232,46 +201,7 @@ class ChatSession:
             app_state.pending_intervention_id = pending_intervention.id
         if pending_intervention is None:
             app_state.pending_intervention_id = None
-        agreement_expected = bool(
-            pending_intervention and _explicit_intervention_agreement(text)
-        )
-        repair_guidance = (
-            "\n\nThe user signaled a mismatch in the helping process. Set process_stage to "
-            "repair and selected_skill to repair-misattunement. Acknowledge the specific mismatch "
-            "without defensiveness, stop the prior technique, briefly check what you missed, and "
-            "invite correction naturally. Do not propose another intervention."
-            if repair_needed
-            else ""
-        )
-        pacing_guidance = (
-            "\n\nThe user asked for understanding before suggestions. Stay in exploration or "
-            "formulation. Stay with their meaning, offer at most one short tentative hypothesis "
-            "only if useful, and ask a focused question only if it helps them continue. Do not "
-            "list possible explanations or offer an exercise."
-            if _requests_understanding_before_advice(text, context)
-            else ""
-        )
-        confirmation_guidance = (
-            "\n\nThe current message explicitly confirms the last offered hypothesis. Return "
-            f"{pending_hypothesis_id!r} in confirmed_memory_ids and copy the shortest exact "
-            "confirming words into confirmation_evidence_quote."
-            if confirmation_expected
-            else ""
-        )
-        correction_guidance = (
-            "\n\nThe user explicitly corrected earlier information. Use corrections with the "
-            "matching existing memory ID and an exact quote from this message. Do not also store "
-            "the replacement as a new observation."
-            if correction_expected
-            else ""
-        )
-        intervention_guidance = (
-            "\n\nThe user explicitly accepted the pending intervention. Update intervention "
-            f"{pending_intervention.id!r} to agreed with an exact evidence quote; do not create "
-            "another record."
-            if agreement_expected and pending_intervention
-            else ""
-        )
+        active_interventions = {item.id: item for item in context.active_interventions}
         formulation_guidance = (
             "\n\nAn established formulation already exists. Reflect only what this message adds, "
             "changes, or contradicts; do not restate the full cycle unless the user asks."
@@ -283,123 +213,239 @@ class ChatSession:
             + "\n\nLongitudinal context follows. Treat hypotheses as tentative and never "
             "claim a memory outside this context. User corrections override every older record.\n"
             + _bounded_context_json(context)
-            + "\n\nReturn at most two durable memory observations: stable facts, preferences, "
-            "recurring patterns, or consequential events likely to matter in a later session. "
-            "Do not turn each sentence into memory. Every fact, preference, and event must "
-            "include an exact "
-            "evidence_quote copied from that message; add up to five short lexical aliases when "
-            "they improve later retrieval. Use merge_into_id when an existing claim expresses the "
-            "same meaning. For explicit corrections, use corrections with an existing ID instead "
-            "of adding another observation. "
-            "Patterns and interpretations must be hypotheses. Set proposed_focus only when the "
-            "conversation suggests it, and copy accepted_focus exactly from the user's current "
-            "message with an exact focus_evidence_quote. Return a hypothesis ID in "
-            "confirmed_memory_ids only "
-            "with an exact confirmation_evidence_quote when the current user message confirms that "
-            "hypothesis; do not merely add a fact saying they agreed. Whenever the visible reply "
-            "offers one reusable interpretation for confirmation, copy that concise interpretation "
-            "into offered_hypothesis; otherwise leave it null. Record at most one intervention. "
-            "A new offered intervention needs no user quote; an agreed or updated intervention "
-            "requires an exact evidence_quote from the current message. Questions are optional; "
-            "usually ask no more than one, but natural closely related questions are allowed. Do "
-            "not fall into a repeated reflection-hypothesis-question template."
+            + "\n\nUse tools for durable state changes and return the visible reply as plain text. "
+            "Interpret the user's meaning in context rather than matching fixed phrases. A turn "
+            "may need no tool. Use search_memory only when the supplied context is insufficient. "
+            "Call record_memory only for stable facts, preferences, consequential events, or "
+            "reusable tentative patterns likely to matter later. Use correct_memory instead of "
+            "adding a conflicting observation. Use confirm_hypotheses only when the user confirms "
+            "an active hypothesis. Use set_focus in accept mode only for the user's own accepted "
+            "wording. Use record_intervention for at most one intervention lifecycle update. "
+            "Call independent action tools together when possible. Tool validation errors explain "
+            "what must be corrected. Do not describe a durable state change without calling its "
+            "tool. Never call a tool merely to classify the conversational process. Keep the final "
+            "reply under 1,200 characters."
             + return_guidance
-            + repair_guidance
-            + pacing_guidance
-            + confirmation_guidance
-            + correction_guidance
-            + intervention_guidance
             + formulation_guidance
         )
-        agent = Agent(
+        deps = TurnContext(
+            memory=self.memory,
+            user_text=text,
+            available_memory=available_memory,
+            active_interventions=active_interventions,
+        )
+        agent = Agent[TurnContext, str](
             self.model,
-            output_type=TherapistReply,
+            deps_type=TurnContext,
+            output_type=str,
             instructions=instructions,
             retries={"output": 2},
         )
 
-        @agent.output_validator
-        def validate_turn_contract(output: TherapistReply) -> TherapistReply:
-            if repair_needed and (
-                output.process_stage is not ProcessStage.REPAIR
-                or output.selected_skill is not TherapeuticSkill.REPAIR
-                or output.intervention is not None
-            ):
-                raise ModelRetry("Repair the mismatch before continuing therapeutic work.")
-            if confirmation_expected and (
-                pending_hypothesis_id not in output.confirmed_memory_ids
-                or not _quote_in_text(output.confirmation_evidence_quote, text)
-            ):
-                raise ModelRetry("Record the explicit confirmation of the pending hypothesis.")
-            if correction_expected and not output.corrections:
-                raise ModelRetry("Apply the user's explicit correction to an existing memory ID.")
-            for correction in output.corrections:
-                allowed_corrections = (
-                    correction_candidates if correction_expected else available_memory
-                )
-                if correction.memory_id not in allowed_corrections or not _quote_in_text(
-                    correction.evidence_quote, text
+        @agent.tool(sequential=True)
+        def search_memory(ctx: RunContext[TurnContext], query: ShortText) -> dict[str, object]:
+            """Search active longitudinal claims and safe historical excerpts."""
+            _ensure_unused_tool(ctx.deps.actions, "search_memory")
+            found = ctx.deps.memory.working_context(query)
+            claims = [*found.confirmed_memory[:5], *found.hypotheses[:3]]
+            ctx.deps.available_memory.update({item.id: item for item in claims})
+            payload: dict[str, object] = {
+                "claims": [item.model_dump(mode="json") for item in claims],
+                "excerpts": found.relevant_excerpts[:3],
+            }
+            ctx.deps.actions.called_tools.add("search_memory")
+            return _bounded_lookup(payload)
+
+        @agent.tool(sequential=True)
+        def record_memory(
+            ctx: RunContext[TurnContext],
+            observations: Annotated[list[MemoryObservation], Field(max_length=2)],
+            offered_hypothesis: ShortText | None = None,
+        ) -> dict[str, object]:
+            """Stage sparse durable observations and an optional offered hypothesis."""
+            _ensure_unused_tool(ctx.deps.actions, "record_memory")
+            total = len(observations) + int(offered_hypothesis is not None)
+            hypotheses = sum(
+                item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
+                for item in observations
+            ) + int(offered_hypothesis is not None)
+            if total == 0 or total > 2:
+                raise ModelRetry("Record one or two durable memory items.")
+            if hypotheses > 1:
+                raise ModelRetry("Record at most one tentative pattern or hypothesis.")
+            for observation in observations:
+                if observation.kind in {
+                    MemoryKind.FACT,
+                    MemoryKind.PREFERENCE,
+                    MemoryKind.EVENT,
+                } and not _quote_in_text(observation.evidence_quote, ctx.deps.user_text):
+                    raise ModelRetry(
+                        "Facts, preferences, and events require an exact quote from this message."
+                    )
+                if observation.merge_into_id:
+                    existing = ctx.deps.available_memory.get(observation.merge_into_id)
+                    if existing is None or existing.kind is not observation.kind:
+                        raise ModelRetry(
+                            "A memory merge requires an available active claim of the same kind."
+                        )
+            ctx.deps.actions.observations = list(observations)
+            ctx.deps.actions.offered_hypothesis = offered_hypothesis
+            ctx.deps.actions.called_tools.add("record_memory")
+            return {"staged": total}
+
+        @agent.tool(sequential=True)
+        def correct_memory(
+            ctx: RunContext[TurnContext],
+            corrections: Annotated[list[MemoryCorrection], Field(min_length=1, max_length=2)],
+        ) -> dict[str, object]:
+            """Stage corrections to existing active memory claims."""
+            _ensure_unused_tool(ctx.deps.actions, "correct_memory")
+            ids = [item.memory_id for item in corrections]
+            if len(ids) != len(set(ids)):
+                raise ModelRetry("Correct each memory ID at most once.")
+            if set(ids) & set(ctx.deps.actions.confirmed_memory_ids):
+                raise ModelRetry("Do not confirm and correct the same claim in one turn.")
+            for correction in corrections:
+                if correction.memory_id not in ctx.deps.available_memory:
+                    raise ModelRetry(
+                        "A correction requires an active claim from context or search_memory."
+                    )
+                if not _quote_in_text(correction.evidence_quote, ctx.deps.user_text):
+                    raise ModelRetry(
+                        "A correction requires an exact quote from the current message."
+                    )
+            ctx.deps.actions.corrections = list(corrections)
+            ctx.deps.actions.called_tools.add("correct_memory")
+            return {"staged": len(corrections)}
+
+        @agent.tool(sequential=True)
+        def confirm_hypotheses(
+            ctx: RunContext[TurnContext],
+            memory_ids: Annotated[list[str], Field(min_length=1, max_length=5)],
+            evidence_quote: ShortText,
+        ) -> dict[str, object]:
+            """Stage explicit user confirmation of active tentative claims."""
+            _ensure_unused_tool(ctx.deps.actions, "confirm_hypotheses")
+            if len(memory_ids) != len(set(memory_ids)):
+                raise ModelRetry("Confirm each hypothesis ID at most once.")
+            if set(memory_ids) & {
+                item.memory_id for item in ctx.deps.actions.corrections
+            }:
+                raise ModelRetry("Do not confirm and correct the same claim in one turn.")
+            for item_id in memory_ids:
+                item = ctx.deps.available_memory.get(item_id)
+                if (
+                    item is None
+                    or item.status is not MemoryStatus.AGENT_HYPOTHESIS
+                    or item.kind not in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
                 ):
                     raise ModelRetry(
-                        "A correction requires an existing memory ID and exact user quote."
+                        "Confirmation requires an active hypothesis from context or search_memory."
                     )
-            for observation in output.observations:
-                if observation.merge_into_id:
-                    existing = available_memory.get(observation.merge_into_id)
-                    if existing is None or existing.kind is not observation.kind:
-                        raise ModelRetry("Memory merge requires an existing ID of the same kind.")
-            if output.confirmed_memory_ids and not _quote_in_text(
-                output.confirmation_evidence_quote, text
+            if not _quote_in_text(evidence_quote, ctx.deps.user_text):
+                raise ModelRetry(
+                    "Hypothesis confirmation requires an exact quote from the current message."
+                )
+            ctx.deps.actions.confirmed_memory_ids = list(memory_ids)
+            ctx.deps.actions.confirmation_evidence_quote = evidence_quote
+            ctx.deps.actions.called_tools.add("confirm_hypotheses")
+            return {"staged": len(memory_ids)}
+
+        @agent.tool(sequential=True)
+        def set_focus(
+            ctx: RunContext[TurnContext],
+            mode: FocusMode,
+            focus: ShortText,
+            evidence_quote: ShortText | None = None,
+        ) -> dict[str, str]:
+            """Stage a proposed focus or the user's accepted focus."""
+            _ensure_unused_tool(ctx.deps.actions, "set_focus")
+            if mode is FocusMode.ACCEPT and (
+                not _quote_in_text(focus, ctx.deps.user_text)
+                or not _quote_in_text(evidence_quote, ctx.deps.user_text)
             ):
-                raise ModelRetry("Confirmed memory requires an exact user confirmation quote.")
-            if output.accepted_focus and (
-                not _quote_in_text(output.focus_evidence_quote, text)
-                or not _quote_in_text(output.accepted_focus, text)
-            ):
-                raise ModelRetry("Accepted focus requires an exact supporting user quote.")
-            action = output.intervention
-            if agreement_expected and (
-                action is None
-                or action.record_id != pending_intervention.id
-                or action.state is not InterventionState.AGREED
-            ):
-                raise ModelRetry("Update the pending intervention instead of creating a new one.")
-            if (
-                action
-                and action.record_id is None
-                and pending_intervention
+                raise ModelRetry(
+                    "An accepted focus and its evidence must be exact text from this message."
+                )
+            ctx.deps.actions.focus_mode = mode
+            ctx.deps.actions.focus = focus
+            ctx.deps.actions.focus_evidence_quote = evidence_quote
+            ctx.deps.actions.called_tools.add("set_focus")
+            return {"staged": mode.value}
+
+        @agent.tool(sequential=True)
+        def record_intervention(
+            ctx: RunContext[TurnContext], action: InterventionAction
+        ) -> dict[str, str]:
+            """Stage one offered, agreed, tried, declined, or stopped intervention."""
+            _ensure_unused_tool(ctx.deps.actions, "record_intervention")
+            if action.skill is TherapeuticSkill.REPAIR:
+                raise ModelRetry("Repair is conversational behavior, not an intervention record.")
+            unknown_links = set(action.linked_memory_ids) - set(
+                ctx.deps.available_memory
+            )
+            if unknown_links:
+                raise ModelRetry(
+                    "Linked memory IDs must come from context or search_memory."
+                )
+            if action.record_id:
+                current = ctx.deps.active_interventions.get(action.record_id)
+                if current is None or not valid_intervention_transition(
+                    current.state, action.state
+                ):
+                    raise ModelRetry(
+                        "Update an active intervention through a valid state transition."
+                    )
+            elif action.state not in {
+                InterventionState.OFFERED,
+                InterventionState.AGREED,
+            }:
+                raise ModelRetry("A new intervention must be offered or agreed.")
+            elif (
+                pending_intervention
                 and action.skill.value == pending_intervention.skill
             ):
-                raise ModelRetry("Update or stop the active intervention before creating another.")
-            if action and (
-                action.record_id is not None or action.state is InterventionState.AGREED
-            ) and not _quote_in_text(action.evidence_quote, text):
-                raise ModelRetry("Agreed or updated intervention requires an exact user quote.")
-            if action and action.record_id:
-                current = next(
-                    (
-                        item.state
-                        for item in context.active_interventions
-                        if item.id == action.record_id
-                    ),
-                    None,
+                raise ModelRetry(
+                    "Update or stop the pending intervention instead of creating another."
                 )
-                if current is None or not valid_intervention_transition(current, action.state):
-                    raise ModelRetry("Invalid intervention state transition.")
-            return output
+            if (
+                action.record_id is not None
+                or action.state is InterventionState.AGREED
+            ) and not _quote_in_text(action.evidence_quote, ctx.deps.user_text):
+                raise ModelRetry(
+                    "An agreed or updated intervention requires an exact user quote."
+                )
+            ctx.deps.actions.intervention = action
+            ctx.deps.actions.called_tools.add("record_intervention")
+            return {"staged": action.state.value}
+
+        @agent.output_validator
+        def validate_reply(output: str) -> str:
+            reply = output.strip()
+            if not reply:
+                raise ModelRetry("Return a non-empty visible reply.")
+            if len(reply) > 1_200:
+                raise ModelRetry("Keep the visible reply under 1,200 characters.")
+            return reply
 
         result = agent.run_sync(
             text,
+            deps=deps,
             message_history=history,
             usage_limits=TURN_LIMITS,
             event_stream_handler=_consume_model_events,
         )
-        output = result.output
+        reply = result.output
+        actions = deps.actions
+        canonical_messages = [
+            ModelRequest(parts=[UserPromptPart(content=text)]),
+            ModelResponse(parts=[TextPart(content=reply)]),
+        ]
         with self.memory.transaction():
             evidence_id = self.memory.save_turn(
-                session, text, output.reply, result.new_messages(), now
+                session, text, reply, canonical_messages, now
             )
-            for correction in output.corrections:
+            for correction in actions.corrections:
                 self.memory.correct_memory(
                     correction.memory_id,
                     correction.replacement,
@@ -410,16 +456,16 @@ class ChatSession:
                     app_state.pending_hypothesis_id = None
             correction_quotes = {
                 " ".join(item.evidence_quote.split()).casefold()
-                for item in output.corrections
+                for item in actions.corrections
             }
             observations = [
                 item
-                for item in output.observations
+                for item in actions.observations
                 if not item.evidence_quote
                 or " ".join(item.evidence_quote.split()).casefold()
                 not in correction_quotes
             ]
-            if output.offered_hypothesis:
+            if actions.offered_hypothesis:
                 observations = [
                     *[
                         item
@@ -428,7 +474,7 @@ class ChatSession:
                     ][:1],
                     MemoryObservation(
                         kind="hypothesis",
-                        content=output.offered_hypothesis,
+                        content=actions.offered_hypothesis,
                     ),
                 ]
             saved_observations = self.memory.add_observations(
@@ -437,19 +483,17 @@ class ChatSession:
                 now,
                 evidence_text=text,
             )
-            allowed_confirmations = {item.id for item in context.hypotheses}
-            for item_id in output.confirmed_memory_ids:
-                if item_id in allowed_confirmations:
-                    self.memory.confirm_memory(item_id, now)
-                    if item_id == app_state.pending_hypothesis_id:
-                        app_state.pending_hypothesis_id = None
-            if output.offered_hypothesis:
+            for item_id in actions.confirmed_memory_ids:
+                self.memory.confirm_memory(item_id, now)
+                if item_id == app_state.pending_hypothesis_id:
+                    app_state.pending_hypothesis_id = None
+            if actions.offered_hypothesis:
                 offered = next(
                     (
                         item
                         for item in saved_observations
                         if item.kind.value == "hypothesis"
-                        and item.content == output.offered_hypothesis
+                        and item.content == actions.offered_hypothesis
                     ),
                     None,
                 )
@@ -457,38 +501,36 @@ class ChatSession:
                     app_state.pending_hypothesis_id = offered.id
             formulation = self.memory.load_formulation()
             formulation_changed = False
-            if output.proposed_focus:
-                formulation.proposed_focus = output.proposed_focus
+            if actions.focus_mode is FocusMode.PROPOSE and actions.focus:
+                formulation.proposed_focus = actions.focus
                 formulation_changed = True
-            if output.accepted_focus:
-                formulation.current_focus = output.accepted_focus
+            if actions.focus_mode is FocusMode.ACCEPT and actions.focus:
+                formulation.current_focus = actions.focus
                 formulation.proposed_focus = None
                 formulation_changed = True
             if formulation_changed:
                 self.memory.save_formulation(formulation, now)
-            if output.intervention:
-                action = output.intervention
+            if actions.intervention:
+                action = actions.intervention
                 if action.record_id:
-                    active_ids = {item.id for item in context.active_interventions}
-                    if action.record_id in active_ids:
-                        updated = self.memory.update_intervention(
-                            action.record_id,
-                            state=action.state,
-                            evidence_message_id=evidence_id,
-                            description=action.description,
-                            prediction=action.prediction,
-                            linked_memory_ids=action.linked_memory_ids,
-                            outcome=action.outcome,
-                            user_appraisal=action.user_appraisal,
-                            follow_up_at=action.follow_up_at,
-                            now=now,
-                        )
-                        app_state.pending_intervention_id = (
-                            updated.id
-                            if updated.state
-                            in {InterventionState.OFFERED, InterventionState.AGREED}
-                            else None
-                        )
+                    updated = self.memory.update_intervention(
+                        action.record_id,
+                        state=action.state,
+                        evidence_message_id=evidence_id,
+                        description=action.description,
+                        prediction=action.prediction,
+                        linked_memory_ids=action.linked_memory_ids,
+                        outcome=action.outcome,
+                        user_appraisal=action.user_appraisal,
+                        follow_up_at=action.follow_up_at,
+                        now=now,
+                    )
+                    app_state.pending_intervention_id = (
+                        updated.id
+                        if updated.state
+                        in {InterventionState.OFFERED, InterventionState.AGREED}
+                        else None
+                    )
                 elif action.state in {InterventionState.OFFERED, InterventionState.AGREED}:
                     created = self.memory.create_intervention(
                         skill=action.skill.value,
@@ -502,12 +544,7 @@ class ChatSession:
                     )
                     app_state.pending_intervention_id = created.id
             self.memory.save_app_state(app_state)
-        return ChatTurn(
-            output.reply,
-            SafetyState.CLEAR,
-            output.process_stage,
-            output.selected_skill,
-        )
+        return ChatTurn(reply, SafetyState.CLEAR)
 
     def end(self, now: datetime | None = None) -> SessionRecord | None:
         session = self.memory.active_session()
@@ -631,72 +668,24 @@ def _quote_in_text(quote: str | None, text: str) -> bool:
     return " ".join(quote.split()).casefold() in " ".join(text.split()).casefold()
 
 
-def _needs_repair(text: str) -> bool:
-    normalized = " ".join(text.casefold().split())
-    signals = (
-        "non hai capito",
-        "non mi hai capito",
-        "non è quello che intendo",
-        "troppi consigli",
-        "non mi è servito",
-        "non mi aiuta",
-        "you didn't understand",
-        "you did not understand",
-        "that's not what i mean",
-        "too much advice",
-        "it didn't help",
-        "this is not helping",
-    )
-    return any(signal in normalized for signal in signals)
+def _ensure_unused_tool(actions: TurnActions, name: str) -> None:
+    if name in actions.called_tools:
+        raise ModelRetry(f"Call {name} at most once per turn.")
 
 
-def _explicit_hypothesis_confirmation(text: str) -> bool:
-    normalized = " ".join(text.casefold().split())
-    signals = (
-        "mi torna",
-        "questa ipotesi è giusta",
-        "questa ipotesi mi sembra giusta",
-        "quel pattern mi torna",
-        "that pattern fits",
-        "that hypothesis fits",
-        "that explanation fits",
-        "yes, that fits",
-        "yes that fits",
-    )
-    return any(signal in normalized for signal in signals)
-
-
-def _explicit_memory_correction(text: str) -> bool:
-    normalized = " ".join(text.casefold().split())
-    signals = (
-        "devo correggere",
-        "mi correggo:",
-        "quello che ti avevo detto non è",
-        "avevo detto una cosa sbagliata",
-        "i need to correct",
-        "let me correct",
-        "what i told you was wrong",
-        "i said that incorrectly",
-    )
-    return any(signal in normalized for signal in signals)
-
-
-def _explicit_intervention_agreement(text: str) -> bool:
-    normalized = " ".join(text.casefold().split())
-    if any(term in normalized for term in ("non mi va", "non lo farei", "won't try")):
-        return False
-    signals = (
-        "l'idea mi va",
-        "lo farei",
-        "voglio provarci",
-        "questo sì",
-        "va bene, provo",
-        "i'll try",
-        "i will try",
-        "that works for me",
-        "i agree to try",
-    )
-    return any(signal in normalized for signal in signals)
+def _bounded_lookup(payload: dict[str, object]) -> dict[str, object]:
+    claims = payload["claims"]
+    excerpts = payload["excerpts"]
+    assert isinstance(claims, list)
+    assert isinstance(excerpts, list)
+    while len(json.dumps(payload, ensure_ascii=False)) > MAX_LOOKUP_CHARS:
+        if excerpts:
+            excerpts.pop()
+        elif claims:
+            claims.pop()
+        else:
+            break
+    return payload
 
 
 def _has_formulation(context: WorkingContext) -> bool:
@@ -705,39 +694,6 @@ def _has_formulation(context: WorkingContext) -> bool:
         formulation.current_focus
         or formulation.proposed_focus
         or any(getattr(formulation, field_name) for field_name in FORMULATION_FIELDS)
-    )
-
-
-def _shares_memory_terms(text: str, memory: str) -> bool:
-    def terms(value: str) -> set[str]:
-        return {
-            normalized
-            for token in value.casefold().split()
-            if len(normalized := token.strip(".,;:!?")) >= 4
-        }
-
-    return bool(terms(text) & terms(memory))
-
-
-def _requests_understanding_before_advice(text: str, context: WorkingContext) -> bool:
-    normalized = " ".join(text.casefold().split())
-    signals = (
-        "prima di darmi consigli",
-        "prima dei consigli",
-        "prima di suggerire",
-        "capire prima",
-        "understand it before suggesting",
-        "understand before suggesting",
-        "understanding before advice",
-        "understand me before advice",
-    )
-    if any(signal in normalized for signal in signals):
-        return True
-    preference_terms = ("before advice", "prima dei consigli", "prima di suggerimenti")
-    return any(
-        any(term in item.content.casefold() for term in preference_terms)
-        for item in context.confirmed_memory
-        if item.kind.value == "preference"
     )
 
 

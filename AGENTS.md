@@ -116,29 +116,33 @@ CLI or private Telegram -> deterministic explicit-danger fallback -> 112 / 911 /
 Versioned experimental behavior pack
   |
   v
-PydanticAI structured response -> local model or configured remote provider
+PydanticAI tool loop + plain-text reply -> local model or configured remote provider
   |
   v
 Encrypted SQLite archive + structured longitudinal memory
 ```
 
-Use one conversational model call per normal turn. Its structured result contains the visible reply,
-candidate observations with evidence quotes, process stage, selected skill, focus changes, and at
-most one intervention update. When a session closes, use one additional structured model call to
-summarize the episode and link existing claims into the case formulation. Consolidation cannot create
-a confirmed claim. If it fails, preserve the transcript, record a content-free error class, and leave
-the previous formulation intact.
+Use one PydanticAI agent run per normal turn. The agent returns the visible reply as plain text and
+uses six bounded function tools: one optional read-only longitudinal-memory search plus staged tools
+for memory observations, corrections, hypothesis confirmations, focus, and one intervention update.
+Tools validate and buffer actions but never mutate SQLite during the model run. After a valid final
+reply, the transcript and all staged actions are committed in one transaction; failure leaves both
+unchanged. Tool exchanges are not retained in model history, which stores only the canonical
+user/assistant pair.
 
-Both model calls use PydanticAI's complete synchronous run API with an event stream handler so the
-experimental ChatGPT Codex backend can require `stream=true` without losing structured-output
-retries; the current CLI still prints only the validated final result.
+A normal run permits at most eight model requests, six successful tool calls, and two output retries
+within that global budget. All model-written strings and collections have size limits. Accepted
+focus, confirmed hypotheses, and agreed or updated interventions require exact supporting text from
+the current user message. The IDs of the last explicitly offered hypothesis and active intervention
+remain pending so confirmation, agreement, and outcome update the original records instead of
+creating copies. Provider transport retries remain a separate concern.
 
-Structured turn and consolidation outputs allow two correction retries and at most three model
-requests. All model-written strings and collections have size limits. Accepted focus, confirmed
-hypotheses, and agreed or updated interventions require exact supporting text from the current user
-message. The IDs of the last explicitly offered hypothesis and active intervention remain pending
-so confirmation, agreement, and outcome update the original records instead of creating copies.
-Provider transport retries remain a separate concern.
+When a session closes, use one additional structured model call to summarize the episode and link
+existing claims into the case formulation. Consolidation allows two output retries and at most three
+model requests. It cannot create a confirmed claim. If it fails, preserve the transcript, record a
+content-free error class, and leave the previous formulation intact. Both agent runs use PydanticAI's
+complete synchronous API with an event stream handler so the experimental ChatGPT Codex backend can
+require `stream=true`; the CLI prints only the validated final reply.
 
 Consolidation preserves valid formulation links when the model omits them and removes a link only
 through an explicit `formulation_unlinks` entry. Existing evidence is retained before new links when
@@ -330,18 +334,18 @@ informed by official WHO and NICE materials. Original protocol text is licensed 
 license; linked sources are not copied or relicensed. It remains `experimental`; clinical review is
 deferred and no clinical claims are permitted.
 
-The current default is `therapist.transdiagnostic` v0.4.0. Its six bounded skills cover shared
+The current default is `therapist.transdiagnostic` v0.5.0. Its six bounded skills cover shared
 formulation, psychological flexibility and emotional awareness, avoidance and behavioral change,
 practical problem solving, review/maintenance, and explicit repair after misattunement. The root
 skill routes each turn and permits at most one intervention skill at a time. Older packs remain
 available so behavior changes are auditable.
 
-The structured turn output keeps the visible reply to 1,200 characters, records a hypothesis offered
-for confirmation separately, and lets a later explicit user confirmation promote that exact pending
-memory item. Questions are optional and normally sparse, but their count is not a schema constraint;
-naturalness and avoidance of interrogation are evaluated at the conversation level.
+The normal turn returns plain text capped at 1,200 characters. Durable changes use validated staged
+tools, including a hypothesis offered for confirmation so a later user confirmation promotes that
+exact pending memory item. Questions are optional and normally sparse; naturalness and avoidance of
+interrogation are evaluated at the conversation level.
 
-Memory output is intentionally sparse: at most two durable items total per turn, with no more than
+Memory tool use is intentionally sparse: at most two durable items total per turn, with no more than
 one hypothesis.
 Near-identical claims merge conservatively using the standard library, while differing numbers or
 negation always remain distinct. An unaccepted proposed focus expires when the session closes.
@@ -350,10 +354,10 @@ On the first turn after at least seven days, the harness marks the old formulati
 and requires orientation to what changed and, when relevant, the outcome of the previous experiment
 before extending an old pattern to new material.
 
-Misattunement phrases such as “you did not understand” or “non hai capito” deterministically require
-the repair process stage. The reply must acknowledge the mismatch, stop the rejected technique, and
-invite one correction before further therapeutic work. Delivery preferences learned from the repair
-still require exact user evidence.
+The agent recognizes misattunement semantically from the current message, history, and protocol
+rather than from a fixed phrase list. The reply must acknowledge the mismatch, stop the rejected
+technique, and invite one correction before further therapeutic work. Delivery preferences learned
+from the repair still require exact user evidence through the memory tool.
 
 ## Engineering rules
 
@@ -391,7 +395,7 @@ still require exact user evidence.
   excluded, and only explicit user wording can accept a focus.
 - Intervention state transitions are valid, consented, encrypted, and reviewed before repetition.
 - Offered, agreed, tried, and reviewed states for one intervention remain on one record.
-- Bilingual misattunement signals force repair before another technique.
+- Bilingual and indirect misattunement signals produce repair before another technique.
 - User correction wins over prior inference and no superseded wording returns via derived context.
 - Selective forgetting and full deletion work; sensitive plaintext is absent from SQLite.
 - Eight-hour segmentation, `/end`, interrupted consolidation, and session resumption preserve data.
@@ -410,9 +414,9 @@ still require exact user evidence.
 
 The default suite is deterministic and must not require network access or provider credentials.
 Pydantic Evals loads the human-readable, versioned YAML datasets in `tests/cases/`; the scope and
-matrix live in `tests/TEST_PLAN.md`. Deterministic datasets execute evidence and repair contracts as
-well as auditing each therapeutic-skill file; live datasets evaluate integrated conversation
-behavior. They use
+matrix live in `tests/TEST_PLAN.md`. Deterministic datasets execute tool, evidence, and persistence
+contracts as well as auditing each therapeutic-skill file; live datasets evaluate integrated
+conversation behavior. They use
 synthetic people and events only; never put real user data, access tokens, or API keys in test files.
 
 Longitudinal tests must cover retrieval after several months, encrypted persistence across process

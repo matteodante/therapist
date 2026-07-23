@@ -64,7 +64,7 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
     if load_credential(credential_store) is None:
         pytest.skip("Run `thera auth login` before the Codex memory eval.")
     model = codex_model(credential_store, "gpt-5.6-sol")
-    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.4.0"))
+    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.5.0"))
     loaded = Dataset[dict[str, Any], dict[str, Any], dict[str, Any]].from_file(CASES_PATH)
 
     def run_case(inputs: dict[str, Any]) -> dict[str, Any]:

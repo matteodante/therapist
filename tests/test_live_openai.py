@@ -52,16 +52,11 @@ class LiveLongitudinalContract(Evaluator[dict[str, Any], dict[str, Any], dict[st
                 for reply in ctx.output["replies"]
                 for phrase in ("non sono uno psicoterapeuta", "non posso fare diagnosi")
             ),
-            "repair_used_when_required": not expected.get("require_repair", False)
-            or "repair" in ctx.output["process_stages"],
-            "no_multiple_interventions_per_turn": all(
-                skill_count <= 1 for skill_count in ctx.output["skill_counts"]
-            ),
         }
 
 
 def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
-    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.4.0"))
+    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.5.0"))
     loaded = Dataset[dict[str, Any], dict[str, Any], dict[str, Any]].from_file(CASES_PATH)
 
     def run_case(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -71,13 +66,9 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
             chat = ChatSession(inputs["model"], pack, store, inputs.get("locale", "it-IT"))
             transcript: list[str] = []
             replies: list[str] = []
-            process_stages: list[str] = []
-            skill_counts: list[int] = []
             for index, message in enumerate(inputs["initial_messages"]):
                 turn = chat.respond(message, started_at + timedelta(minutes=index * 20))
                 replies.append(turn.text)
-                process_stages.append(turn.process_stage.value)
-                skill_counts.append(int(turn.selected_skill is not None))
                 transcript.append(f"USER: {message}\nTHERA: {turn.text}")
             closed = chat.end(started_at + timedelta(minutes=90))
 
@@ -92,8 +83,6 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
                     + timedelta(days=inputs["return_after_days"], minutes=index * 20),
                 )
                 replies.append(turn.text)
-                process_stages.append(turn.process_stage.value)
-                skill_counts.append(int(turn.selected_skill is not None))
                 transcript.append(f"USER: {message}\nTHERA: {turn.text}")
             items = restarted.list_memory()
             context = restarted.working_context(inputs["return_messages"][-1])
@@ -117,8 +106,6 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
                 "session_count": len(restarted.list_sessions()),
                 "transcript": "\n\n".join(transcript),
                 "replies": replies,
-                "process_stages": process_stages,
-                "skill_counts": skill_counts,
             }
 
     dataset = Dataset(
