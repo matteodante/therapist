@@ -667,7 +667,7 @@ def _default_embedder(*, local_files_only: bool) -> Embedder:
 
 def _verify_embedding_inference(embedder: Embedder) -> int:
     document = embedder.embed_documents_sync(
-        ["Rimando spesso le telefonate difficili."]
+        ["I often postpone difficult phone calls."]
     ).embeddings[0]
     query = embedder.embed_query_sync("I avoid difficult calls").embeddings[0]
     if not document or len(document) != len(query):
