@@ -1,7 +1,6 @@
-"""Versioned protocol-pack loader with path and hash validation."""
+"""Git-versioned protocol-pack loader with path and hash validation."""
 
 import hashlib
-import re
 from pathlib import Path
 
 import yaml
@@ -27,7 +26,6 @@ class PackSkill(BaseModel):
 
 class Manifest(BaseModel):
     id: str
-    version: str
     status: str
     locales: list[str]
     skills: list[PackSkill] = Field(default_factory=list)
@@ -37,7 +35,6 @@ class Manifest(BaseModel):
 class ProtocolPack:
     def __init__(self, manifest: Manifest, instructions: str, root: Path) -> None:
         self.id = manifest.id
-        self.version = manifest.version
         self.status = manifest.status
         self.locales = manifest.locales
         self.skills = tuple(skill.path for skill in manifest.skills)
@@ -49,12 +46,14 @@ class ProtocolPack:
         root = root.resolve()
         try:
             raw = yaml.safe_load((root / "manifest.yaml").read_text(encoding="utf-8"))
+            if isinstance(raw, dict) and "version" in raw:
+                raise ProtocolError(
+                    "Protocol revisions are tracked by Git, not manifest versions."
+                )
             manifest = Manifest.model_validate(raw)
             root_instructions = (root / "SKILL.md").read_text(encoding="utf-8")
         except (OSError, ValidationError, yaml.YAMLError) as error:
             raise ProtocolError(f"Invalid protocol pack: {error}") from error
-        if not re.fullmatch(r"\d+\.\d+\.\d+", manifest.version):
-            raise ProtocolError("Protocol version must use SemVer x.y.z.")
         if manifest.status not in {"experimental", "reviewed", "validated"}:
             raise ProtocolError("Invalid protocol status.")
         skill_instructions: list[str] = []

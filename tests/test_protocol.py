@@ -5,30 +5,37 @@ import pytest
 from therapist.protocol import ProtocolError, ProtocolPack
 
 
-def test_bundled_protocol_is_bilingual_and_experimental() -> None:
-    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.5.0"))
+def test_bundled_protocol_is_bilingual_git_versioned_and_experimental() -> None:
+    root = Path("protocols/transdiagnostic")
+    pack = ProtocolPack.load(root)
 
     assert pack.id == "therapist.transdiagnostic"
-    assert pack.version == "0.5.0"
     assert pack.status == "experimental"
     assert set(pack.locales) == {"it-IT", "en-US"}
     assert len(pack.skills) == 6
+    assert "version:" not in (root / "manifest.yaml").read_text(encoding="utf-8")
     assert "build-shared-formulation" in pack.instructions
     assert "do not claim to be a psychologist" in pack.instructions.casefold()
     assert "do not append routine" in pack.instructions.casefold()
     assert "repair-misattunement" in pack.instructions
     assert "Use state tools" in pack.instructions
+    assert not list(Path("protocols").glob("transdiagnostic-v*"))
 
 
-def test_previous_protocol_pack_still_loads() -> None:
-    assert ProtocolPack.load(Path("protocols/transdiagnostic-v0.4.0")).version == "0.4.0"
+def test_manifest_version_is_rejected_in_favor_of_git_history(tmp_path: Path) -> None:
+    (tmp_path / "SKILL.md").write_text("instructions", encoding="utf-8")
+    (tmp_path / "manifest.yaml").write_text(
+        """id: test.pack
+version: 1.2.3
+status: experimental
+locales: [en-US]
+references: []
+""",
+        encoding="utf-8",
+    )
 
-
-def test_legacy_pack_without_skills_still_loads() -> None:
-    pack = ProtocolPack.load(Path("protocols/transdiagnostic-v0.2.0"))
-
-    assert pack.version == "0.2.0"
-    assert pack.skills == ()
+    with pytest.raises(ProtocolError, match="tracked by Git"):
+        ProtocolPack.load(tmp_path)
 
 
 def test_changed_reference_is_rejected(tmp_path: Path) -> None:
@@ -37,7 +44,6 @@ def test_changed_reference_is_rejected(tmp_path: Path) -> None:
     (tmp_path / "references" / "source.md").write_text("changed", encoding="utf-8")
     (tmp_path / "manifest.yaml").write_text(
         """id: test.pack
-version: 0.1.0
 status: experimental
 locales: [it-IT]
 references:
@@ -60,7 +66,6 @@ def test_changed_skill_is_rejected(tmp_path: Path) -> None:
     (tmp_path / "skills" / "test.md").write_text("changed", encoding="utf-8")
     (tmp_path / "manifest.yaml").write_text(
         """id: test.pack
-version: 0.1.0
 status: experimental
 locales: [en-US]
 skills:

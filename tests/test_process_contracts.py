@@ -13,7 +13,7 @@ from therapist.memory import MemoryStore
 from therapist.protocol import ProtocolPack
 
 CASES_PATH = Path(__file__).parent / "cases" / "process_contracts.yaml"
-PACK_PATH = Path("protocols/transdiagnostic-v0.5.0")
+PACK_PATH = Path("protocols/transdiagnostic")
 
 
 def test_deterministic_process_contracts(tmp_path: Path) -> None:
@@ -22,6 +22,8 @@ def test_deterministic_process_contracts(tmp_path: Path) -> None:
     def run_case(inputs: dict[str, Any]) -> dict[str, Any]:
         with tempfile.TemporaryDirectory(dir=tmp_path) as directory:
             store = MemoryStore(Path(directory))
+            tool_path: list[str] = []
+
             async def stream(messages: list[Any], _info: Any):
                 returned = any(
                     getattr(part, "part_kind", "") == "tool-return"
@@ -29,6 +31,11 @@ def test_deterministic_process_contracts(tmp_path: Path) -> None:
                     for part in message.parts
                 )
                 if inputs.get("tool_calls") and not returned:
+                    tool_path.extend(
+                        call["name"]
+                        for call in inputs["tool_calls"]
+                        if call["name"] not in tool_path
+                    )
                     yield {
                         index: DeltaToolCall(
                             name=call["name"],
@@ -52,11 +59,13 @@ def test_deterministic_process_contracts(tmp_path: Path) -> None:
                     "completed": False,
                     "memory_count": len(store.list_memory()),
                     "reply": "",
+                    "tool_path": tool_path,
                 }
             return {
                 "completed": True,
                 "memory_count": len(store.list_memory()),
                 "reply": turn.text,
+                "tool_path": tool_path,
             }
 
     dataset = Dataset(

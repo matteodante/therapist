@@ -4,7 +4,7 @@ from typing import Any
 from pydantic_evals import Dataset
 from pydantic_evals.evaluators import EqualsExpected
 
-PACK_ROOT = Path("protocols/transdiagnostic-v0.5.0")
+PACK_ROOT = Path("protocols/transdiagnostic")
 CASES_PATH = Path(__file__).parent / "cases" / "therapeutic_skills.yaml"
 
 

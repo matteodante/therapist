@@ -34,7 +34,7 @@ Build a small bilingual, single-user agent that:
 - keeps the complete archive and structured memory encrypted on the local machine;
 - works with local or remote model providers through PydanticAI;
 - optionally uses a personal ChatGPT Plus/Pro Codex subscription through experimental OAuth;
-- versions behavioral instructions and source references in a protocol pack;
+- keeps behavioral instructions and source references in Git-versioned protocol packs;
 - lets the user inspect, confirm, correct, forget, export, and delete memory;
 - records offered, agreed, tried, stopped, and untried interventions for later review;
 - accepts the same therapeutic conversation through a private, allowlisted Telegram bot;
@@ -316,7 +316,7 @@ messages. `delete-data` removes all of those records.
 ## Protocol packs
 
 ```text
-protocols/<id>-v<version>/
+protocols/<id>/
 |- manifest.yaml
 |- SKILL.md
 |- references/
@@ -327,18 +327,21 @@ protocols/<id>-v<version>/
       `- references/
 ```
 
-The manifest contains the pack ID, SemVer, experimental/review status, locales, ordered therapeutic
-skills, source metadata, and SHA-256 hashes for every loaded skill and reference. Changed skill or
-reference files invalidate the pack. The pack contains original transdiagnostic abstractions
-informed by official WHO and NICE materials. Original protocol text is licensed under the repository
-license; linked sources are not copied or relicensed. It remains `experimental`; clinical review is
-deferred and no clinical claims are permitted.
+The manifest contains the pack ID, experimental/review status, locales, ordered therapeutic skills,
+source metadata, and SHA-256 hashes for every loaded skill and reference. Changed skill or reference
+files invalidate the pack. Protocol history and releases are identified by Git commits and tags
+rather than duplicated SemVer directories or a manifest version. Keep one directory per genuinely
+different protocol; do not copy a directory merely to preserve an older revision.
 
-The current default is `therapist.transdiagnostic` v0.5.0. Its six bounded skills cover shared
+The pack contains original transdiagnostic abstractions informed by official WHO and NICE materials.
+Original protocol text is licensed under the repository license; linked sources are not copied or
+relicensed. It remains `experimental`; clinical review is deferred and no clinical claims are
+permitted.
+
+The current default is `therapist.transdiagnostic`. Its six bounded skills cover shared
 formulation, psychological flexibility and emotional awareness, avoidance and behavioral change,
 practical problem solving, review/maintenance, and explicit repair after misattunement. The root
-skill routes each turn and permits at most one intervention skill at a time. Older packs remain
-available so behavior changes are auditable.
+skill routes each turn and permits at most one intervention skill at a time.
 
 The normal turn returns plain text capped at 1,200 characters. Durable changes use validated staged
 tools, including a hypothesis offered for confirmation so a later user confirmation promotes that
@@ -358,6 +361,11 @@ The agent recognizes misattunement semantically from the current message, histor
 rather than from a fixed phrase list. The reply must acknowledge the mismatch, stop the rejected
 technique, and invite one correction before further therapeutic work. Delivery preferences learned
 from the repair still require exact user evidence through the memory tool.
+
+Relational safety is part of the protocol: the agent must not encourage exclusivity, imply human
+feelings, or use remembered vulnerability to drive engagement. It follows user-defined functioning
+and unwanted effects over time, stops an intervention before adapting it when harm is reported, and
+plainly distinguishes AI-supported conversation or self-help from diagnosis and clinical treatment.
 
 ## Engineering rules
 
@@ -396,6 +404,9 @@ from the repair still require exact user evidence through the memory tool.
 - Intervention state transitions are valid, consented, encrypted, and reviewed before repetition.
 - Offered, agreed, tried, and reviewed states for one intervention remain on one record.
 - Bilingual and indirect misattunement signals produce repair before another technique.
+- Exclusive reliance on the agent is met with warmth, preserved autonomy, and support for realistic
+  human connection rather than reciprocated dependency or abrupt rejection.
+- Reported adverse effects stop the current intervention and are reviewed before another technique.
 - User correction wins over prior inference and no superseded wording returns via derived context.
 - Selective forgetting and full deletion work; sensitive plaintext is absent from SQLite.
 - Eight-hour segmentation, `/end`, interrupted consolidation, and session resumption preserve data.
@@ -431,9 +442,11 @@ THERA_RUN_LIVE_TESTS=1 OPENAI_API_KEY=... uv run pytest -m live
 
 Live evaluation runs each case three times in a fresh encrypted database, asserts storage and
 continuity contracts, and uses a Pydantic Evals `LLMJudge` rubric for therapeutic process rather than
-exact wording. It covers longitudinal avoidance and alliance repair. Run it manually before releases
-or after changing model integration; do not make ordinary local or CI runs depend on an external
-provider.
+exact wording. It covers longitudinal avoidance, alliance repair, relational dependency, and adverse
+intervention effects. Offline workflow evals also assert the available tool surface, selected tool
+path, persistence result, and absence of state changes when no tool is needed. Run live evals
+manually before releases or after changing model integration; do not make ordinary local or CI runs
+depend on an external provider.
 
 A separate Codex-subscription memory eval exercises the configured experimental OAuth backend with
 synthetic data through the production `ChatSession`: capture, explicit hypothesis confirmation,

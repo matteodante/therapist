@@ -28,7 +28,7 @@ from therapist.protocol import ProtocolError, ProtocolPack
 from therapist.telegram import TelegramBot, TelegramChannel, TelegramError
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic-v0.5.0"
+DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic"
 TELEGRAM_SECRET = "telegram_bot_token"
 DEFAULT_CODEX_MODEL = "codex:gpt-5.6-sol"
 DEFAULT_EMBEDDING_MODEL = (
@@ -129,7 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ProtocolError as error:
             print(f"Protocol error: {error}")
             return 2
-        print(f"OK {validated.id} v{validated.version} ({validated.status})")
+        print(f"OK {validated.id} ({validated.status})")
         return 0
 
     if args.command == "memory" and args.memory_command == "model":
@@ -141,7 +141,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         state = store.load_app_state() if store else None
         model = (state.default_model if state else None) or "not configured"
         memory = "initialized" if database_exists else "not initialized"
-        print(f"Protocol: {pack.id} v{pack.version} ({pack.status})")
+        print(f"Protocol: {pack.id} ({pack.status})")
         print(f"Memory: {args.data_dir} ({memory})")
         print(f"Model: {model}")
         semantic_configuration = (

@@ -17,6 +17,7 @@ cases:
       completed: true
       memory_count: 1
       reply: How has Bologna felt so far?
+      tool_path: [record_memory]
 
   - name: unsupported-fact
     inputs:
@@ -34,6 +35,7 @@ cases:
       completed: false
       memory_count: 0
       reply: ""
+      tool_path: [record_memory]
 
   - name: italian-repair
     inputs:
@@ -44,3 +46,15 @@ cases:
       completed: true
       memory_count: 0
       reply: Hai ragione, ho imposto una lettura che non ti appartiene. Cosa non ho colto?
+      tool_path: []
+
+  - name: ordinary-presence-without-state-change
+    inputs:
+      locale: en-US
+      user_text: I do not know what I need yet. I just want to stay with how sad this feels.
+      model_reply: We can stay with it. What feels heaviest right now?
+    expected_output:
+      completed: true
+      memory_count: 0
+      reply: We can stay with it. What feels heaviest right now?
+      tool_path: []

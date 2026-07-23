@@ -1,4 +1,0 @@
-interface:
-  display_name: "Solve Practical Problems"
-  short_description: "Guide concrete and collaborative problem solving"
-  default_prompt: "Use $solve-practical-problems to clarify this actionable problem and choose one feasible next step."

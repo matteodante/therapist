@@ -9,7 +9,7 @@ from pydantic_ai.exceptions import AgentRunError
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
-from therapist.chat import ChatSession
+from therapist.chat import TURN_LIMITS, ChatSession
 from therapist.memory import (
     CaseFormulation,
     InterventionState,
@@ -25,7 +25,7 @@ models.ALLOW_MODEL_REQUESTS = False
 
 
 def _pack() -> ProtocolPack:
-    return ProtocolPack.load(Path("protocols/transdiagnostic-v0.5.0"))
+    return ProtocolPack.load(Path("protocols/transdiagnostic"))
 
 
 def _text_model(reply: str) -> TestModel:
@@ -54,6 +54,38 @@ def _tool_model(
         }
 
     return FunctionModel(stream_function=stream)
+
+
+def test_agent_exposes_a_bounded_distinct_toolset_and_longitudinal_instructions(
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def stream(_messages: list[Any], info: Any):
+        captured["tools"] = info.function_tools
+        captured["instructions"] = info.instructions
+        yield "I am with you."
+
+    ChatSession(
+        FunctionModel(stream_function=stream), _pack(), MemoryStore(tmp_path), "en-US"
+    ).respond("This is difficult to put into words.")
+
+    tools = captured["tools"]
+    assert {tool.name for tool in tools} == {
+        "search_memory",
+        "record_memory",
+        "correct_memory",
+        "confirm_hypotheses",
+        "set_focus",
+        "record_intervention",
+    }
+    assert all(tool.description and tool.sequential for tool in tools)
+    instructions = captured["instructions"].casefold()
+    assert "interpret the user's meaning in context" in instructions
+    assert "support the user's autonomy" in instructions
+    assert "unwanted effects" in instructions
+    assert TURN_LIMITS.request_limit == 8
+    assert TURN_LIMITS.tool_calls_limit == 6
 
 
 def test_normal_turn_returns_text_and_persists_tool_staged_observation(

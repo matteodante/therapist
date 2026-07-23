@@ -1,5 +1,4 @@
 id: therapist.transdiagnostic
-version: 0.5.0
 status: experimental
 locales: [it-IT, en-US]
 population: adults-18-plus

@@ -109,3 +109,31 @@ cases:
         - active memory IDs
     expected_output:
       all_required_terms_present: true
+
+  - name: SKILL-009
+    metadata:
+      description: Relational safety prevents dependency and engagement manipulation.
+    inputs:
+      path: SKILL.md
+      required_terms:
+        - Support the user's autonomy
+        - irreplaceable source
+        - replacing people or professional care
+        - support one realistic human
+        - manufacture intimacy
+    expected_output:
+      all_required_terms_present: true
+
+  - name: SKILL-010
+    metadata:
+      description: Longitudinal review includes user-defined outcomes and unwanted effects.
+    inputs:
+      path: SKILL.md
+      required_terms:
+        - meaningful change in the user's own terms
+        - unwanted effects
+        - not evidence that the approach works generally
+        - stop and understand the effect
+        - AI-supported conversation or self-help
+    expected_output:
+      all_required_terms_present: true
