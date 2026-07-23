@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import questionary
 from huggingface_hub import HfApi, scan_cache_dir, snapshot_download
@@ -24,7 +24,11 @@ from therapist.auth import (
     login_codex,
     logout_codex,
 )
-from therapist.chat import ChatSession
+from therapist.chat import (
+    MAX_CONTEXT_WINDOW_TOKENS,
+    MIN_CONTEXT_WINDOW_TOKENS,
+    ChatSession,
+)
 from therapist.memory import MemoryStore
 from therapist.protocol import ProtocolError, ProtocolPack
 from therapist.telegram import TelegramBot, TelegramChannel, TelegramError
@@ -69,11 +73,13 @@ def build_parser() -> argparse.ArgumentParser:
     chat = commands.add_parser("chat", help="Start an interactive conversation")
     chat.add_argument("--model")
     chat.add_argument("--locale", choices=("it-IT", "en-US"))
+    chat.add_argument("--context-window-tokens", type=_context_window_tokens)
 
     telegram = commands.add_parser("telegram", help="Run a private single-user Telegram bot")
     telegram.add_argument("--model")
     telegram.add_argument("--locale", choices=("it-IT", "en-US"))
     telegram.add_argument("--allowed-user-id", type=int)
+    telegram.add_argument("--context-window-tokens", type=_context_window_tokens)
 
     service = commands.add_parser(
         "telegram-service",
@@ -157,6 +163,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Protocol: {pack.id} ({pack.status})")
         print(f"Memory: {args.data_dir} ({memory})")
         print(f"Model: {model}")
+        if state and state.default_model:
+            print(
+                "Conversation context: "
+                f"{state.default_context_window_tokens or MAX_CONTEXT_WINDOW_TOKENS} tokens"
+            )
         semantic_configuration = (
             "configured"
             if state and state.embedding_model == DEFAULT_EMBEDDING_MODEL
@@ -219,7 +230,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         except AuthError as error:
             print(f"Authentication error: {error}")
             return 2
-        session = ChatSession(model, pack, store, locale)
+        model_context_window = (
+            state.default_context_window_tokens
+            if selected_model == state.default_model
+            else None
+        ) or _model_context_window(selected_model)
+        context_window_tokens = min(
+            args.context_window_tokens or model_context_window,
+            model_context_window,
+            MAX_CONTEXT_WINDOW_TOKENS,
+        )
+        try:
+            session = ChatSession(
+                model,
+                pack,
+                store,
+                locale,
+                context_window_tokens=context_window_tokens,
+            )
+        except ValueError as error:
+            print(f"Context configuration error: {error}")
+            return 2
         if args.command == "chat":
             return _chat(session, store)
         token_payload = store.load_secret(TELEGRAM_SECRET)
@@ -387,7 +418,15 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
         else:
             token_payload = None
 
+        context_window_tokens = _model_context_window(model)
+        if context_window_tokens < MIN_CONTEXT_WINDOW_TOKENS:
+            print(
+                f"The selected model exposes only {context_window_tokens} context tokens; "
+                f"at least {MIN_CONTEXT_WINDOW_TOKENS} are required."
+            )
+            return 2
         state.default_model = model
+        state.default_context_window_tokens = context_window_tokens
         state.default_locale = locale
         state.embedding_model = DEFAULT_EMBEDDING_MODEL
         if model.startswith("codex:") and not load_credential(store):
@@ -438,7 +477,7 @@ def _select_model(current: str | None) -> str:
         questionary.Choice("ChatGPT Plus/Pro — GPT-5.6 Sol", value=DEFAULT_CODEX_MODEL),
         questionary.Choice("OpenAI API", value="openai:gpt-5.6-sol"),
         questionary.Choice("Anthropic API", value="anthropic:claude-sonnet-4-6"),
-        questionary.Choice("Google Gemini API", value="google:gemini-3-pro-preview"),
+        questionary.Choice("Google Gemini API", value="google:gemini-3.1-pro-preview"),
         questionary.Choice("OpenRouter API", value="openrouter:anthropic/claude-sonnet-4.6"),
         questionary.Choice("Ollama on this computer", value=LOCAL_OLLAMA),
         questionary.Choice("Other PydanticAI model", value=CUSTOM_MODEL),
@@ -523,6 +562,37 @@ def _ollama_models() -> list[str]:
         for model in payload.get("models", [])
         if isinstance(model, dict) and isinstance(model.get("name"), str)
     )
+
+
+def _model_context_window(model: str) -> int:
+    if model.startswith("ollama:"):
+        detected = _ollama_context_window(model.removeprefix("ollama:"))
+        if detected is not None:
+            return min(detected, MAX_CONTEXT_WINDOW_TOKENS)
+    return MAX_CONTEXT_WINDOW_TOKENS
+
+
+def _ollama_context_window(model: str) -> int | None:
+    request = Request(
+        "http://localhost:11434/api/show",
+        data=json.dumps({"model": model}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=2) as response:
+            payload = json.load(response)
+    except (OSError, ValueError, TypeError):
+        return None
+    model_info = payload.get("model_info")
+    if not isinstance(model_info, dict):
+        return None
+    values = [
+        value
+        for key, value in model_info.items()
+        if key.endswith(".context_length") and isinstance(value, int)
+    ]
+    return max(values) if values else None
 
 
 def _pair_telegram_user(token: str) -> tuple[int, int]:
@@ -831,6 +901,8 @@ def _chat(session: ChatSession, store: MemoryStore) -> int:
         except Exception as error:  # Provider SDKs expose different error types.
             print(f"Model error: {error}")
             continue
+        if turn.notice:
+            print(f"notice> {turn.notice}")
         print(f"thera> {turn.text}")
 
 
@@ -875,6 +947,19 @@ def _chat_command(command: str, session: ChatSession, store: MemoryStore) -> boo
 
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, indent=2)
+
+
+def _context_window_tokens(value: str) -> int:
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("Context window must be an integer.") from error
+    if not MIN_CONTEXT_WINDOW_TOKENS <= parsed <= MAX_CONTEXT_WINDOW_TOKENS:
+        raise argparse.ArgumentTypeError(
+            f"Context window must be between {MIN_CONTEXT_WINDOW_TOKENS} "
+            f"and {MAX_CONTEXT_WINDOW_TOKENS} tokens."
+        )
+    return parsed
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import AsyncIterable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -13,6 +14,7 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import (
     Agent,
     AgentStreamEvent,
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     ModelRetry,
@@ -34,6 +36,7 @@ from therapist.memory import (
     MemoryObservation,
     MemoryStatus,
     MemoryStore,
+    SessionEndReason,
     SessionRecord,
     WorkingContext,
     valid_intervention_transition,
@@ -42,6 +45,12 @@ from therapist.protocol import ProtocolPack
 
 MAX_CONTEXT_CHARS = 12_000
 MAX_LOOKUP_CHARS = 4_000
+MAX_CONTEXT_WINDOW_TOKENS = 128_000
+MIN_CONTEXT_WINDOW_TOKENS = 16_000
+CONTEXT_OUTPUT_RESERVE_RATIO = 0.1
+CONTEXT_TOOL_RESERVE_TOKENS = 4_000
+CONTEXT_WARNING_RATIO = 0.8
+TOKEN_ESTIMATE_MARGIN = 1.25
 TURN_LIMITS = UsageLimits(
     request_limit=8,
     tool_calls_limit=6,
@@ -130,6 +139,7 @@ class SessionReflection(BaseModel):
 @dataclass(frozen=True)
 class ChatTurn:
     text: str
+    notice: str | None = None
 
 
 class ChatSession:
@@ -139,6 +149,7 @@ class ChatSession:
         protocol: ProtocolPack,
         memory: MemoryStore,
         locale: str,
+        context_window_tokens: int = MAX_CONTEXT_WINDOW_TOKENS,
     ) -> None:
         if locale not in protocol.locales:
             raise ValueError(f"Locale not supported by protocol: {locale}")
@@ -146,11 +157,55 @@ class ChatSession:
         self.protocol = protocol
         self.memory = memory
         self.locale = locale
+        if context_window_tokens < MIN_CONTEXT_WINDOW_TOKENS:
+            raise ValueError(
+                f"Conversation models require at least {MIN_CONTEXT_WINDOW_TOKENS} context tokens."
+            )
+        self.context_window_tokens = min(
+            context_window_tokens, MAX_CONTEXT_WINDOW_TOKENS
+        )
+        self.output_token_reserve = math.ceil(
+            self.context_window_tokens * CONTEXT_OUTPUT_RESERVE_RATIO
+        )
+        self.input_token_budget = self.context_window_tokens - self.output_token_reserve
 
     def respond(self, text: str, now: datetime | None = None) -> ChatTurn:
+        if text.lstrip().startswith("/"):
+            raise ValueError("Commands must be handled outside the conversation.")
         session = self._current_session(now)
         context = self.memory.working_context(text)
         history = self.memory.load_session_history(session.id)
+        estimated_tokens = _estimate_context_tokens(
+            self.protocol.instructions,
+            _bounded_context_json(context),
+            history,
+            text,
+        )
+        notice: str | None = None
+        if estimated_tokens > self.input_token_budget:
+            if not history:
+                raise ValueError(
+                    "This message does not fit the configured model context window."
+                )
+            self._consolidate(
+                session,
+                now,
+                end_reason=SessionEndReason.CONTEXT_LIMIT,
+            )
+            session = self.memory.start_session(now)
+            context = self.memory.working_context(text)
+            history = []
+            estimated_tokens = _estimate_context_tokens(
+                self.protocol.instructions,
+                _bounded_context_json(context),
+                history,
+                text,
+            )
+            if estimated_tokens > self.input_token_budget:
+                raise ValueError(
+                    "This message does not fit the configured model context window."
+                )
+            notice = self._context_rollover_notice()
         return_guidance = ""
         if not history and context.recent_sessions:
             previous = context.recent_sessions[0]
@@ -416,6 +471,22 @@ class ChatSession:
             ModelRequest(parts=[UserPromptPart(content=text)]),
             ModelResponse(parts=[TextPart(content=reply)]),
         ]
+        session.last_context_tokens = _estimate_context_tokens(
+            self.protocol.instructions,
+            _bounded_context_json(context),
+            [*history, *canonical_messages],
+            "",
+        )
+        warning_threshold = math.floor(
+            self.input_token_budget * CONTEXT_WARNING_RATIO
+        )
+        if (
+            session.last_context_tokens >= warning_threshold
+            and not session.context_warning_sent
+        ):
+            session.context_warning_sent = True
+            warning = self._context_warning_notice()
+            notice = f"{notice}\n{warning}" if notice else warning
         with self.memory.transaction():
             evidence_id = self.memory.save_turn(session, text, reply, canonical_messages, now)
             for correction in actions.corrections:
@@ -529,31 +600,49 @@ class ChatSession:
                     )
                     app_state.pending_intervention_id = created.id
             self.memory.save_app_state(app_state)
-        return ChatTurn(reply)
+        return ChatTurn(reply, notice)
 
     def end(self, now: datetime | None = None) -> SessionRecord | None:
         session = self.memory.active_session()
         if session is None:
             return None
-        return self._consolidate(session, now)
+        return self._consolidate(
+            session,
+            now,
+            end_reason=SessionEndReason.EXPLICIT,
+        )
 
     def _current_session(self, now: datetime | None) -> SessionRecord:
         session = self.memory.active_session()
         if session is None:
             return self.memory.start_session(now)
         if self.memory.session_expired(session, now):
-            self._consolidate(session, datetime.fromisoformat(session.last_activity_at))
+            self._consolidate(
+                session,
+                datetime.fromisoformat(session.last_activity_at),
+                end_reason=SessionEndReason.INACTIVITY,
+            )
             return self.memory.start_session(now)
         return session
 
-    def _consolidate(self, session: SessionRecord, now: datetime | None = None) -> SessionRecord:
+    def _consolidate(
+        self,
+        session: SessionRecord,
+        now: datetime | None = None,
+        *,
+        end_reason: SessionEndReason,
+    ) -> SessionRecord:
         transcript = self.memory.session_transcript(session.id, limit_chars=16_000)
         if not transcript:
             formulation = self.memory.load_formulation()
             formulation.proposed_focus = None
             with self.memory.transaction():
                 self.memory.save_formulation(formulation, now)
-                return self.memory.close_session(session, now=now)
+                return self.memory.close_session(
+                    session,
+                    end_reason=end_reason,
+                    now=now,
+                )
         existing_formulation = self.memory.load_formulation()
         all_memories = self.memory.list_memory()
         by_id = {item.id: item for item in all_memories}
@@ -603,6 +692,7 @@ class ChatSession:
                 return self.memory.close_session(
                     session,
                     consolidation_error=type(error).__name__,
+                    end_reason=end_reason,
                     now=now,
                 )
         with self.memory.transaction():
@@ -621,8 +711,50 @@ class ChatSession:
                 interventions=reflection.interventions,
                 user_response=reflection.user_response,
                 open_questions=reflection.open_questions,
+                end_reason=end_reason,
                 now=now,
             )
+
+    def _context_warning_notice(self) -> str:
+        if self.locale == "it-IT":
+            return (
+                "Avviso: questa sessione è vicina al limite di contesto. "
+                "Quando sarà necessario, ne aprirò automaticamente una nuova."
+            )
+        return (
+            "Notice: this session is approaching its context limit. "
+            "I will automatically start a new one when needed."
+        )
+
+    def _context_rollover_notice(self) -> str:
+        if self.locale == "it-IT":
+            return (
+                "La sessione precedente ha raggiunto il limite di contesto ed è stata chiusa. "
+                "Questo messaggio apre una nuova sessione."
+            )
+        return (
+            "The previous session reached its context limit and was closed. "
+            "This message starts a new session."
+        )
+
+
+def _estimate_context_tokens(
+    protocol_instructions: str,
+    longitudinal_context: str,
+    history: list[ModelRequest | ModelResponse],
+    user_text: str,
+) -> int:
+    serialized_history = ModelMessagesTypeAdapter.dump_json(history)
+    character_count = (
+        len(protocol_instructions.encode())
+        + len(longitudinal_context.encode())
+        + len(serialized_history)
+        + len(user_text.encode())
+    )
+    estimated_text_tokens = math.ceil(
+        character_count / 4 * TOKEN_ESTIMATE_MARGIN
+    )
+    return estimated_text_tokens + CONTEXT_TOOL_RESERVE_TOKENS
 
 
 def _quote_in_text(quote: str | None, text: str) -> bool:

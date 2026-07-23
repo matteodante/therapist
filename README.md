@@ -18,6 +18,7 @@ the application interface, consent notices, commands, and documentation are Engl
 - Plain-text agent replies plus six agent-selected memory, focus, and intervention tools.
 - Encrypted SQLite archive, structured memory, and local semantic retrieval across months or years.
 - Visible, correctable facts, hypotheses, case formulation, sessions, and interventions.
+- Complete active-session history with warning and automatic rollover at the model context limit.
 - PydanticAI providers, local models, and experimental personal ChatGPT Codex OAuth.
 - Git-versioned experimental therapeutic skills and evidence references.
 - Deterministic tests plus longitudinal and multilingual Pydantic Evals datasets.
@@ -65,6 +66,10 @@ encrypted store. Use `telegram-service restart` after configuration changes and
 Run `uv run thera --help` for all commands. Inside chat, `/help` lists memory, session, correction,
 forgetting, and session-closing commands.
 
+Conversation context uses the selected model's limit up to an application cap of 128,000 tokens,
+always reserving 10% for model output. Use `--context-window-tokens` on `chat` or `telegram` to set a
+lower known limit, down to 16,000.
+
 Inside Telegram, `/status`, `/case`, `/memory`, `/sessions`, `/interventions`, and `/privacy` expose
 the active session, evidence-linked formulation, paginated structured memory, intervention history,
 and data flow. Durable memory, focus, or intervention changes are disclosed after the reply that
@@ -104,10 +109,14 @@ insufficient. The remaining five tools stage validated memory observations, corr
 confirmations, focus changes, or one intervention update. The transcript and staged changes are
 committed atomically only after a successful final reply. Tool exchanges are not retained:
 conversation history contains only the canonical user message and plain-text assistant reply.
-End-of-session consolidation separately uses a structured `SessionReflection`; conversation turns do not
-return process-stage or selected-skill fields. The agent sends only relevant context to the selected
-model provider. Remote providers and Telegram receive the content needed to answer or deliver
-messages. Use `thera export` to inspect your data and `thera delete-data` to remove it.
+Slash commands, their displayed output, tool traces, and context lifecycle notices are never stored
+as conversation turns or returned to the conversation model. There is no intra-session compaction:
+complete canonical turns remain available until a warning near the effective context limit, followed
+by consolidation and a fresh session before the next message would exceed it. End-of-session
+consolidation separately uses a structured `SessionReflection`; conversation turns do not return
+process-stage or selected-skill fields. The agent sends only relevant context to the selected model
+provider. Remote providers and Telegram receive the content needed to answer or deliver messages.
+Use `thera export` to inspect your data and `thera delete-data` to remove it.
 
 ## Development
 

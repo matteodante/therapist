@@ -8,6 +8,8 @@ from therapist.cli import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_REPO,
     DEFAULT_EMBEDDING_REVISION,
+    _chat_command,
+    _model_context_window,
     build_parser,
     main,
 )
@@ -145,6 +147,26 @@ def test_memory_commands_expose_and_correct_structured_memory(
     assert "user_corrected" in output
 
 
+def test_interactive_command_and_output_stay_out_of_transcript(
+    tmp_path: Path, capsys: object
+) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "Original user turn.", "Original reply.", [])
+    store.add_observations(
+        [MemoryObservation(kind=MemoryKind.FACT, content="Rendered command output.")],
+        message_id,
+    )
+    before = store.session_transcript(session.id)
+
+    assert _chat_command("/memory", SimpleNamespace(), store) is True  # type: ignore[arg-type]
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert "Rendered command output." in output
+    assert store.session_transcript(session.id) == before
+    assert "Rendered command output." not in before
+
+
 def test_export_outputs_all_user_owned_layers(tmp_path: Path, capsys: object) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
@@ -164,6 +186,73 @@ def test_doctor_does_not_create_memory(tmp_path: Path) -> None:
 
     assert main(["--data-dir", str(data_dir), "doctor"]) == 0
     assert not data_dir.exists()
+
+
+def test_context_window_override_is_bounded() -> None:
+    parsed = build_parser().parse_args(
+        ["chat", "--model", "test:model", "--context-window-tokens", "128000"]
+    )
+
+    assert parsed.context_window_tokens == 128_000
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(
+            ["chat", "--model", "test:model", "--context-window-tokens", "128001"]
+        )
+
+
+def test_ollama_context_window_is_detected_and_capped(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def read(self) -> bytes:
+            return json.dumps(
+                {"model_info": {"model.context_length": 262_144}}
+            ).encode()
+
+    monkeypatch.setattr("therapist.cli.urlopen", lambda *args, **kwargs: Response())
+
+    assert _model_context_window("ollama:test") == 128_000
+
+
+def test_context_override_cannot_exceed_saved_model_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.default_model = "test:model"
+    state.default_context_window_tokens = 32_000
+    state.default_locale = "en-US"
+    state.embedding_model = DEFAULT_EMBEDDING_MODEL
+    store.save_app_state(state)
+    captured: dict[str, int] = {}
+
+    def chat_session(*args: object, context_window_tokens: int, **kwargs: object) -> object:
+        captured["context_window_tokens"] = context_window_tokens
+        return object()
+
+    monkeypatch.setattr("therapist.cli._default_embedder", lambda **_: object())
+    monkeypatch.setattr("therapist.cli.ChatSession", chat_session)
+    monkeypatch.setattr("therapist.cli._chat", lambda *_: 0)
+
+    assert (
+        main(
+            [
+                "--data-dir",
+                str(tmp_path),
+                "chat",
+                "--context-window-tokens",
+                "64000",
+            ]
+        )
+        == 0
+    )
+    assert captured["context_window_tokens"] == 32_000
 
 
 def test_telegram_service_install_uses_saved_configuration(
@@ -313,6 +402,7 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
     assert state.default_model == "test"
+    assert state.default_context_window_tokens == 128_000
     assert state.default_locale == "en-US"
     assert state.embedding_model == DEFAULT_EMBEDDING_MODEL
     assert state.telegram_allowed_user_id == 42

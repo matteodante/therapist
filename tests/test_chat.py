@@ -4,8 +4,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pydantic_ai import models
+from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart, models
 from pydantic_ai.exceptions import AgentRunError
+from pydantic_ai.messages import TextPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.models.test import TestModel
 
@@ -17,6 +18,7 @@ from therapist.memory import (
     MemoryObservation,
     MemoryStatus,
     MemoryStore,
+    SessionEndReason,
 )
 from therapist.protocol import ProtocolPack
 
@@ -206,6 +208,144 @@ def test_expired_session_is_closed_before_a_new_turn(tmp_path: Path) -> None:
     assert store.active_session().id != old_id  # type: ignore[union-attr]
     assert store.list_sessions()[1].ended_at is not None
     assert store.list_sessions()[1].consolidation_error == "UnexpectedModelBehavior"
+    assert store.list_sessions()[1].end_reason is SessionEndReason.INACTIVITY
+
+
+def test_context_warning_is_not_saved_as_conversation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("therapist.chat._estimate_context_tokens", lambda *args: 90)
+    store = MemoryStore(tmp_path)
+    session = ChatSession(_text_model("I am with you."), _pack(), store, "en-US")
+    session.input_token_budget = 100
+
+    first = session.respond("This is a long conversation.")
+    second = session.respond("And it continues.")
+
+    assert first.notice and "approaching its context limit" in first.notice
+    assert second.notice is None
+    transcript = store.session_transcript(store.active_session().id)  # type: ignore[union-attr]
+    assert "approaching its context limit" not in transcript
+
+
+def test_context_budget_reserves_ten_percent_for_output(tmp_path: Path) -> None:
+    session = ChatSession(
+        _text_model("I am with you."),
+        _pack(),
+        MemoryStore(tmp_path),
+        "en-US",
+        context_window_tokens=128_000,
+    )
+
+    assert session.output_token_reserve == 12_800
+    assert session.input_token_budget == 115_200
+
+
+def test_active_session_history_is_not_truncated_after_ten_turns(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    active = store.start_session()
+    for index in range(12):
+        user_text = f"Prior user turn {index}."
+        reply = f"Prior assistant turn {index}."
+        store.save_turn(
+            active,
+            user_text,
+            reply,
+            [
+                ModelRequest(parts=[UserPromptPart(content=user_text)]),
+                ModelResponse(parts=[TextPart(content=reply)]),
+            ],
+        )
+
+    captured: dict[str, list[Any]] = {}
+
+    async def stream(messages: list[Any], _info: Any):
+        captured["messages"] = messages
+        yield "Current reply."
+
+    ChatSession(
+        FunctionModel(stream_function=stream), _pack(), store, "en-US"
+    ).respond("Current user turn.")
+
+    user_prompts = [
+        part.content
+        for message in captured["messages"]
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+    ]
+    assert user_prompts == [
+        *(f"Prior user turn {index}." for index in range(12)),
+        "Current user turn.",
+    ]
+
+
+def test_context_limit_rolls_current_message_into_a_new_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def estimate(
+        _protocol: str, _context: str, history: list[Any], user_text: str
+    ) -> int:
+        return 101 if history and user_text else 10
+
+    monkeypatch.setattr("therapist.chat._estimate_context_tokens", estimate)
+    store = MemoryStore(tmp_path)
+    old = store.start_session()
+    store.save_turn(
+        old,
+        "Old session message.",
+        "Old session reply.",
+        [
+            ModelRequest(parts=[UserPromptPart(content="Old session message.")]),
+            ModelResponse(parts=[TextPart(content="Old session reply.")]),
+        ],
+    )
+
+    async def stream(_messages: list[Any], info: Any):
+        if info.output_tools:
+            yield {
+                0: DeltaToolCall(
+                    name=info.output_tools[0].name,
+                    json_args=json.dumps(
+                        {
+                            "summary": "The prior session reached its context limit.",
+                            "themes": [],
+                            "interventions": [],
+                            "user_response": "",
+                            "open_questions": [],
+                            "formulation_links": {},
+                            "formulation_unlinks": {},
+                        }
+                    ),
+                    tool_call_id="reflection",
+                )
+            }
+            return
+        yield "Fresh reply."
+
+    session = ChatSession(
+        FunctionModel(stream_function=stream), _pack(), store, "en-US"
+    )
+    session.input_token_budget = 100
+
+    turn = session.respond("First message in the replacement session.")
+
+    active = store.active_session()
+    closed = next(item for item in store.list_sessions() if item.id == old.id)
+    assert active is not None and active.id != old.id
+    assert closed.end_reason is SessionEndReason.CONTEXT_LIMIT
+    assert turn.notice and "previous session reached its context limit" in turn.notice
+    assert "First message in the replacement session." in store.session_transcript(active.id)
+    assert "Old session message." not in store.session_transcript(active.id)
+
+
+def test_conversation_api_rejects_commands_before_persistence(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    session = ChatSession(_text_model("Never used."), _pack(), store, "en-US")
+
+    with pytest.raises(ValueError, match="handled outside"):
+        session.respond("/memory")
+
+    assert store.active_session() is None
 
 
 def test_end_consolidates_session_and_revises_formulation(tmp_path: Path) -> None:

@@ -223,11 +223,17 @@ class TelegramChannel:
         except TelegramError as error:
             print(f"Telegram typing indicator error: {error}")
         try:
-            reply = self.session.respond(text).text
+            turn = self.session.respond(text)
         except Exception as error:  # Provider SDKs expose different error types.
             print(f"Model error while handling Telegram message: {type(error).__name__}")
             reply = self._model_error()
+            notice = None
+        else:
+            reply = turn.text
+            notice = getattr(turn, "notice", None)
         changes = self._durable_changes(before)
+        if notice:
+            self.bot.send_message(chat_id, notice)
         self.bot.send_message(chat_id, f"{reply}\n\n{changes}" if changes else reply)
         return True
 
@@ -279,12 +285,18 @@ class TelegramChannel:
             if session
             else "no active session"
         )
+        context_status = (
+            f"{session.last_context_tokens}/{self.session.context_window_tokens} estimated tokens"
+            if session and hasattr(self.session, "context_window_tokens")
+            else "not available"
+        )
         return (
             "STATUS\n"
             "Identity: experimental AI, without human monitoring\n"
             "Channel: private Telegram chat with the authorized user\n"
             f"Model: {state.default_model or 'not configured'}\n"
             f"Session: {session_status}\n"
+            f"Context: {context_status}\n"
             f"Active memory: {len(memories)} items\n"
             f"Sessions: {len(sessions)} ({completed_sessions} closed)\n"
             f"Recorded interventions: {len(interventions)}\n"
@@ -390,6 +402,8 @@ class TelegramChannel:
                 lines.append(f"\n{label}\n{content}")
         if session.consolidation_error:
             lines.append(f"\nConsolidation failed: {session.consolidation_error}")
+        if session.end_reason:
+            lines.append(f"\nClosed because: {session.end_reason.value}")
         return "\n".join(lines)
 
     def _interventions(self, argument: str | None) -> str:

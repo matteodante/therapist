@@ -178,6 +178,7 @@ def test_transparency_commands_show_status_memory_case_and_privacy(
     formulation.evidence = {"presenting_concerns": [item.id]}
     store.save_formulation(formulation)
     channel = TelegramChannel(bot, session, store, 42)  # type: ignore[arg-type]
+    transcript_before = store.session_transcript(active.id)
 
     for update_id, command in enumerate(("/status", "/memory", "/case", "/privacy"), start=1):
         assert channel.process_update(private_update(update_id, 42, command)) is True
@@ -189,6 +190,9 @@ def test_transparency_commands_show_status_memory_case_and_privacy(
     assert f"Evidence: messages {message_id}" in output
     assert "Telegram receives messages" in output
     assert "Internal prompts, tokens, and private reasoning are not shown" in output
+    assert session.received == []
+    assert store.session_transcript(active.id) == transcript_before
+    assert "/status" not in store.session_transcript(active.id)
 
 
 def test_memory_command_is_paginated(tmp_path: Path) -> None:

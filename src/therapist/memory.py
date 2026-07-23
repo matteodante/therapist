@@ -58,6 +58,12 @@ class InterventionState(StrEnum):
     STOPPED = "stopped"
 
 
+class SessionEndReason(StrEnum):
+    EXPLICIT = "explicit"
+    INACTIVITY = "inactivity"
+    CONTEXT_LIMIT = "context_limit"
+
+
 def valid_intervention_transition(current: InterventionState, target: InterventionState) -> bool:
     allowed = {
         InterventionState.OFFERED: {
@@ -90,6 +96,9 @@ class AppState(BaseModel):
     telegram_consent_version: str | None = None
     telegram_update_offset: int | None = Field(default=None, ge=0)
     default_model: str | None = None
+    default_context_window_tokens: int | None = Field(
+        default=None, ge=16_000, le=128_000
+    )
     default_locale: str | None = None
     embedding_model: str | None = None
     telegram_allowed_user_id: int | None = Field(default=None, gt=0)
@@ -154,6 +163,9 @@ class SessionRecord(BaseModel):
     user_response: str = ""
     open_questions: list[str] = Field(default_factory=list)
     consolidation_error: str | None = None
+    end_reason: SessionEndReason | None = None
+    context_warning_sent: bool = False
+    last_context_tokens: int = Field(default=0, ge=0)
 
 
 class InterventionRecord(BaseModel):
@@ -387,6 +399,7 @@ class MemoryStore:
         user_response: str = "",
         open_questions: list[str] | None = None,
         consolidation_error: str | None = None,
+        end_reason: SessionEndReason | None = None,
         now: datetime | None = None,
     ) -> SessionRecord:
         session.ended_at = _iso(now)
@@ -397,6 +410,7 @@ class MemoryStore:
         session.user_response = user_response
         session.open_questions = open_questions or []
         session.consolidation_error = consolidation_error
+        session.end_reason = end_reason
         self.save_session(session)
         return session
 
@@ -445,19 +459,27 @@ class MemoryStore:
             )
         return user_message_id
 
-    def load_session_history(self, session_id: str, limit: int = 20) -> list[ModelMessage]:
+    def load_session_history(
+        self, session_id: str, limit: int | None = None
+    ) -> list[ModelMessage]:
+        sql = (
+            "SELECT payload FROM messages WHERE session_id = ? AND role = 'assistant' "
+            "ORDER BY id DESC"
+        )
+        parameters: tuple[str, int] | tuple[str] = (session_id,)
+        if limit is not None:
+            sql += " LIMIT ?"
+            parameters = (session_id, limit)
         with self._connect() as database:
-            rows = database.execute(
-                "SELECT payload FROM messages WHERE session_id = ? AND role = 'assistant' "
-                "ORDER BY id DESC LIMIT ?",
-                (session_id, limit),
-            ).fetchall()
+            rows = database.execute(sql, parameters).fetchall()
         groups: list[list[ModelMessage]] = []
         for row in reversed(rows):
             payload = self._decrypt_json(row[0])
             groups.append(
                 ModelMessagesTypeAdapter.validate_python(payload.get("model_messages", []))
             )
+        if limit is None:
+            return [message for group in groups for message in group]
         selected: list[list[ModelMessage]] = []
         used = 0
         for group in reversed(groups):

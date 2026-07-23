@@ -127,7 +127,8 @@ call six bounded function tools: `search_memory`, `record_memory`, `correct_memo
 longitudinal lookup; the other five validate and stage actions without mutating SQLite during the
 model run. After a valid final reply, the transcript and all staged actions are committed in one
 transaction; failure leaves both unchanged. Tool exchanges are not retained in model history, which
-stores only the canonical user/assistant pair.
+stores only the canonical user/assistant pair. Slash commands, rendered command output, and
+transport-level notices are also excluded from the transcript and model history.
 
 A conversation run permits at most eight model requests, six successful tool calls, and two output retries
 within that global budget. All model-written strings and collections have size limits. Accepted
@@ -160,7 +161,11 @@ silently switching to lexical-only ranking. Historical excerpts use the same hyb
 minimum semantic relevance threshold; lexical tokenization adds standard-library character bigrams
 for Chinese, Japanese, and Thai text without spaces. Context is reduced by complete structured items
 and serialized only as valid JSON; model history and consolidation retain complete turns instead of
-slicing messages mid-run.
+slicing messages mid-run. There is no intra-session compaction. Canonical history grows until a
+conservative estimate reaches 80% of the input budget, when the user receives one warning. Before a
+later user turn would exceed that budget, the old session is consolidated with `context_limit` as
+its end reason and the pending message starts a new session. The effective context window is the
+configured model limit capped at 128,000 tokens, with 10% always reserved for model output.
 
 ## Memory model
 
@@ -168,8 +173,8 @@ Memory is layered so that "remember everything" does not mean sending the entire
 model on every turn.
 
 - `Message`: complete encrypted user/assistant archive retained until deletion.
-- `Session`: time-bounded episode with summary, themes, interventions, user response, and open
-  questions.
+- `Session`: time- or context-bounded episode with summary, themes, interventions, user response,
+  open questions, and an explicit end reason.
 - `MemoryItem`: a durable fact, preference, consequential event, pattern, or hypothesis with
   provenance and timestamps; a turn may write at most two.
 - `CaseFormulation`: an evidence map that derives concerns, triggers, thoughts, behavior, coping,
@@ -192,7 +197,8 @@ Memory states:
 
 The complete archive is retained until the user deletes it. Corrections and forgotten items must be
 removed from derived formulation and summaries and suppressed from future retrieval. Current-session
-model history is bounded; long-term continuity comes from structured context and relevant excerpts.
+model history retains every complete canonical turn until the context boundary; long-term continuity
+across the resulting sessions comes from structured context and relevant excerpts.
 When generated derived text paraphrases corrected or forgotten evidence, the overlapping derived
 field is conservatively invalidated instead of risking stale personal information returning.
 Explicit corrections from natural conversation target an existing claim ID, retain the old wording
@@ -213,8 +219,8 @@ Primary commands:
 
 ```text
 thera setup
-thera chat --model <provider:model> --locale it-IT|en-US
-thera telegram --model <provider:model> --locale it-IT|en-US --allowed-user-id <numeric-id>
+thera chat --model <provider:model> --locale it-IT|en-US --context-window-tokens <16000..128000>
+thera telegram --model <provider:model> --locale it-IT|en-US --allowed-user-id <numeric-id> --context-window-tokens <16000..128000>
 thera telegram-service install
 thera telegram-service status
 thera telegram-service restart
@@ -248,6 +254,12 @@ inference, `install` downloads or repairs it, runs the same inference smoke test
 existing encrypted app configuration, and `remove` deletes only that revision from the shared cache
 after confirmation. Removing the derived model files does not delete encrypted conversations or
 structured memory.
+
+Setup stores a conservative context-window limit for the selected conversation model. Known remote
+presets use their documented limit subject to the application-wide 128,000-token cap. Ollama models
+are inspected through `/api/show`; an unknown or custom model defaults to that cap and can be
+overridden downward per process with `--context-window-tokens`. An override can never exceed the
+detected model limit. Models below the 16,000-token supported minimum are rejected.
 
 `thera setup` is the normal first-run path. Questionary arrow-key menus select a supported provider,
 current documented model preset, locale, Telegram, and confirmation choices. ChatGPT uses device-code
@@ -292,6 +304,10 @@ Interactive chat commands:
 
 `/quit` only leaves the process. It does not close the therapeutic session. A later message closes
 and consolidates the previous session if at least eight hours elapsed. `/end` closes it immediately.
+When the active history approaches its context boundary, a warning is printed without archiving it.
+The next over-budget message closes and consolidates the old session, starts a new one, and is
+processed there. Commands, their output, and these lifecycle notices never enter conversation
+history.
 
 Telegram normally reads its token and user ID from the encrypted configuration written by `setup`.
 The user never needs to know or type that ID: setup validates the bot token, creates a random
@@ -312,11 +328,13 @@ show the agent identity, active session, bounded paginated structured state, evi
 flow, and limitations. `/start`, `/help`, and `/end` manage consent, guidance, and the conversational
 session. After each normal reply, the bot reports any durable memory, focus, or intervention changes
 committed for that turn. Correcting or forgetting memory, auth, export, and deletion remain local CLI
-operations. Internal prompts, secrets, and private model reasoning are never exposed. Incoming text
-and outgoing chunks stay below Telegram's message limit and use plain text without a parse mode. The
-encrypted update offset survives restarts. A crash between model state commit and offset persistence
-can still cause one update to be processed again; full durable inbox idempotency is deferred until
-`ChatSession` can atomically accept an external idempotency key.
+operations. Command messages, rendered command output, context warnings, and rollover notices are
+transport-only and are not archived or sent back to the conversation model. Internal prompts,
+secrets, and private model reasoning are never exposed. Incoming text and outgoing chunks stay below
+Telegram's message limit and use plain text without a parse mode. The encrypted update offset
+survives restarts. A crash between model state commit and offset persistence can still cause one
+update to be processed again; full durable inbox idempotency is deferred until `ChatSession` can
+atomically accept an external idempotency key.
 
 `thera telegram-service install` validates the saved configuration and starts the listener without
 putting secrets in process arguments. It writes a mode-`0600` LaunchAgent in
@@ -441,7 +459,11 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - User correction wins over prior inference and no superseded wording returns via derived context.
 - Selective forgetting and full deletion work; sensitive plaintext is absent from SQLite.
 - Eight-hour segmentation, `/end`, interrupted consolidation, and session resumption preserve data.
-- Context stays bounded with hundreds of sessions.
+- Context stays bounded with hundreds of sessions; history is not truncated after an arbitrary turn
+  count, emits one warning near capacity, and rolls over before exceeding the per-model limit capped
+  at 128,000 tokens while preserving a 10% output reserve.
+- Slash commands, rendered command output, and lifecycle notices never enter the archive or model
+  history.
 - Semantic retrieval ranks meaning-equivalent claims, archive excerpts, and interventions across the
   evaluated Latin, Arabic, Devanagari, Han, Japanese, Thai, and Cyrillic scripts without weakening
   evidence, encryption, correction, or forgetting contracts; setup fails if the model is unavailable.
@@ -472,7 +494,9 @@ verify localized behavior or multilingual retrieval.
 
 Longitudinal tests must cover retrieval after several months, encrypted persistence across process
 restart, evidence provenance, fact/hypothesis separation, correction precedence, selective
-forgetting, semantic reindexing and fail-closed behavior, and hard context bounds. A separate `live`
+forgetting, semantic reindexing and fail-closed behavior, complete active-session history beyond ten
+turns, warning and automatic rollover at hard context bounds, and command/output separation. A
+separate `live`
 test exercises the same high-level path
 against a real OpenAI model. It is skipped unless explicitly enabled:
 
