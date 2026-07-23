@@ -17,8 +17,8 @@ uv build
 
 Code, documentation, prompts, protocol content, tests, and test fixtures are written in English.
 Use another language in tests only when the case explicitly verifies localization or multilingual
-behavior. Runtime behavior and tests should preserve Italian and English support. Never commit
-credentials, real conversations, or other sensitive personal data.
+behavior. Agent conversation should preserve Italian and English support; static application
+interfaces remain English. Never commit credentials, real conversations, or other sensitive data.
 
 Protocol changes must update their manifest, hashes, references, and evaluation cases. Use original
 summaries and abstractions; do not copy therapeutic source material unless its license explicitly

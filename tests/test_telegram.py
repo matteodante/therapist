@@ -15,7 +15,7 @@ class FakeBot:
         self.deleted_webhook = False
         self.commands_set = False
         self.typing: list[int] = []
-        self.interface: tuple[int, str] | None = None
+        self.interface: int | None = None
 
     def get_me(self) -> dict[str, str]:
         return {"username": "test_therapist_bot"}
@@ -23,9 +23,9 @@ class FakeBot:
     def delete_webhook(self) -> None:
         self.deleted_webhook = True
 
-    def configure_interface(self, chat_id: int, locale: str) -> None:
+    def configure_interface(self, chat_id: int) -> None:
         self.commands_set = True
-        self.interface = (chat_id, locale)
+        self.interface = chat_id
 
     def get_updates(self, offset: int | None, timeout: int = 30) -> list[dict[str, Any]]:
         try:
@@ -68,7 +68,7 @@ def private_update(update_id: int, user_id: int, text: str) -> dict[str, Any]:
 def test_channel_ignores_groups_and_users_outside_allowlist(tmp_path: Path) -> None:
     bot = FakeBot()
     session = FakeSession()
-    channel = TelegramChannel(bot, session, MemoryStore(tmp_path), 42, "en-US")  # type: ignore[arg-type]
+    channel = TelegramChannel(bot, session, MemoryStore(tmp_path), 42)  # type: ignore[arg-type]
     group = private_update(1, 42, "secret")
     group["message"]["chat"]["type"] = "group"
 
@@ -81,7 +81,7 @@ def test_channel_ignores_groups_and_users_outside_allowlist(tmp_path: Path) -> N
 def test_channel_explains_unsupported_media_without_model(tmp_path: Path) -> None:
     bot = FakeBot()
     session = FakeSession()
-    channel = TelegramChannel(bot, session, MemoryStore(tmp_path), 42, "en-US")  # type: ignore[arg-type]
+    channel = TelegramChannel(bot, session, MemoryStore(tmp_path), 42)  # type: ignore[arg-type]
     update = private_update(1, 42, "placeholder")
     del update["message"]["text"]
     update["message"]["photo"] = [{"file_id": "opaque"}]
@@ -102,7 +102,7 @@ def test_channel_requires_separate_consent_then_uses_shared_session(
     store_state = store.load_app_state()
     store_state.consent_version = "alpha-1"
     store.save_app_state(store_state)
-    channel = TelegramChannel(bot, session, store, 42, "en-US")  # type: ignore[arg-type]
+    channel = TelegramChannel(bot, session, store, 42)  # type: ignore[arg-type]
 
     channel.process_update(private_update(1, 42, "Hello"))
     assert "/consent I UNDERSTAND" in bot.messages[-1][1]
@@ -127,8 +127,7 @@ def test_run_persists_update_watermark_after_dispatch(tmp_path: Path) -> None:
         bot,
         FakeSession(),
         MemoryStore(tmp_path),
-        42,
-        "en-US",  # type: ignore[arg-type]
+        42,  # type: ignore[arg-type]
     )
 
     with pytest.raises(KeyboardInterrupt):
@@ -136,7 +135,7 @@ def test_run_persists_update_watermark_after_dispatch(tmp_path: Path) -> None:
 
     assert bot.deleted_webhook is True
     assert bot.commands_set is True
-    assert bot.interface == (42, "en-US")
+    assert bot.interface == 42
     assert len(bot.messages) == 1
     assert channel.store.load_app_state().telegram_update_offset == 8
 
@@ -178,7 +177,7 @@ def test_transparency_commands_show_status_memory_case_and_privacy(
     formulation.presenting_concerns = [item.content]
     formulation.evidence = {"presenting_concerns": [item.id]}
     store.save_formulation(formulation)
-    channel = TelegramChannel(bot, session, store, 42, "en-US")  # type: ignore[arg-type]
+    channel = TelegramChannel(bot, session, store, 42)  # type: ignore[arg-type]
 
     for update_id, command in enumerate(("/status", "/memory", "/case", "/privacy"), start=1):
         assert channel.process_update(private_update(update_id, 42, command)) is True
@@ -212,7 +211,7 @@ def test_memory_command_is_paginated(tmp_path: Path) -> None:
             message_id,
             evidence_text=f"fact {index}",
         )
-    channel = TelegramChannel(bot, FakeSession(), store, 42, "en-US")  # type: ignore[arg-type]
+    channel = TelegramChannel(bot, FakeSession(), store, 42)  # type: ignore[arg-type]
 
     channel.process_update(private_update(1, 42, "/memory 2"))
 
@@ -244,7 +243,7 @@ def test_normal_turn_discloses_committed_memory_change(tmp_path: Path) -> None:
             )
             return SimpleNamespace(text="Understood.")
 
-    channel = TelegramChannel(bot, RecordingSession(), store, 42, "en-US")  # type: ignore[arg-type]
+    channel = TelegramChannel(bot, RecordingSession(), store, 42)  # type: ignore[arg-type]
 
     channel.process_update(private_update(1, 42, "I work from home"))
 
@@ -264,7 +263,7 @@ def test_bot_configures_commands_only_for_allowlisted_chat(
         lambda method, payload: calls.append((method, payload)),
     )
 
-    bot.configure_interface(42, "en-US")
+    bot.configure_interface(42)
 
     assert calls[0] == ("deleteMyCommands", {})
     commands = calls[1][1]

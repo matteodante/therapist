@@ -155,9 +155,9 @@ weeks and publishes an Italian translation.
 
 Keep local encrypted retrieval, but attach bounded encrypted topic/alias keys to evidence-bound
 claims and intervention records. Rank claim matches, unresolved interventions, recent sessions,
-then raw lexical excerpts. This fixes cases such as `capo`/`responsabile` or
-`avoidance`/`rimandare` without introducing embeddings. Test bilingual synonym queries, conflicting
-claims, old-but-relevant intervention outcomes, and the existing context-size ceiling.
+then raw lexical excerpts. This fixes cross-language synonym cases without introducing embeddings.
+Test bilingual synonym queries, conflicting claims, old-but-relevant intervention outcomes, and the
+existing context-size ceiling.
 
 ### Version the case formulation
 

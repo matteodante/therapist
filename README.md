@@ -2,7 +2,8 @@
 
 Therapist is an experimental, self-hosted AI conversation agent focused on careful listening,
 longitudinal memory, collaborative case formulation, and appropriate therapeutic techniques.
-It supports Italian and English through a terminal chat and a private Telegram bot.
+Agent conversation supports Italian and English through a terminal chat and a private Telegram bot;
+the application interface, consent notices, commands, and documentation are English.
 
 > [!WARNING]
 > Therapist is an AI, not a psychologist, psychotherapist, medical device, or emergency service.

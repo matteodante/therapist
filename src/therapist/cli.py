@@ -221,7 +221,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 2
         session = ChatSession(model, pack, store, locale)
         if args.command == "chat":
-            return _chat(session, store, locale)
+            return _chat(session, store)
         token_payload = store.load_secret(TELEGRAM_SECRET)
         token = token_payload.decode() if token_payload else ""
         if not token:
@@ -232,7 +232,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Telegram is not configured. Run `thera setup`.")
             return 2
         try:
-            TelegramChannel(TelegramBot(token), session, store, allowed_user_id, locale).run()
+            TelegramChannel(TelegramBot(token), session, store, allowed_user_id).run()
         except TelegramError as error:
             print(f"Telegram startup error: {error}")
             return 2
@@ -334,10 +334,10 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
             questionary.select(
                 "Conversation language",
                 choices=[
-                    questionary.Choice("Italiano", value="it-IT"),
+                    questionary.Choice("Italian", value="it-IT"),
                     questionary.Choice("English", value="en-US"),
                 ],
-                default=state.default_locale or "it-IT",
+                default=state.default_locale or "en-US",
             )
         )
 
@@ -793,16 +793,13 @@ def _memory(args: argparse.Namespace, store: MemoryStore) -> int:
     return 0
 
 
-def _chat(session: ChatSession, store: MemoryStore, locale: str) -> int:
+def _chat(session: ChatSession, store: MemoryStore) -> int:
     state = store.load_app_state()
-    consent = "I UNDERSTAND" if locale == "en-US" else "CAPISCO"
+    consent = "I UNDERSTAND"
     if state.consent_version != "alpha-1":
         notice = (
             "I am an experimental AI, not a therapist or emergency service. "
             "A remote model provider receives your messages when configured."
-            if locale == "en-US"
-            else "Sono un'AI sperimentale, non un terapeuta o un servizio di emergenza. "
-            "Se configuri un provider remoto, quel provider riceve i tuoi messaggi."
         )
         print(notice)
         if input(f"Type {consent} to continue: ").strip() != consent:

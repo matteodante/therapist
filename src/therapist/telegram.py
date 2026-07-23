@@ -45,18 +45,17 @@ class TelegramBot:
     def delete_webhook(self) -> None:
         self._call("deleteWebhook", {"drop_pending_updates": False})
 
-    def configure_interface(self, chat_id: int, locale: str) -> None:
-        italian = locale == "it-IT"
+    def configure_interface(self, chat_id: int) -> None:
         commands = [
-            ("start", "Informativa e consenso" if italian else "Notice and consent"),
-            ("help", "Guida completa" if italian else "Complete guide"),
-            ("status", "Stato, sessione e archivio" if italian else "Agent and archive status"),
-            ("case", "Formulazione condivisa" if italian else "Shared formulation"),
-            ("memory", "Memoria strutturata" if italian else "Structured memory"),
-            ("sessions", "Sessioni e riepiloghi" if italian else "Sessions and summaries"),
-            ("interventions", "Interventi registrati" if italian else "Recorded interventions"),
-            ("privacy", "Dati, provider e limiti" if italian else "Data, providers and limits"),
-            ("end", "Chiudi la sessione" if italian else "Close the session"),
+            ("start", "Notice and consent"),
+            ("help", "Complete guide"),
+            ("status", "Agent and archive status"),
+            ("case", "Shared formulation"),
+            ("memory", "Structured memory"),
+            ("sessions", "Sessions and summaries"),
+            ("interventions", "Recorded interventions"),
+            ("privacy", "Data, providers and limits"),
+            ("end", "Close the session"),
         ]
         self._call("deleteMyCommands", {})
         self._call(
@@ -72,13 +71,8 @@ class TelegramBot:
         self._call(
             "setMyDescription",
             {
-                "description": (
-                    "AI sperimentale privata con memoria locale cifrata. "
-                    "Non è terapia, diagnosi, monitoraggio umano o un servizio di emergenza."
-                    if italian
-                    else "Private experimental AI with encrypted local memory. "
-                    "Not therapy, diagnosis, human monitoring, or an emergency service."
-                )
+                "description": "Private experimental AI with encrypted local memory. "
+                "Not therapy, diagnosis, human monitoring, or an emergency service."
             },
         )
 
@@ -143,12 +137,11 @@ class TelegramChannel:
     session: ChatSession
     store: MemoryStore
     allowed_user_id: int
-    locale: str
 
     def run(self) -> None:
         identity = self.bot.get_me()
         self.bot.delete_webhook()
-        self.bot.configure_interface(self.allowed_user_id, self.locale)
+        self.bot.configure_interface(self.allowed_user_id)
         username = identity.get("username", "unknown")
         print(f"Telegram bot @{username} is listening. Press Ctrl-C to stop.")
         offset = self.store.load_app_state().telegram_update_offset
@@ -210,7 +203,7 @@ class TelegramChannel:
             )
             return True
 
-        consent = "I UNDERSTAND" if self.locale == "en-US" else "CAPISCO"
+        consent = "I UNDERSTAND"
         if state.telegram_consent_version != CONSENT_VERSION:
             if text == f"/consent {consent}":
                 state.telegram_consent_version = CONSENT_VERSION
@@ -240,21 +233,6 @@ class TelegramChannel:
 
     def _command_response(self, command: str, argument: str | None) -> str | None:
         if command == "/help":
-            if self.locale == "it-IT":
-                return (
-                    "CONVERSAZIONE\n"
-                    "/start — identità, informativa e consenso\n"
-                    "/status — stato agente, sessione e conteggi\n"
-                    "/end — chiudi e riepiloga la sessione\n\n"
-                    "TRASPARENZA\n"
-                    "/case — formulazione e prove collegate\n"
-                    "/memory [pagina] — fatti e ipotesi attivi\n"
-                    "/sessions [pagina|ID] — riepiloghi delle sessioni\n"
-                    "/interventions [pagina] — interventi e risultati\n"
-                    "/privacy — flusso dei dati e limiti\n\n"
-                    "Correzione, oblio, export, cancellazione e autenticazione "
-                    "restano nella CLI locale per sicurezza."
-                )
             return (
                 "CONVERSATION\n"
                 "/start — identity, notice, and consent\n"
@@ -283,12 +261,6 @@ class TelegramChannel:
             return self._privacy()
         if command == "/end":
             closed = self.session.end()
-            if self.locale == "it-IT":
-                return (
-                    "Nessuna sessione attiva."
-                    if closed is None
-                    else "Sessione chiusa; trascrizione conservata."
-                )
             return (
                 "No active session." if closed is None else "Session closed; transcript preserved."
             )
@@ -302,25 +274,6 @@ class TelegramChannel:
         completed_sessions = sum(item.ended_at is not None for item in sessions)
         interventions = self.store.list_interventions()
         formulation = self.store.load_formulation()
-        if self.locale == "it-IT":
-            session_status = (
-                f"attiva dal {_date(session.started_at)} · ID {session.id}"
-                if session
-                else "nessuna sessione attiva"
-            )
-            return (
-                "STATO\n"
-                "Identità: AI sperimentale, senza monitoraggio umano\n"
-                "Canale: chat privata Telegram con utente autorizzato\n"
-                f"Modello: {state.default_model or 'non configurato'}\n"
-                f"Sessione: {session_status}\n"
-                f"Memoria attiva: {len(memories)} elementi\n"
-                f"Sessioni: {len(sessions)} ({completed_sessions} chiuse)\n"
-                f"Interventi registrati: {len(interventions)}\n"
-                f"Focus attuale: {formulation.current_focus or 'non definito'}\n"
-                "Memoria semantica: "
-                f"{'locale e cifrata' if state.embedding_model else 'non configurata'}"
-            )
         session_status = (
             f"active since {_date(session.started_at)} · ID {session.id}"
             if session
@@ -342,102 +295,57 @@ class TelegramChannel:
 
     def _case(self) -> str:
         formulation = self.store.load_formulation()
-        labels = (
-            {
-                "presenting_concerns": "Difficoltà",
-                "emotions_and_triggers": "Emozioni e trigger",
-                "thoughts_and_behaviors": "Pensieri e comportamenti",
-                "coping_strategies": "Strategie di coping",
-                "relationship_patterns": "Relazioni",
-                "maintaining_factors": "Fattori di mantenimento",
-                "strengths_and_protective_factors": "Risorse",
-                "course_and_duration": "Decorso",
-                "functioning_impact": "Impatto",
-                "user_explanation": "Spiegazione dell'utente",
-                "prior_helpful_or_harmful_support": "Supporti utili o dannosi",
-                "preferred_help": "Preferenze",
-                "open_hypotheses": "Ipotesi aperte",
-            }
-            if self.locale == "it-IT"
-            else {
-                "presenting_concerns": "Concerns",
-                "emotions_and_triggers": "Emotions and triggers",
-                "thoughts_and_behaviors": "Thoughts and behaviors",
-                "coping_strategies": "Coping",
-                "relationship_patterns": "Relationships",
-                "maintaining_factors": "Maintaining factors",
-                "strengths_and_protective_factors": "Strengths",
-                "course_and_duration": "Course",
-                "functioning_impact": "Impact",
-                "user_explanation": "User explanation",
-                "prior_helpful_or_harmful_support": "Helpful or harmful support",
-                "preferred_help": "Preferences",
-                "open_hypotheses": "Open hypotheses",
-            }
-        )
-        lines = ["FORMULAZIONE CONDIVISA" if self.locale == "it-IT" else "SHARED FORMULATION"]
+        labels = {
+            "presenting_concerns": "Concerns",
+            "emotions_and_triggers": "Emotions and triggers",
+            "thoughts_and_behaviors": "Thoughts and behaviors",
+            "coping_strategies": "Coping",
+            "relationship_patterns": "Relationships",
+            "maintaining_factors": "Maintaining factors",
+            "strengths_and_protective_factors": "Strengths",
+            "course_and_duration": "Course",
+            "functioning_impact": "Impact",
+            "user_explanation": "User explanation",
+            "prior_helpful_or_harmful_support": "Helpful or harmful support",
+            "preferred_help": "Preferences",
+            "open_hypotheses": "Open hypotheses",
+        }
+        lines = ["SHARED FORMULATION"]
         if formulation.current_focus:
             lines.append(f"Focus: {formulation.current_focus}")
         if formulation.proposed_focus:
-            lines.append(
-                f"Focus proposto: {formulation.proposed_focus}"
-                if self.locale == "it-IT"
-                else f"Proposed focus: {formulation.proposed_focus}"
-            )
+            lines.append(f"Proposed focus: {formulation.proposed_focus}")
         for field, label in labels.items():
             values = getattr(formulation, field)
             if not values:
                 continue
             lines.append(f"\n{label}")
             evidence = formulation.evidence.get(field, [])
-            evidence_label = "prova" if self.locale == "it-IT" else "evidence"
             lines.extend(
                 f"• {value}"
-                + (f" [{evidence_label}: {evidence[index]}]" if index < len(evidence) else "")
+                + (f" [evidence: {evidence[index]}]" if index < len(evidence) else "")
                 for index, value in enumerate(values)
             )
         if len(lines) == 1:
-            lines.append(
-                "Non è ancora stata costruita."
-                if self.locale == "it-IT"
-                else "It has not been built yet."
-            )
-        lines.append(
-            "\nLe interpretazioni restano ipotesi finché non le confermi."
-            if self.locale == "it-IT"
-            else "\nInterpretations remain hypotheses until you confirm them."
-        )
+            lines.append("It has not been built yet.")
+        lines.append("\nInterpretations remain hypotheses until you confirm them.")
         return "\n".join(lines)
 
     def _memory(self, argument: str | None) -> str:
         items = self.store.list_memory()
         page, selected, pages = _page(items, argument, MEMORY_PAGE_SIZE)
-        title = (
-            f"MEMORIA ATTIVA · pagina {page}/{pages}"
-            if self.locale == "it-IT"
-            else f"ACTIVE MEMORY · page {page}/{pages}"
-        )
+        title = f"ACTIVE MEMORY · page {page}/{pages}"
         if not selected:
-            return title + (
-                "\nNessun elemento attivo." if self.locale == "it-IT" else "\nNo active items."
-            )
+            return title + "\nNo active items."
         lines = [title]
         for item in selected:
             evidence = ", ".join(str(value) for value in item.evidence_message_ids)
             lines.append(
-                f"\n{item.id} · {_memory_label(item.kind.value, self.locale)} · "
-                f"{_status_label(item.status.value, self.locale)}\n{item.content}\n"
-                + (
-                    f"Prove: messaggi {evidence} · aggiornato {_date(item.last_seen_at)}"
-                    if self.locale == "it-IT"
-                    else f"Evidence: messages {evidence} · updated {_date(item.last_seen_at)}"
-                )
+                f"\n{item.id} · {_memory_label(item.kind.value)} · "
+                f"{_status_label(item.status.value)}\n{item.content}\n"
+                + f"Evidence: messages {evidence} · updated {_date(item.last_seen_at)}"
             )
-        lines.append(
-            "\nGli elementi dimenticati sono esclusi. Usa /memory N per cambiare pagina."
-            if self.locale == "it-IT"
-            else "\nForgotten items are excluded. Use /memory N to change page."
-        )
+        lines.append("\nForgotten items are excluded. Use /memory N to change page.")
         return "\n".join(lines)
 
     def _sessions(self, argument: str | None) -> str:
@@ -447,55 +355,25 @@ class TelegramChannel:
             if found is not None or not argument.isdecimal():
                 return self._session_detail(found)
         page, selected, pages = _page(sessions, argument, SESSION_PAGE_SIZE)
-        title = (
-            f"SESSIONI · pagina {page}/{pages}"
-            if self.locale == "it-IT"
-            else f"SESSIONS · page {page}/{pages}"
-        )
+        title = f"SESSIONS · page {page}/{pages}"
         if not selected:
-            return title + ("\nNessuna sessione." if self.locale == "it-IT" else "\nNo sessions.")
+            return title + "\nNo sessions."
         lines = [title]
         for item in selected:
-            state = (
-                "attiva"
-                if item.ended_at is None and self.locale == "it-IT"
-                else "active"
-                if item.ended_at is None
-                else "chiusa"
-                if self.locale == "it-IT"
-                else "closed"
-            )
-            summary = item.summary or (
-                "riepilogo non ancora disponibile"
-                if self.locale == "it-IT"
-                else "summary not available yet"
-            )
+            state = "active" if item.ended_at is None else "closed"
+            summary = item.summary or "summary not available yet"
             lines.append(f"\n{item.id} · {_date(item.started_at)} · {state}\n{summary}")
-        lines.append(
-            "\nUsa /sessions N per una pagina o /sessions ID per i dettagli."
-            if self.locale == "it-IT"
-            else "\nUse /sessions N for a page or /sessions ID for details."
-        )
+        lines.append("\nUse /sessions N for a page or /sessions ID for details.")
         return "\n".join(lines)
 
     def _session_detail(self, session: Any) -> str:
         if session is None:
-            return "Sessione non trovata." if self.locale == "it-IT" else "Session not found."
-        labels = (
-            ("Riepilogo", "Temi", "Interventi", "Risposta", "Questioni aperte")
-            if self.locale == "it-IT"
-            else ("Summary", "Themes", "Interventions", "Response", "Open questions")
-        )
+            return "Session not found."
+        labels = ("Summary", "Themes", "Interventions", "Response", "Open questions")
         lines = [
-            f"SESSIONE {session.id}" if self.locale == "it-IT" else f"SESSION {session.id}",
+            f"SESSION {session.id}",
             f"{_date(session.started_at)} → "
-            + (
-                _date(session.ended_at)
-                if session.ended_at
-                else "attiva"
-                if self.locale == "it-IT"
-                else "active"
-            ),
+            + (_date(session.ended_at) if session.ended_at else "active"),
         ]
         values = (
             session.summary,
@@ -511,82 +389,37 @@ class TelegramChannel:
                 )
                 lines.append(f"\n{label}\n{content}")
         if session.consolidation_error:
-            lines.append(
-                f"\nConsolidamento non riuscito: {session.consolidation_error}"
-                if self.locale == "it-IT"
-                else f"\nConsolidation failed: {session.consolidation_error}"
-            )
+            lines.append(f"\nConsolidation failed: {session.consolidation_error}")
         return "\n".join(lines)
 
     def _interventions(self, argument: str | None) -> str:
         items = self.store.list_interventions()
         page, selected, pages = _page(items, argument, INTERVENTION_PAGE_SIZE)
-        title = (
-            f"INTERVENTI · pagina {page}/{pages}"
-            if self.locale == "it-IT"
-            else f"INTERVENTIONS · page {page}/{pages}"
-        )
+        title = f"INTERVENTIONS · page {page}/{pages}"
         if not selected:
-            return title + (
-                "\nNessun intervento registrato."
-                if self.locale == "it-IT"
-                else "\nNo recorded interventions."
-            )
+            return title + "\nNo recorded interventions."
         lines = [title]
         for item in selected:
             details = [
-                f"\n{item.id} · {_status_label(item.state.value, self.locale)}",
-                f"{'Metodo' if self.locale == 'it-IT' else 'Method'}: {item.skill}",
+                f"\n{item.id} · {_status_label(item.state.value)}",
+                f"Method: {item.skill}",
                 item.description,
             ]
             if item.prediction:
-                details.append(
-                    f"Previsione: {item.prediction}"
-                    if self.locale == "it-IT"
-                    else f"Prediction: {item.prediction}"
-                )
+                details.append(f"Prediction: {item.prediction}")
             if item.outcome:
-                details.append(
-                    f"Esito: {item.outcome}"
-                    if self.locale == "it-IT"
-                    else f"Outcome: {item.outcome}"
-                )
+                details.append(f"Outcome: {item.outcome}")
             if item.user_appraisal:
-                details.append(
-                    f"Valutazione: {item.user_appraisal}"
-                    if self.locale == "it-IT"
-                    else f"Appraisal: {item.user_appraisal}"
-                )
+                details.append(f"Appraisal: {item.user_appraisal}")
             if item.linked_memory_ids:
-                details.append(
-                    ("Memorie collegate: " if self.locale == "it-IT" else "Linked memory: ")
-                    + ", ".join(item.linked_memory_ids)
-                )
+                details.append("Linked memory: " + ", ".join(item.linked_memory_ids))
             if item.follow_up_at:
                 details.append(f"Follow-up: {item.follow_up_at}")
             lines.extend(details)
-        lines.append(
-            "\nUsa /interventions N per cambiare pagina."
-            if self.locale == "it-IT"
-            else "\nUse /interventions N to change page."
-        )
+        lines.append("\nUse /interventions N to change page.")
         return "\n".join(lines)
 
     def _privacy(self) -> str:
-        if self.locale == "it-IT":
-            return (
-                "PRIVACY E TRASPARENZA\n"
-                "• Telegram riceve messaggi, risposte e dati che chiedi di visualizzare qui.\n"
-                "• Il provider del modello riceve il messaggio e solo il contesto selezionato.\n"
-                "• Archivio, memoria strutturata e indice semantico restano cifrati "
-                "sul computer host.\n"
-                "• L'indice semantico usa un modello locale; non stabilisce fatti o prove.\n"
-                "• Non c'è una persona che legge o monitora la chat.\n"
-                "• Il bot non può contattare soccorsi, localizzarti o agire fuori dalla chat.\n"
-                "• Dopo ogni risposta segnala le eventuali modifiche durevoli registrate.\n"
-                "• Prompt interni, token e ragionamento privato non vengono mostrati.\n\n"
-                "Export, correzione, oblio e cancellazione completa: usa la CLI locale."
-            )
         return (
             "PRIVACY AND TRANSPARENCY\n"
             "• Telegram receives messages, replies, and data you ask to view here.\n"
@@ -615,57 +448,25 @@ class TelegramChannel:
         for item in self.store.list_memory():
             old = old_memory.get(item.id)
             if old is None:
-                label = _memory_label(item.kind.value, self.locale)
-                changes.append(
-                    f"{label} salvato: {item.content} [{item.id}]"
-                    if self.locale == "it-IT"
-                    else f"Saved {label}: {item.content} [{item.id}]"
-                )
+                label = _memory_label(item.kind.value)
+                changes.append(f"Saved {label}: {item.content} [{item.id}]")
             elif old.content != item.content or old.status != item.status:
-                changes.append(
-                    f"Memoria aggiornata: {item.content} [{item.id}]"
-                    if self.locale == "it-IT"
-                    else f"Memory updated: {item.content} [{item.id}]"
-                )
+                changes.append(f"Memory updated: {item.content} [{item.id}]")
         for item in self.store.list_interventions():
             old = old_interventions.get(item.id)
             if old is None or old.model_dump() != item.model_dump():
-                status = _status_label(item.state.value, self.locale)
-                changes.append(
-                    f"Intervento {status}: {item.description} [{item.id}]"
-                    if self.locale == "it-IT"
-                    else f"Intervention {status}: {item.description} [{item.id}]"
-                )
+                status = _status_label(item.state.value)
+                changes.append(f"Intervention {status}: {item.description} [{item.id}]")
         formulation = self.store.load_formulation().model_dump()
         for field in ("current_focus", "proposed_focus"):
             if old_formulation.get(field) != formulation.get(field) and formulation.get(field):
-                label = (
-                    "Focus accettato"
-                    if field == "current_focus" and self.locale == "it-IT"
-                    else "Focus proposto"
-                    if self.locale == "it-IT"
-                    else "Accepted focus"
-                    if field == "current_focus"
-                    else "Proposed focus"
-                )
+                label = "Accepted focus" if field == "current_focus" else "Proposed focus"
                 changes.append(f"{label}: {formulation[field]}")
         if not changes:
             return None
-        heading = "REGISTRO DI QUESTO TURNO" if self.locale == "it-IT" else "THIS TURN'S RECORD"
-        return heading + "\n" + "\n".join(f"• {change}" for change in changes)
+        return "THIS TURN'S RECORD\n" + "\n".join(f"• {change}" for change in changes)
 
     def _consent_notice(self, consented: bool) -> str:
-        if self.locale == "it-IT":
-            notice = (
-                "Sono un'AI sperimentale, non un terapeuta o un servizio di emergenza. "
-                "Telegram riceve messaggi, risposte e i dati che scegli di visualizzare qui; "
-                "l'eventuale provider remoto riceve messaggi e contesto selezionato. "
-            )
-            return notice + (
-                "Il consenso è già registrato: puoi scrivermi."
-                if consented
-                else "Per continuare scrivi esattamente: /consent CAPISCO"
-            )
         notice = (
             "I am an experimental AI, not a therapist or emergency service. "
             "Telegram receives messages, replies, and data you choose to view here; "
@@ -678,30 +479,18 @@ class TelegramChannel:
         )
 
     def _consent_recorded(self) -> str:
-        if self.locale == "it-IT":
-            return "Consenso registrato. Puoi scrivermi o usare /help."
         return "Consent recorded. You can message me or use /help."
 
     def _message_too_long(self) -> str:
-        if self.locale == "it-IT":
-            return "Il messaggio è troppo lungo. Dividilo in parti più brevi."
         return "That message is too long. Please split it into shorter parts."
 
     def _unsupported_message(self) -> str:
-        if self.locale == "it-IT":
-            return "Posso leggere e archiviare solo testo. Questo contenuto non è stato elaborato."
         return "I can only read and archive text. This content was not processed."
 
     def _unknown_command(self) -> str:
-        return (
-            "Comando sconosciuto. Usa /help."
-            if self.locale == "it-IT"
-            else "Unknown command. Use /help."
-        )
+        return "Unknown command. Use /help."
 
     def _model_error(self) -> str:
-        if self.locale == "it-IT":
-            return "Non sono riuscito a rispondere. Riprova tra poco."
         return "I couldn't respond. Please try again shortly."
 
 
@@ -749,29 +538,29 @@ def _date(value: str) -> str:
     return datetime.fromisoformat(value).astimezone().strftime("%d/%m/%Y %H:%M")
 
 
-def _memory_label(value: str, locale: str) -> str:
+def _memory_label(value: str) -> str:
     labels = {
-        "fact": ("fatto", "fact"),
-        "preference": ("preferenza", "preference"),
-        "event": ("evento", "event"),
-        "pattern": ("schema", "pattern"),
-        "hypothesis": ("ipotesi", "hypothesis"),
+        "fact": "fact",
+        "preference": "preference",
+        "event": "event",
+        "pattern": "pattern",
+        "hypothesis": "hypothesis",
     }
-    return labels.get(value, (value, value))[0 if locale == "it-IT" else 1]
+    return labels.get(value, value)
 
 
-def _status_label(value: str, locale: str) -> str:
+def _status_label(value: str) -> str:
     labels = {
-        "user_confirmed": ("confermato", "confirmed"),
-        "agent_hypothesis": ("da confermare", "unconfirmed"),
-        "user_corrected": ("corretto", "corrected"),
-        "offered": ("proposto", "offered"),
-        "agreed": ("concordato", "agreed"),
-        "tried": ("provato", "tried"),
-        "not_tried": ("non provato", "not tried"),
-        "stopped": ("interrotto", "stopped"),
+        "user_confirmed": "confirmed",
+        "agent_hypothesis": "unconfirmed",
+        "user_corrected": "corrected",
+        "offered": "offered",
+        "agreed": "agreed",
+        "tried": "tried",
+        "not_tried": "not tried",
+        "stopped": "stopped",
     }
-    return labels.get(value, (value, value))[0 if locale == "it-IT" else 1]
+    return labels.get(value, value)
 
 
 def _http_error_description(error: HTTPError) -> str:

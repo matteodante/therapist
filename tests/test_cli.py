@@ -172,7 +172,7 @@ def test_telegram_service_install_uses_saved_configuration(
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
     state.default_model = "test:model"
-    state.default_locale = "it-IT"
+    state.default_locale = "en-US"
     state.embedding_model = DEFAULT_EMBEDDING_MODEL
     state.telegram_allowed_user_id = 42
     store.save_secret("telegram_bot_token", b"secret")
@@ -261,7 +261,7 @@ def test_setup_stops_when_semantic_memory_cannot_be_prepared(
 def test_setup_saves_encrypted_defaults_used_by_telegram(
     tmp_path: Path, monkeypatch: object, capsys: object
 ) -> None:
-    selections = iter(["test", "it-IT", True, True, False])
+    selections = iter(["test", "en-US", True, True, False])
     monkeypatch.setattr("therapist.cli._prepare_semantic_memory", lambda: True)  # type: ignore[attr-defined]
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.select",
@@ -313,7 +313,7 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
     assert state.default_model == "test"
-    assert state.default_locale == "it-IT"
+    assert state.default_locale == "en-US"
     assert state.embedding_model == DEFAULT_EMBEDDING_MODEL
     assert state.telegram_allowed_user_id == 42
     assert store.load_secret("telegram_bot_token") == b"secret-bot-token"
@@ -328,7 +328,7 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
 def test_setup_can_install_telegram_background_service(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:
-    selections = iter(["test", "it-IT", True, True, True])
+    selections = iter(["test", "en-US", True, True, True])
     monkeypatch.setattr("therapist.cli._prepare_semantic_memory", lambda: True)
     monkeypatch.setattr(
         "therapist.cli.questionary.select",
@@ -382,7 +382,7 @@ def test_setup_can_install_telegram_background_service(
 
 
 def test_setup_stores_remote_provider_key_encrypted(tmp_path: Path, monkeypatch: object) -> None:
-    selections = iter(["openai:gpt-5.6-sol", "it-IT", False])
+    selections = iter(["openai:gpt-5.6-sol", "en-US", False])
     monkeypatch.setattr("therapist.cli._prepare_semantic_memory", lambda: True)  # type: ignore[attr-defined]
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.select",

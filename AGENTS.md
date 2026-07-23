@@ -299,7 +299,7 @@ single-use deep link, waits for the matching private `/start` update, displays t
 and asks for confirmation before storing its ID. A phone number cannot be used to look up a Bot API
 user and is neither requested nor stored.
 Startup validates the token, removes any webhook without discarding pending updates, installs the
-allowlisted chat's localized command menu and transparent bot description, then long-polls text
+allowlisted chat's English command menu and transparent bot description, then long-polls text
 messages sequentially. The runtime ignores groups, bots, and every sender except the configured
 numeric user ID. Unsupported media receives a clear text-only notice without model invocation or
 storage. Telegram consent is separate from terminal consent and explains that Telegram receives
@@ -445,8 +445,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - Semantic retrieval ranks meaning-equivalent claims, archive excerpts, and interventions across the
   evaluated Latin, Arabic, Devanagari, Han, Japanese, Thai, and Cyrillic scripts without weakening
   evidence, encryption, correction, or forgetting contracts; setup fails if the model is unavailable.
-- Italian and English golden conversations cover listening, continuity, gentle challenge, technique
-  choice, AI transparency, and refusal to diagnose.
+- English golden conversations cover listening, continuity, gentle challenge, technique choice, AI
+  transparency, and refusal to diagnose; dedicated multilingual tests cover non-English behavior.
 - Possible danger is evaluated from meaning and context rather than keywords; ambiguous situations
   receive a direct safety clarification, while possible immediate danger receives an urgent,
   localized response without diagnosis, scoring, or claims of monitoring.
