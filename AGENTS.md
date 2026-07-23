@@ -262,7 +262,8 @@ with the required local multilingual model. Failure stops setup before creating 
 Successful setup records the exact embedding model in encrypted app state; `chat` and `telegram`
 refuse missing or stale setup state. Provider and Telegram secrets are staged in memory and committed
 with app defaults only after all interactive validation succeeds, so cancellation does not leave a
-partially configured provider.
+partially configured provider. When Telegram is configured, setup asks whether to install and start
+its native per-user background service or task after the encrypted configuration is committed.
 
 After `thera auth login`, omitting `--model` selects `codex:gpt-5.6-sol`. An explicit model can be
 selected with `--model codex:<model-id>`. Access and refresh tokens are encrypted in the same local
@@ -332,10 +333,9 @@ Minimal setup:
    defense in depth.
 2. Run `thera setup`, choose the model and locale, then paste the bot token in the hidden prompt.
 3. Open the one-time `t.me` link printed by setup, press Start, and confirm the detected account.
-4. Run `thera doctor`, then either `thera telegram` in the foreground or
-   `thera telegram-service install` for automatic background startup. Only one poller may use a bot
-   token at a time.
-5. In the private bot chat, enter the exact consent command shown there.
+4. Choose whether setup should install the background service, or run `thera telegram` manually.
+   Only one poller may use a bot token at a time.
+5. Run `thera doctor`, then enter the exact consent command shown in the private bot chat.
 
 `export` returns decrypted user-owned application state, formulation, memory items, sessions, and
 messages. `delete-data` removes all of those records.

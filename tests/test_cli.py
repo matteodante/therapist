@@ -261,7 +261,7 @@ def test_setup_stops_when_semantic_memory_cannot_be_prepared(
 def test_setup_saves_encrypted_defaults_used_by_telegram(
     tmp_path: Path, monkeypatch: object, capsys: object
 ) -> None:
-    selections = iter(["test", "it-IT", True, True])
+    selections = iter(["test", "it-IT", True, True, False])
     monkeypatch.setattr("therapist.cli._prepare_semantic_memory", lambda: True)  # type: ignore[attr-defined]
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.select",
@@ -323,6 +323,62 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     assert main(["--data-dir", str(tmp_path), "telegram"]) == 0
     output = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "Configuration saved securely" in output
+
+
+def test_setup_can_install_telegram_background_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    selections = iter(["test", "it-IT", True, True, True])
+    monkeypatch.setattr("therapist.cli._prepare_semantic_memory", lambda: True)
+    monkeypatch.setattr(
+        "therapist.cli.questionary.select",
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: next(selections)})(),
+    )
+    monkeypatch.setattr(
+        "therapist.cli.questionary.password",
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: "secret-bot-token"})(),
+    )
+    monkeypatch.setattr("therapist.cli.secrets.token_urlsafe", lambda _: "pair-code")
+
+    class PairingBot:
+        def __init__(self, _: str) -> None:
+            pass
+
+        def get_me(self) -> dict[str, str]:
+            return {"username": "test_bot"}
+
+        def delete_webhook(self) -> None:
+            pass
+
+        def get_updates(self, offset: int | None, timeout: int = 30) -> list[dict]:
+            if offset == -1:
+                return []
+            return [
+                {
+                    "update_id": 7,
+                    "message": {
+                        "from": {"id": 42, "first_name": "Test", "is_bot": False},
+                        "chat": {"id": 42, "type": "private"},
+                        "text": "/start pair-code",
+                    },
+                }
+            ]
+
+    installed: list[list[str]] = []
+    executable = tmp_path / "thera"
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    monkeypatch.setattr("therapist.cli.TelegramBot", PairingBot)
+    monkeypatch.setattr("therapist.cli.sys.argv", [str(executable)])
+    monkeypatch.setattr(
+        "therapist.cli.telegram_service.install",
+        lambda command, _: installed.append(command) or "native service",
+    )
+
+    assert main(["--data-dir", str(tmp_path), "setup"]) == 0
+
+    assert installed[0][-1] == "telegram"
+    assert "background service installed and started" in capsys.readouterr().out
 
 
 def test_setup_stores_remote_provider_key_encrypted(tmp_path: Path, monkeypatch: object) -> None:

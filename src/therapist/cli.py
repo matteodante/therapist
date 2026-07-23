@@ -180,7 +180,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
     store = MemoryStore(args.data_dir)
     if args.command == "setup":
-        return _setup(store)
+        return _setup(store, args)
     if args.command == "auth":
         return _auth(args, store)
     if args.command in {"chat", "telegram"}:
@@ -296,19 +296,7 @@ def _telegram_service(args: argparse.Namespace, database_exists: bool) -> int:
         ):
             print("Telegram is not fully configured. Run `thera setup` first.")
             return 2
-        executable = Path(sys.argv[0]).resolve()
-        if not executable.is_file() or not os.access(executable, os.X_OK):
-            print("Cannot locate the `thera` executable. Install the project and try again.")
-            return 2
-        command = [
-            str(executable),
-            "--data-dir",
-            str(args.data_dir.resolve()),
-            "--protocol",
-            str(args.protocol.resolve()),
-            "telegram",
-        ]
-        path = telegram_service.install(command, args.data_dir.resolve())
+        path = _install_telegram_service(args)
         print(f"Telegram background service installed and started: {path}")
         print("Use `thera telegram-service status` to inspect it.")
         return 0
@@ -317,8 +305,26 @@ def _telegram_service(args: argparse.Namespace, database_exists: bool) -> int:
         return 2
 
 
-def _setup(store: MemoryStore) -> int:
+def _install_telegram_service(args: argparse.Namespace) -> Path | str:
+    executable = Path(sys.argv[0]).resolve()
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise telegram_service.TelegramServiceError(
+            "Cannot locate the `thera` executable. Install the project and try again."
+        )
+    command = [
+        str(executable),
+        "--data-dir",
+        str(args.data_dir.resolve()),
+        "--protocol",
+        str(args.protocol.resolve()),
+        "telegram",
+    ]
+    return telegram_service.install(command, args.data_dir.resolve())
+
+
+def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
     state = store.load_app_state()
+    install_background = False
     try:
         model = _select_model(state.default_model)
         provider_secret = _prompt_provider_secret(store, model)
@@ -368,6 +374,16 @@ def _setup(store: MemoryStore) -> int:
             else:
                 user_id = current_id
             state.telegram_allowed_user_id = user_id
+            install_background = _ask(
+                questionary.select(
+                    "Install and start Telegram as a background service?",
+                    choices=[
+                        questionary.Choice("Yes", value=True),
+                        questionary.Choice("No", value=False),
+                    ],
+                    default=False,
+                )
+            )
         else:
             token_payload = None
 
@@ -404,6 +420,14 @@ def _setup(store: MemoryStore) -> int:
     print(f"Configuration saved securely in {store.directory}.")
     telegram = "configured" if _telegram_config(store) else "skipped"
     print(f"Model: {model}; locale: {locale}; Telegram: {telegram}")
+    if install_background:
+        try:
+            path = _install_telegram_service(args)
+        except telegram_service.TelegramServiceError as error:
+            print(f"Telegram service error: {error}")
+            print("Configuration was saved; retry with `thera telegram-service install`.")
+            return 2
+        print(f"Telegram background service installed and started: {path}")
     if model.startswith("codex:") and not load_credential(store):
         print("Next: run `thera auth login` for ChatGPT Codex access.")
     return 0
