@@ -52,7 +52,7 @@ Included in this milestone:
 - encrypted SQLite archive and layered longitudinal memory;
 - automatic session boundaries after eight hours of inactivity and explicit `/end`;
 - an experimental bilingual transdiagnostic behavior pack;
-- a minimal Italian/US explicit-danger fallback;
+- contextual agent instructions for possible danger, including Italian/EU and US resources;
 - offline tests using PydanticAI test models.
 - written, versioned longitudinal-memory scenarios plus an opt-in real-provider test.
 
@@ -68,8 +68,8 @@ Explicitly deferred:
 - formal threat modeling, penetration tests, audits, and certifications.
 
 The alpha retains baseline safeguards already present: transparent AI identity, no clinical claims,
-and emergency resources after an explicit danger disclosure. These are not a validated clinical
-safety system.
+and contextual agent instructions for possible danger and emergency resources. These are not a
+validated clinical safety system.
 
 ## Therapeutic behavior
 
@@ -112,10 +112,7 @@ Behavioral rules:
 User
   |
   v
-CLI or private Telegram -> deterministic explicit-danger fallback -> 112 / 911 / 988
-  |
-  v
-Git-versioned experimental behavior pack
+CLI or private Telegram -> Git-versioned experimental behavior and safety instructions
   |
   v
 PydanticAI tool loop + plain-text reply -> local model or configured remote provider
@@ -124,7 +121,7 @@ PydanticAI tool loop + plain-text reply -> local model or configured remote prov
 Encrypted SQLite archive + structured longitudinal memory
 ```
 
-Use one PydanticAI agent run per normal turn. The agent returns the visible reply as `str` and may
+Use one PydanticAI agent run per conversation turn. The agent returns the visible reply as `str` and may
 call six bounded function tools: `search_memory`, `record_memory`, `correct_memory`,
 `confirm_hypotheses`, `set_focus`, and `record_intervention`. The first is an optional read-only
 longitudinal lookup; the other five validate and stage actions without mutating SQLite during the
@@ -132,7 +129,7 @@ model run. After a valid final reply, the transcript and all staged actions are 
 transaction; failure leaves both unchanged. Tool exchanges are not retained in model history, which
 stores only the canonical user/assistant pair.
 
-A normal run permits at most eight model requests, six successful tool calls, and two output retries
+A conversation run permits at most eight model requests, six successful tool calls, and two output retries
 within that global budget. All model-written strings and collections have size limits. Accepted
 focus, confirmed hypotheses, and agreed or updated interventions require exact supporting text from
 the current user message. The IDs of the last explicitly offered hypothesis and active intervention
@@ -373,7 +370,7 @@ formulation, psychological flexibility and emotional awareness, avoidance and be
 practical problem solving, review/maintenance, and explicit repair after misattunement. The root
 skill routes each turn and permits at most one intervention skill at a time.
 
-The normal turn returns plain text capped at 1,200 characters. Durable changes use validated staged
+Each turn returns plain text capped at 1,200 characters. Durable changes use validated staged
 tools, including a hypothesis offered for confirmation so a later user confirmation promotes that
 exact pending memory item. Questions are optional and normally sparse; naturalness and avoidance of
 interrogation are evaluated at the conversation level. The turn has no `process_stage`,
@@ -416,8 +413,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   or open pull requests unless the user explicitly requests that workflow.
 - Prefer the standard library, native platform behavior, and installed dependencies.
 - Do not add infrastructure or abstractions for deferred milestones.
-- Preserve input validation, encryption, error handling that prevents data loss, and deterministic
-  safety routing.
+- Preserve input validation, encryption, error handling that prevents data loss, and contextual
+  safety instructions.
 - Keep model-generated hypotheses distinct from user-confirmed facts.
 - Keep model context bounded regardless of archive size.
 - Update this file whenever the implementation changes any statement in it.
@@ -450,7 +447,9 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   evidence, encryption, correction, or forgetting contracts; setup fails if the model is unavailable.
 - Italian and English golden conversations cover listening, continuity, gentle challenge, technique
   choice, AI transparency, and refusal to diagnose.
-- An explicit matched danger disclosure bypasses the normal model response.
+- Possible danger is evaluated from meaning and context rather than keywords; ambiguous situations
+  receive a direct safety clarification, while possible immediate danger receives an urgent,
+  localized response without diagnosis, scoring, or claims of monitoring.
 - Telegram rejects unauthorized/non-private input before model invocation, requires channel-specific
   consent, persists its update offset, exposes read-only state with evidence and pagination, reports
   durable turn changes, and keeps privileged memory operations local.

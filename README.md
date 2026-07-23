@@ -13,6 +13,7 @@ It supports Italian and English through a terminal chat and a private Telegram b
 
 - Natural, varied conversation guided by an internal protocol rather than a visible script, without
   mandatory questions, goals, or forms.
+- Contextual agent handling of possible danger without keyword routing, diagnosis, or risk scores.
 - Plain-text agent replies plus six agent-selected memory, focus, and intervention tools.
 - Encrypted SQLite archive, structured memory, and local semantic retrieval across months or years.
 - Visible, correctable facts, hypotheses, case formulation, sessions, and interventions.
@@ -101,7 +102,7 @@ insufficient. The remaining five tools stage validated memory observations, corr
 confirmations, focus changes, or one intervention update. The transcript and staged changes are
 committed atomically only after a successful final reply. Tool exchanges are not retained:
 conversation history contains only the canonical user message and plain-text assistant reply.
-End-of-session consolidation separately uses a structured `SessionReflection`; normal turns do not
+End-of-session consolidation separately uses a structured `SessionReflection`; conversation turns do not
 return process-stage or selected-skill fields. The agent sends only relevant context to the selected
 model provider. Remote providers and Telegram receive the content needed to answer or deliver
 messages. Use `thera export` to inspect your data and `thera delete-data` to remove it.

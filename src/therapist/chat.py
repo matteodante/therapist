@@ -39,7 +39,6 @@ from therapist.memory import (
     valid_intervention_transition,
 )
 from therapist.protocol import ProtocolPack
-from therapist.safety import SafetyController, SafetyState, crisis_message
 
 MAX_CONTEXT_CHARS = 12_000
 MAX_LOOKUP_CHARS = 4_000
@@ -131,7 +130,6 @@ class SessionReflection(BaseModel):
 @dataclass(frozen=True)
 class ChatTurn:
     text: str
-    safety_state: SafetyState
 
 
 class ChatSession:
@@ -148,20 +146,8 @@ class ChatSession:
         self.protocol = protocol
         self.memory = memory
         self.locale = locale
-        self.safety = SafetyController()
 
     def respond(self, text: str, now: datetime | None = None) -> ChatTurn:
-        assessment = self.safety.assess(text, self.locale)
-        if assessment.state is not SafetyState.CLEAR:
-            session = self._session_for_safety(now)
-            reply = crisis_message(assessment, self.locale)
-            messages = [
-                ModelRequest(parts=[UserPromptPart(content=text)]),
-                ModelResponse(parts=[TextPart(content=reply)]),
-            ]
-            self.memory.save_turn(session, text, reply, messages, now)
-            return ChatTurn(reply, assessment.state)
-
         session = self._current_session(now)
         context = self.memory.working_context(text)
         history = self.memory.load_session_history(session.id)
@@ -543,7 +529,7 @@ class ChatSession:
                     )
                     app_state.pending_intervention_id = created.id
             self.memory.save_app_state(app_state)
-        return ChatTurn(reply, SafetyState.CLEAR)
+        return ChatTurn(reply)
 
     def end(self, now: datetime | None = None) -> SessionRecord | None:
         session = self.memory.active_session()
@@ -557,24 +543,6 @@ class ChatSession:
             return self.memory.start_session(now)
         if self.memory.session_expired(session, now):
             self._consolidate(session, datetime.fromisoformat(session.last_activity_at))
-            return self.memory.start_session(now)
-        return session
-
-    def _session_for_safety(self, now: datetime | None) -> SessionRecord:
-        session = self.memory.active_session()
-        if session is None:
-            return self.memory.start_session(now)
-        if self.memory.session_expired(session, now):
-            # Never introduce a model call before deterministic crisis routing.
-            formulation = self.memory.load_formulation()
-            formulation.proposed_focus = None
-            with self.memory.transaction():
-                self.memory.save_formulation(
-                    formulation, datetime.fromisoformat(session.last_activity_at)
-                )
-                self.memory.close_session(
-                    session, now=datetime.fromisoformat(session.last_activity_at)
-                )
             return self.memory.start_session(now)
         return session
 

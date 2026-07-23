@@ -2,7 +2,6 @@ id: therapist.transdiagnostic
 status: experimental
 locales: [it-IT, en-US]
 population: adults-18-plus
-crisis_policy: explicit-disclosure-v1
 reviewers: []
 next_review: null
 skills:

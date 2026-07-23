@@ -137,3 +137,20 @@ cases:
         - AI-supported conversation or self-help
     expected_output:
       all_required_terms_present: true
+
+  - name: SKILL-011
+    metadata:
+      description: Safety responses use contextual judgment instead of keyword routing.
+    inputs:
+      path: SKILL.md
+      required_terms:
+        - Assess possible danger from the user's meaning
+        - Never infer danger from a keyword alone
+        - ask one brief, direct question
+        - possible immediate danger
+        - call/text 988
+        - 112 for Italy or the European Union
+        - 911 for the United States
+        - cannot monitor, locate, contact emergency services
+    expected_output:
+      all_required_terms_present: true

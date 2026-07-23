@@ -19,7 +19,6 @@ from therapist.memory import (
     MemoryStore,
 )
 from therapist.protocol import ProtocolPack
-from therapist.safety import SafetyState
 
 models.ALLOW_MODEL_REQUESTS = False
 
@@ -116,7 +115,6 @@ def test_normal_turn_returns_text_and_persists_tool_staged_observation(
         "I feel under pressure at work."
     )
 
-    assert turn.safety_state is SafetyState.CLEAR
     assert turn.text == "I am here. What is happening at work?"
     assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
     history = store.load_session_history(store.active_session().id)  # type: ignore[union-attr]
@@ -287,18 +285,25 @@ def test_consolidation_rolls_back_formulation_if_session_close_fails(
     assert store.active_session() is not None
 
 
-def test_crisis_turn_bypasses_model_and_archives_the_exchange(tmp_path: Path) -> None:
+def test_safety_disclosure_is_handled_by_the_agent_and_archived(tmp_path: Path) -> None:
+    captured: dict[str, str] = {}
+
+    async def stream(_messages: list[Any], info: Any):
+        captured["instructions"] = info.instructions
+        yield (
+            "You may be in immediate danger. Call 911 now and reach someone physically present. "
+            "I cannot monitor you or contact emergency services. Can you make that call now?"
+        )
+
     store = MemoryStore(tmp_path)
-    session = ChatSession(
-        TestModel(custom_output_text="THIS MUST NOT APPEAR"), _pack(), store, "en-US"
-    )
+    session = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US")
 
     turn = session.respond("I want to kill myself right now, and I have a plan.")
 
-    assert turn.safety_state is SafetyState.IMMEDIATE_DANGER_DISCLOSED
     assert "911" in turn.text
     assert "contact emergency services" in turn.text.casefold()
-    assert "THIS MUST NOT APPEAR" not in turn.text
+    assert "assess possible danger from the user's meaning" in captured["instructions"].casefold()
+    assert "never infer danger from a keyword alone" in captured["instructions"].casefold()
     assert "kill myself" in store.session_transcript(store.active_session().id)  # type: ignore[union-attr]
 
 

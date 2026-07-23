@@ -104,8 +104,8 @@ bounded exponential backoff, `Retry-After`, and only network errors plus
   status, evidence provenance, correction, forgetting, or case formulation.
 - Harness compaction: the current protocol is about 9.8 KB and history is
   already deliberately bounded; structured budgeting is simpler.
-- Harness guardrails: the deterministic pre-model safety controller and typed
-  output already cover the current no-tool flow.
+- Harness guardrails: the current agent instructions already define contextual
+  safety behavior, and typed output covers the current no-tool flow.
 - Pydantic Graph beta, step persistence, and durable execution for a
   synchronous single-call CLI.
 - MCP, multi-agent orchestration, vector databases, autonomous memory writing,
