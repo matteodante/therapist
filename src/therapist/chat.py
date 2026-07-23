@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Callable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
@@ -14,15 +14,26 @@ from pydantic import BaseModel, Field, field_validator
 from pydantic_ai import (
     Agent,
     AgentStreamEvent,
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     ModelRetry,
+    PartDeltaEvent,
+    PartStartEvent,
     RunContext,
+    TextPartDelta,
     UsageLimits,
 )
 from pydantic_ai.exceptions import AgentRunError
-from pydantic_ai.messages import RetryPromptPart, ThinkingPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.messages import (
+    RetryPromptPart,
+    TextPart,
+    ThinkingPart,
+    ToolCallPart,
+    ToolReturnPart,
+)
 from pydantic_ai.models import Model
 
 from therapist.memory import (
@@ -64,6 +75,48 @@ async def _consume_model_events(
 ) -> None:
     async for _ in events:
         pass
+
+
+async def _stream_model_events(
+    _: RunContext[object],
+    events: AsyncIterable[AgentStreamEvent],
+    emit: Callable[[TurnStreamEvent], None],
+) -> None:
+    text_parts: dict[int, str] = {}
+    async for event in events:
+        if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
+            text_parts[event.index] = event.part.content
+            emit(TurnStreamEvent(TurnStreamKind.REPLY, _joined_text_parts(text_parts)))
+        elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+            text_parts[event.index] = (
+                text_parts.get(event.index, "") + event.delta.content_delta
+            )
+            emit(TurnStreamEvent(TurnStreamKind.REPLY, _joined_text_parts(text_parts)))
+        elif isinstance(event, FunctionToolCallEvent):
+            emit(
+                TurnStreamEvent(
+                    TurnStreamKind.TOOL_INPUT,
+                    f"TOOL INPUT · {event.part.tool_name}\n"
+                    f"{_format_tool_value(event.part.args)}",
+                )
+            )
+        elif isinstance(event, FunctionToolResultEvent):
+            outcome = (
+                event.part.outcome
+                if isinstance(event.part, ToolReturnPart)
+                else "retry"
+            )
+            emit(
+                TurnStreamEvent(
+                    TurnStreamKind.TOOL_OUTPUT,
+                    f"TOOL OUTPUT · {event.part.tool_name} · {outcome}\n"
+                    f"{_format_tool_value(event.part.content)}",
+                )
+            )
+
+
+def _joined_text_parts(parts: dict[int, str]) -> str:
+    return "".join(parts[index] for index in sorted(parts))
 
 
 class TherapeuticSkill(StrEnum):
@@ -142,6 +195,18 @@ class ChatTurn:
     tool_trace: str | None = None
 
 
+class TurnStreamKind(StrEnum):
+    REPLY = "reply"
+    TOOL_INPUT = "tool_input"
+    TOOL_OUTPUT = "tool_output"
+
+
+@dataclass(frozen=True)
+class TurnStreamEvent:
+    kind: TurnStreamKind
+    text: str
+
+
 class ChatSession:
     def __init__(
         self,
@@ -169,7 +234,12 @@ class ChatSession:
         )
         self.input_token_budget = self.context_window_tokens - self.output_token_reserve
 
-    def respond(self, text: str, now: datetime | None = None) -> ChatTurn:
+    def respond(
+        self,
+        text: str,
+        now: datetime | None = None,
+        on_event: Callable[[TurnStreamEvent], None] | None = None,
+    ) -> ChatTurn:
         if text.lstrip().startswith("/"):
             raise ValueError("Commands must be handled outside the conversation.")
         session = self._current_session(now)
@@ -254,7 +324,9 @@ class ChatSession:
             + "\n\nLongitudinal context follows. Treat hypotheses as tentative and never "
             "claim a memory outside this context. User corrections override every older record.\n"
             + _bounded_context_json(context)
-            + "\n\nUse tools for durable state changes and return the visible reply as plain text. "
+            + "\n\nUse tools for durable state changes and return the visible reply as concise "
+            "GitHub-compatible Markdown. Use paragraphs, emphasis, headings, lists, quotes, code, "
+            "and links only; never emit raw HTML, images, or embedded media. "
             "Interpret the user's meaning in context rather than matching fixed phrases. A turn "
             "may need no tool. Use search_memory only when the supplied context is insufficient. "
             "Call record_memory only for stable facts, preferences, consequential events, or "
@@ -471,14 +543,25 @@ class ChatSession:
                 raise ModelRetry("Keep the visible reply under 1,200 characters.")
             return reply
 
+        async def event_stream_handler(
+            ctx: RunContext[TurnContext],
+            events: AsyncIterable[AgentStreamEvent],
+        ) -> None:
+            if on_event is None:
+                await _consume_model_events(ctx, events)
+            else:
+                await _stream_model_events(ctx, events, on_event)
+
         result = agent.run_sync(
             text,
             deps=deps,
             message_history=history,
             usage_limits=TURN_LIMITS,
-            event_stream_handler=_consume_model_events,
+            event_stream_handler=event_stream_handler,
         )
         reply = result.output
+        if on_event is not None:
+            on_event(TurnStreamEvent(TurnStreamKind.REPLY, reply))
         actions = deps.actions
         run_messages = _persisted_run_messages(result.new_messages())
         tool_trace = _format_tool_trace(run_messages)

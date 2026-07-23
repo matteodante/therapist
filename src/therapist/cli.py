@@ -5,7 +5,7 @@ import json
 import os
 import secrets
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -28,6 +28,8 @@ from therapist.chat import (
     MAX_CONTEXT_WINDOW_TOKENS,
     MIN_CONTEXT_WINDOW_TOKENS,
     ChatSession,
+    TurnStreamEvent,
+    TurnStreamKind,
 )
 from therapist.memory import MemoryStore
 from therapist.protocol import ProtocolError, ProtocolPack
@@ -74,6 +76,11 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("--model")
     chat.add_argument("--locale", choices=("it-IT", "en-US"))
     chat.add_argument("--context-window-tokens", type=_context_window_tokens)
+    chat.add_argument(
+        "--plain",
+        action="store_true",
+        help="Use the line-oriented interface instead of the full-screen TUI",
+    )
 
     telegram = commands.add_parser("telegram", help="Run a private single-user Telegram bot")
     telegram.add_argument("--model")
@@ -252,7 +259,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Context configuration error: {error}")
             return 2
         if args.command == "chat":
-            return _chat(session, store)
+            if args.plain or not (sys.stdin.isatty() and sys.stdout.isatty()):
+                return _chat(session, store)
+            return _chat_tui(session, store)
         token_payload = store.load_secret(TELEGRAM_SECRET)
         token = token_payload.decode() if token_payload else ""
         if not token:
@@ -892,19 +901,8 @@ def _memory(args: argparse.Namespace, store: MemoryStore) -> int:
 
 
 def _chat(session: ChatSession, store: MemoryStore) -> int:
-    state = store.load_app_state()
-    consent = "I UNDERSTAND"
-    if state.consent_version != "alpha-1":
-        notice = (
-            "I am an experimental AI, not a therapist or emergency service. "
-            "A remote model provider receives your messages when configured."
-        )
-        print(notice)
-        if input(f"Type {consent} to continue: ").strip() != consent:
-            print("Consent not recorded.")
-            return 1
-        state.consent_version = "alpha-1"
-        store.save_app_state(state)
+    if not _ensure_chat_consent(store):
+        return 1
 
     print("Commands: /case, /memory, /sessions [id], /interventions, /confirm <id>,")
     print("          /correct <id> <text>,")
@@ -924,54 +922,122 @@ def _chat(session: ChatSession, store: MemoryStore) -> int:
                 continue
             print("Unknown command. Use /help.")
             continue
+        rendered_reply = ""
+        reply_started = False
+
+        def render(event: TurnStreamEvent) -> None:
+            nonlocal rendered_reply, reply_started
+            if event.kind is not TurnStreamKind.REPLY:
+                if reply_started:
+                    print()
+                    reply_started = False
+                    rendered_reply = ""
+                print(event.text)
+                return
+            if not reply_started or not event.text.startswith(rendered_reply):
+                if reply_started:
+                    print()
+                print("thera> ", end="", flush=True)
+                rendered_reply = ""
+                reply_started = True
+            print(event.text[len(rendered_reply) :], end="", flush=True)
+            rendered_reply = event.text
+
         try:
-            turn = session.respond(user_text)
+            turn = session.respond(user_text, on_event=render)
         except Exception as error:  # Provider SDKs expose different error types.
+            if reply_started:
+                print()
             print(f"Model error: {error}")
             continue
+        if reply_started:
+            print()
         if turn.notice:
             print(f"notice> {turn.notice}")
-        if turn.tool_trace:
-            print(turn.tool_trace)
-        print(f"thera> {turn.text}")
 
 
-def _chat_command(command: str, session: ChatSession, store: MemoryStore) -> bool:
+def _chat_tui(session: ChatSession, store: MemoryStore) -> int:
+    if not _ensure_chat_consent(store):
+        return 1
+    from therapist.tui import TherapistApp
+
+    app = TherapistApp(
+        session,
+        store,
+        lambda command, output: _chat_command(
+            command,
+            session,
+            store,
+            output=output,
+        ),
+    )
+    app.run()
+    return 0
+
+
+def _ensure_chat_consent(store: MemoryStore) -> bool:
+    state = store.load_app_state()
+    consent = "I UNDERSTAND"
+    if state.consent_version != "alpha-1":
+        notice = (
+            "I am an experimental AI, not a therapist or emergency service. "
+            "A remote model provider receives your messages when configured."
+        )
+        print(notice)
+        if input(f"Type {consent} to continue: ").strip() != consent:
+            print("Consent not recorded.")
+            return False
+        state.consent_version = "alpha-1"
+        store.save_app_state(state)
+    return True
+
+
+def _chat_command(
+    command: str,
+    session: ChatSession,
+    store: MemoryStore,
+    *,
+    output: Callable[[str], None] = print,
+) -> bool:
     parts = command.split(maxsplit=2)
     name = parts[0]
     try:
         if name == "/help":
-            print("/case /memory /sessions [id] /confirm <id> /correct <id> <text>")
-            print("/interventions /forget <id> /end /quit")
+            output("/case /memory /sessions [id] /confirm <id> /correct <id> <text>")
+            output("/interventions /forget <id> /end /quit")
         elif name == "/case":
-            print(store.load_formulation().model_dump_json(indent=2))
+            output(store.load_formulation().model_dump_json(indent=2))
         elif name == "/memory":
-            print(_json([item.model_dump(mode="json") for item in store.list_memory(True)]))
+            output(_json([item.model_dump(mode="json") for item in store.list_memory(True)]))
         elif name == "/sessions":
             sessions = store.list_sessions()
             if len(parts) == 1:
-                print(_json([item.model_dump() for item in sessions]))
+                output(_json([item.model_dump() for item in sessions]))
             else:
                 found = next((item for item in sessions if item.id == parts[1]), None)
-                print("Session not found." if found is None else found.model_dump_json(indent=2))
+                output(
+                    "Session not found."
+                    if found is None
+                    else found.model_dump_json(indent=2)
+                )
         elif name == "/interventions":
-            print(_json([item.model_dump(mode="json") for item in store.list_interventions()]))
+            output(_json([item.model_dump(mode="json") for item in store.list_interventions()]))
         elif name == "/confirm" and len(parts) >= 2:
-            print(store.confirm_memory(parts[1]).model_dump_json(indent=2))
+            output(store.confirm_memory(parts[1]).model_dump_json(indent=2))
         elif name == "/correct" and len(parts) == 3:
-            print(store.correct_memory(parts[1], parts[2]).model_dump_json(indent=2))
+            output(store.correct_memory(parts[1], parts[2]).model_dump_json(indent=2))
         elif name == "/forget" and len(parts) >= 2:
-            print(store.forget_memory(parts[1]).model_dump_json(indent=2))
+            output(store.forget_memory(parts[1]).model_dump_json(indent=2))
         elif name == "/end":
             closed = session.end()
             message = (
                 "No active session." if closed is None else "Session closed; transcript preserved."
             )
-            print(message)
+            output(message)
         else:
             return False
     except (KeyError, ValueError) as error:
-        print(str(error))
+        output(str(error))
     return True
 
 

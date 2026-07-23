@@ -133,6 +133,11 @@ reply in both CLI and Telegram. Slash commands such as `/start`,
 `/status`, and `/quit`, their rendered output, and transport-level notices remain excluded from the
 conversation archive and model history.
 
+Conversation transports receive cumulative reply snapshots and tool input/output events from the
+complete PydanticAI event stream. Drafts may contain an output attempt that is later rejected; the
+next attempt replaces it, and only the validated final output is committed. Provider thinking is
+never emitted. CLI renders drafts in Textual and Telegram uses ephemeral rich-message drafts.
+
 A conversation run permits at most eight model requests, six successful tool calls, two validation
 retries for each invalid tool call, and two output retries within that global budget. All
 model-written strings and collections have size limits. Accepted
@@ -146,8 +151,9 @@ to summarize the episode and link existing claims into the case formulation. Con
 two output retries and at most three model requests. It cannot create a confirmed claim. If it fails,
 preserve the transcript, record a content-free error class, and leave the previous formulation
 intact. Both agent runs use PydanticAI's complete synchronous API with an event stream handler so the
-experimental ChatGPT Codex backend can require `stream=true`; the transports print tool inputs and
-outputs followed by the validated final reply.
+experimental ChatGPT Codex backend can require `stream=true`; conversation transports stream
+cumulative Markdown snapshots while preserving the complete tool graph, then render the validated
+final reply. Consolidation consumes its stream without exposing a draft.
 
 Consolidation preserves valid formulation links when the model omits them and removes a link only
 through an explicit `formulation_unlinks` entry. Existing evidence is retained before new links when
@@ -224,7 +230,7 @@ Primary commands:
 
 ```text
 thera setup
-thera chat --model <provider:model> --locale it-IT|en-US --context-window-tokens <16000..128000>
+thera chat [--plain] --model <provider:model> --locale it-IT|en-US --context-window-tokens <16000..128000>
 thera telegram --model <provider:model> --locale it-IT|en-US --allowed-user-id <numeric-id> --context-window-tokens <16000..128000>
 thera telegram-service install
 thera telegram-service status
@@ -249,6 +255,12 @@ thera delete-data
 thera doctor
 thera protocol validate [path]
 ```
+
+`thera chat` uses a full-screen Textual interface in an interactive terminal. It restores the latest
+50 user/assistant turns from the active session, renders assistant Rich Markdown, displays live tool
+events, and disables input while one sequential turn is running. `--plain` forces the line-oriented
+streaming interface; non-interactive stdin or stdout selects it automatically. The TUI never loads
+more than 50 historical turns and does not replay old tool traces.
 
 `setup` downloads and verifies the local multilingual Apache-2.0
 `sentence-transformers:Qwen/Qwen3-Embedding-0.6B` model at the repository-pinned revision. The model
@@ -339,9 +351,11 @@ committed for that turn. Correcting or forgetting memory, auth, export, and dele
 operations. Command messages, rendered command output, context warnings, and rollover notices are
 transport-only and are not archived or sent back to the conversation model. Internal prompts,
 secrets, and private model reasoning are never exposed. Function-tool inputs and outputs are sent as
-separate messages before the final reply and remain in encrypted model history. Incoming text and
-outgoing chunks stay below
-Telegram's message limit and use plain text without a parse mode. The encrypted update offset
+separate messages before the final reply and remain in encrypted model history. Reply generation
+uses a random non-zero `sendRichMessageDraft` ID, updates the ephemeral Rich Markdown draft at most
+four times per second, and persists the validated output with `sendRichMessage`. Unsupported or
+rejected rich formatting falls back to plain text. Durable-change notices remain separate plain-text
+messages. Incoming text and outgoing content stay below Telegram's limits. The encrypted update offset
 survives restarts. A crash between model state commit and offset persistence can still cause one
 update to be processed again; full durable inbox idempotency is deferred until `ChatSession` can
 atomically accept an external idempotency key.
@@ -398,10 +412,11 @@ formulation, psychological flexibility and emotional awareness, avoidance and be
 practical problem solving, review/maintenance, and explicit repair after misattunement. The root
 skill routes each turn and permits at most one intervention skill at a time.
 
-Each turn returns plain text capped at 1,200 characters. Durable changes use validated staged
-tools, including a hypothesis offered for confirmation so a later user confirmation promotes that
-exact pending memory item. Questions are optional and normally sparse; naturalness and avoidance of
-interrogation are evaluated at the conversation level. The turn has no `process_stage`,
+Each turn returns concise GitHub-compatible Markdown capped at 1,200 characters, without raw HTML,
+images, or embedded media. Durable changes use validated staged tools, including a hypothesis
+offered for confirmation so a later user confirmation promotes that exact pending memory item.
+Questions are optional and normally sparse; naturalness and avoidance of interrogation are evaluated
+at the conversation level. The turn has no `process_stage`,
 `selected_skill`, or other model-written process classifier; the prompt supplies the full protocol
 and the agent chooses conversational behavior and tools from meaning and context.
 
@@ -476,6 +491,11 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   at 128,000 tokens while preserving a 10% output reserve.
 - Slash commands, rendered command output, and lifecycle notices never enter the archive or model
   history.
+- CLI chat opens a responsive Textual interface on a TTY, restores only the latest 50 active-session
+  turns, renders Markdown and live tool events, and retains a streaming `--plain` fallback.
+- Rejected output attempts may appear only as replaceable transport drafts; only the validated final
+  reply is committed. Telegram uses one throttled non-zero rich draft ID and a persistent rich final
+  message, with safe plain-text fallback.
 - Function-tool inputs and outputs are visible in CLI and Telegram, persist atomically with the
   successful turn, appear in user export without internal prompts or reasoning, and return in future
   model history.

@@ -498,6 +498,22 @@ class MemoryStore:
             used += len(group)
         return [message for group in reversed(selected) for message in group]
 
+    def session_messages(
+        self, session_id: str, turn_limit: int = 50
+    ) -> list[tuple[str, str]]:
+        if turn_limit < 1:
+            raise ValueError("Turn limit must be positive.")
+        with self._connect() as database:
+            rows = database.execute(
+                "SELECT role, payload FROM messages WHERE session_id = ? "
+                "ORDER BY id DESC LIMIT ?",
+                (session_id, turn_limit * 2),
+            ).fetchall()
+        return [
+            (role, self._decrypt_json(payload).get("content", ""))
+            for role, payload in reversed(rows)
+        ]
+
     def session_transcript(self, session_id: str, limit_chars: int | None = None) -> str:
         with self._connect() as database:
             rows = database.execute(

@@ -6,6 +6,7 @@ import pytest
 from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.messages import TextPart, ToolCallPart, ToolReturnPart
 
+from therapist.chat import TurnStreamEvent, TurnStreamKind
 from therapist.cli import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_REPO,
@@ -179,16 +180,25 @@ def test_interactive_chat_prints_tool_input_and_output(
     store.save_app_state(state)
     inputs = iter(["Please remember this.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
-    session = SimpleNamespace(
-        respond=lambda _: SimpleNamespace(
-            text="Done.",
-            notice=None,
-            tool_trace=(
-                'TOOL INPUT · record_memory\n{"content": "detail"}\n\n'
-                'TOOL OUTPUT · record_memory · success\n{"staged": 1}'
-            ),
+    def respond(_: str, *, on_event: object) -> SimpleNamespace:
+        on_event(  # type: ignore[operator]
+            TurnStreamEvent(
+                TurnStreamKind.TOOL_INPUT,
+                'TOOL INPUT · record_memory\n{"content": "detail"}',
+            )
         )
-    )
+        on_event(  # type: ignore[operator]
+            TurnStreamEvent(
+                TurnStreamKind.TOOL_OUTPUT,
+                'TOOL OUTPUT · record_memory · success\n{"staged": 1}',
+            )
+        )
+        on_event(  # type: ignore[operator]
+            TurnStreamEvent(TurnStreamKind.REPLY, "Done.")
+        )
+        return SimpleNamespace(text="Done.", notice=None, tool_trace=None)
+
+    session = SimpleNamespace(respond=respond)
 
     assert _chat(session, store) == 0  # type: ignore[arg-type]
 

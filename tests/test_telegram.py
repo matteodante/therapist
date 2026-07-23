@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from therapist.chat import TurnStreamEvent, TurnStreamKind
 from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
 from therapist.telegram import TelegramBot, TelegramChannel, split_message
 
@@ -16,6 +17,9 @@ class FakeBot:
         self.commands_set = False
         self.typing: list[int] = []
         self.interface: int | None = None
+        self.message_drafts: list[tuple[int, int, str]] = []
+        self.rich_drafts: list[tuple[int, int, str]] = []
+        self.rich_messages: list[tuple[int, str]] = []
 
     def get_me(self) -> dict[str, str]:
         return {"username": "test_therapist_bot"}
@@ -39,15 +43,27 @@ class FakeBot:
     def send_typing(self, chat_id: int) -> None:
         self.typing.append(chat_id)
 
+    def send_message_draft(self, chat_id: int, draft_id: int, text: str) -> None:
+        self.message_drafts.append((chat_id, draft_id, text))
+
+    def send_rich_message_draft(self, chat_id: int, draft_id: int, text: str) -> None:
+        self.rich_drafts.append((chat_id, draft_id, text))
+
+    def send_rich_message(self, chat_id: int, text: str) -> None:
+        self.rich_messages.append((chat_id, text))
+
 
 class FakeSession:
     def __init__(self) -> None:
         self.received: list[str] = []
         self.end_calls = 0
 
-    def respond(self, text: str) -> SimpleNamespace:
+    def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
         self.received.append(text)
-        return SimpleNamespace(text=f"reply: {text}")
+        reply = f"reply: {text}"
+        if on_event:
+            on_event(TurnStreamEvent(TurnStreamKind.REPLY, reply))  # type: ignore[operator]
+        return SimpleNamespace(text=reply)
 
     def end(self) -> None:
         self.end_calls += 1
@@ -116,7 +132,10 @@ def test_channel_requires_separate_consent_then_uses_shared_session(
 
     channel.process_update(private_update(4, 42, "I feel stuck"))
     assert session.received == ["I feel stuck"]
-    assert bot.messages[-1] == (42, "reply: I feel stuck")
+    assert bot.rich_messages[-1] == (42, "reply: I feel stuck")
+    assert bot.rich_drafts[-1][0] == 42
+    assert bot.rich_drafts[-1][1] > 0
+    assert bot.rich_drafts[-1][2] == "reply: I feel stuck"
     assert bot.typing == [42]
 
 
@@ -233,7 +252,7 @@ def test_normal_turn_discloses_committed_memory_change(tmp_path: Path) -> None:
     active = store.start_session()
 
     class RecordingSession(FakeSession):
-        def respond(self, text: str) -> SimpleNamespace:
+        def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
             message_id = store.save_turn(active, text, "Understood.", [])
             store.add_observations(
                 [
@@ -246,13 +265,17 @@ def test_normal_turn_discloses_committed_memory_change(tmp_path: Path) -> None:
                 message_id,
                 evidence_text=text,
             )
+            if on_event:
+                on_event(  # type: ignore[operator]
+                    TurnStreamEvent(TurnStreamKind.REPLY, "Understood.")
+                )
             return SimpleNamespace(text="Understood.")
 
     channel = TelegramChannel(bot, RecordingSession(), store, 42)  # type: ignore[arg-type]
 
     channel.process_update(private_update(1, 42, "I work from home"))
 
-    assert bot.messages[-1][1].startswith("Understood.\n\n")
+    assert bot.rich_messages[-1] == (42, "Understood.")
     assert "THIS TURN'S RECORD" in bot.messages[-1][1]
     assert "Saved fact: I work from home" in bot.messages[-1][1]
 
@@ -265,8 +288,24 @@ def test_normal_turn_sends_tool_input_and_output_before_reply(tmp_path: Path) ->
     store.save_app_state(state)
 
     class ToolSession(FakeSession):
-        def respond(self, text: str) -> SimpleNamespace:
+        def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
             self.received.append(text)
+            assert on_event is not None
+            on_event(  # type: ignore[operator]
+                TurnStreamEvent(
+                    TurnStreamKind.TOOL_INPUT,
+                    'TOOL INPUT · record_memory\n{"content": "detail"}',
+                )
+            )
+            on_event(  # type: ignore[operator]
+                TurnStreamEvent(
+                    TurnStreamKind.TOOL_OUTPUT,
+                    'TOOL OUTPUT · record_memory · success\n{"staged": 1}',
+                )
+            )
+            on_event(  # type: ignore[operator]
+                TurnStreamEvent(TurnStreamKind.REPLY, "Done.")
+            )
             return SimpleNamespace(
                 text="Done.",
                 tool_trace=(
@@ -280,13 +319,10 @@ def test_normal_turn_sends_tool_input_and_output_before_reply(tmp_path: Path) ->
     channel.process_update(private_update(1, 42, "Remember this"))
 
     assert bot.messages == [
-        (
-            42,
-            'TOOL INPUT · record_memory\n{"content": "detail"}\n\n'
-            'TOOL OUTPUT · record_memory · success\n{"staged": 1}',
-        ),
-        (42, "Done."),
+        (42, 'TOOL INPUT · record_memory\n{"content": "detail"}'),
+        (42, 'TOOL OUTPUT · record_memory · success\n{"staged": 1}'),
     ]
+    assert bot.rich_messages == [(42, "Done.")]
 
 
 def test_bot_configures_commands_only_for_allowlisted_chat(
@@ -317,3 +353,89 @@ def test_bot_configures_commands_only_for_allowlisted_chat(
         "end",
     }
     assert calls[2][0] == "setMyDescription"
+
+
+def test_bot_uses_native_rich_draft_and_final_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bot = TelegramBot("token")
+    calls: list[tuple[str, dict[str, Any]]] = []
+    monkeypatch.setattr(
+        bot,
+        "_call",
+        lambda method, payload: calls.append((method, payload)),
+    )
+
+    bot.send_rich_message_draft(42, 7, "**Partial**")
+    bot.send_rich_message(42, "**Complete**")
+
+    assert calls == [
+        (
+            "sendRichMessageDraft",
+            {
+                "chat_id": 42,
+                "draft_id": 7,
+                "rich_message": {"markdown": "**Partial**"},
+            },
+        ),
+        (
+            "sendRichMessage",
+            {"chat_id": 42, "rich_message": {"markdown": "**Complete**"}},
+        ),
+    ]
+
+
+def test_channel_throttles_streamed_drafts_with_one_id(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    bot = FakeBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+
+    class StreamingSession(FakeSession):
+        def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
+            assert on_event is not None
+            for partial in ("**One", "**One two", "**One two three**"):
+                on_event(  # type: ignore[operator]
+                    TurnStreamEvent(TurnStreamKind.REPLY, partial)
+                )
+            return SimpleNamespace(text="**One two three**")
+
+    times = iter((1.0, 1.1, 1.3))
+    monkeypatch.setattr("therapist.telegram.time.monotonic", lambda: next(times))
+    monkeypatch.setattr("therapist.telegram.secrets.randbits", lambda _: 99)
+    channel = TelegramChannel(bot, StreamingSession(), store, 42)  # type: ignore[arg-type]
+
+    channel.process_update(private_update(1, 42, "Stream this"))
+
+    assert bot.rich_drafts == [
+        (42, 99, "**One"),
+        (42, 99, "**One two three**"),
+    ]
+    assert bot.rich_messages == [(42, "**One two three**")]
+
+
+def test_channel_uses_plain_delivery_for_unsafe_markdown(tmp_path: Path) -> None:
+    bot = FakeBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+
+    class UnsafeSession(FakeSession):
+        def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
+            reply = "![remote image](https://example.com/image.png)"
+            assert on_event is not None
+            on_event(TurnStreamEvent(TurnStreamKind.REPLY, reply))  # type: ignore[operator]
+            return SimpleNamespace(text=reply)
+
+    channel = TelegramChannel(bot, UnsafeSession(), store, 42)  # type: ignore[arg-type]
+
+    channel.process_update(private_update(1, 42, "Show something"))
+
+    assert bot.rich_drafts == []
+    assert bot.message_drafts[0][2].startswith("![remote image]")
+    assert bot.rich_messages == []
+    assert bot.messages[-1][1].startswith("![remote image]")

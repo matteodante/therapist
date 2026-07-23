@@ -63,8 +63,10 @@ or exploration; formulation is an option, not the automatic destination.
 
 ## Use state tools
 
-Return the visible response as natural plain text. Use the available tools only when the current
-turn should retrieve additional longitudinal context or change durable state:
+Return the visible response as concise, natural GitHub-compatible Markdown. Use only paragraphs,
+emphasis, headings, lists, quotes, code, and links; never emit raw HTML, images, or embedded media.
+Use the available tools only when the current turn should retrieve additional longitudinal context
+or change durable state:
 
 - search memory when the supplied context is insufficient for a relevant reference;
 - record only durable facts, preferences, consequential events, or reusable tentative patterns;

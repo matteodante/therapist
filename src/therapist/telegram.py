@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import secrets
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,7 +12,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from therapist.chat import ChatSession
+from therapist.chat import ChatSession, TurnStreamEvent, TurnStreamKind
 from therapist.memory import MemoryStore
 
 API_ROOT = "https://api.telegram.org"
@@ -19,6 +21,7 @@ MESSAGE_LIMIT = 4_000
 MEMORY_PAGE_SIZE = 10
 SESSION_PAGE_SIZE = 5
 INTERVENTION_PAGE_SIZE = 10
+DRAFT_INTERVAL_SECONDS = 0.25
 
 
 class TelegramError(RuntimeError):
@@ -91,6 +94,28 @@ class TelegramBot:
     def send_message(self, chat_id: int, text: str) -> None:
         for chunk in split_message(text):
             self._call("sendMessage", {"chat_id": chat_id, "text": chunk})
+
+    def send_message_draft(self, chat_id: int, draft_id: int, text: str) -> None:
+        self._call(
+            "sendMessageDraft",
+            {"chat_id": chat_id, "draft_id": draft_id, "text": text},
+        )
+
+    def send_rich_message_draft(self, chat_id: int, draft_id: int, text: str) -> None:
+        self._call(
+            "sendRichMessageDraft",
+            {
+                "chat_id": chat_id,
+                "draft_id": draft_id,
+                "rich_message": {"markdown": text},
+            },
+        )
+
+    def send_rich_message(self, chat_id: int, text: str) -> None:
+        self._call(
+            "sendRichMessage",
+            {"chat_id": chat_id, "rich_message": {"markdown": text}},
+        )
 
     def send_typing(self, chat_id: int) -> None:
         self._call("sendChatAction", {"chat_id": chat_id, "action": "typing"})
@@ -222,8 +247,42 @@ class TelegramChannel:
             self.bot.send_typing(chat_id)
         except TelegramError as error:
             print(f"Telegram typing indicator error: {error}")
+        draft_id = secrets.randbits(31) or 1
+        last_draft_at = 0.0
+        tool_delivery_failed = False
+
+        def render(event: TurnStreamEvent) -> None:
+            nonlocal last_draft_at, tool_delivery_failed
+            if event.kind is not TurnStreamKind.REPLY:
+                try:
+                    self.bot.send_message(chat_id, event.text)
+                except TelegramError as error:
+                    tool_delivery_failed = True
+                    print(f"Telegram tool trace delivery error: {error}")
+                return
+            now = time.monotonic()
+            if now - last_draft_at < DRAFT_INTERVAL_SECONDS:
+                return
+            rich = _safe_rich_markdown(event.text)
+            try:
+                if rich:
+                    self.bot.send_rich_message_draft(chat_id, draft_id, event.text)
+                else:
+                    self.bot.send_message_draft(chat_id, draft_id, event.text)
+            except TelegramError as error:
+                print(f"Telegram draft delivery error: {error}")
+                if rich and error.fatal:
+                    try:
+                        self.bot.send_message_draft(chat_id, draft_id, event.text)
+                    except TelegramError as fallback_error:
+                        print(f"Telegram plain draft delivery error: {fallback_error}")
+                    else:
+                        last_draft_at = now
+            else:
+                last_draft_at = now
+
         try:
-            turn = self.session.respond(text)
+            turn = self.session.respond(text, on_event=render)
         except Exception as error:  # Provider SDKs expose different error types.
             print(f"Model error while handling Telegram message: {type(error).__name__}")
             reply = self._model_error()
@@ -236,9 +295,18 @@ class TelegramChannel:
         changes = self._durable_changes(before)
         if notice:
             self.bot.send_message(chat_id, notice)
-        if tool_trace:
+        if tool_trace and tool_delivery_failed:
             self.bot.send_message(chat_id, tool_trace)
-        self.bot.send_message(chat_id, f"{reply}\n\n{changes}" if changes else reply)
+        if _safe_rich_markdown(reply):
+            try:
+                self.bot.send_rich_message(chat_id, reply)
+            except TelegramError as error:
+                print(f"Telegram rich message delivery error: {error}")
+                self.bot.send_message(chat_id, reply)
+        else:
+            self.bot.send_message(chat_id, reply)
+        if changes:
+            self.bot.send_message(chat_id, changes)
         return True
 
     def _command_response(self, command: str, argument: str | None) -> str | None:
@@ -531,6 +599,10 @@ def split_message(text: str, limit: int = MESSAGE_LIMIT) -> list[str]:
     if remaining:
         chunks.append(remaining)
     return chunks
+
+
+def _safe_rich_markdown(text: str) -> bool:
+    return "![" not in text and re.search(r"<[A-Za-z][^>]*>", text) is None
 
 
 def _command_name(text: str) -> str | None:

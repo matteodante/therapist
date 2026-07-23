@@ -7,7 +7,7 @@ from pydantic_ai import models
 from pydantic_ai.exceptions import AgentRunError, UsageLimitExceeded
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
-from therapist.chat import ChatSession
+from therapist.chat import ChatSession, TurnStreamEvent, TurnStreamKind
 from therapist.memory import MemoryStore
 from therapist.protocol import ProtocolPack
 
@@ -114,6 +114,52 @@ def test_staged_action_commits_after_model_repairs_invalid_final_reply(
     assert "What creates the most pressure?" in store.session_transcript(
         store.active_session().id  # type: ignore[union-attr]
     )
+
+
+def test_stream_replaces_rejected_output_and_finishes_with_validated_reply(
+    tmp_path: Path,
+) -> None:
+    attempts = 0
+
+    async def stream(_messages: list[Any], _info: Any):
+        nonlocal attempts
+        attempts += 1
+        yield "x" * 1_201 if attempts == 1 else "**Valid reply.**"
+
+    events: list[TurnStreamEvent] = []
+    store = MemoryStore(tmp_path)
+    turn = ChatSession(
+        FunctionModel(stream_function=stream), _pack(), store, "en-US"
+    ).respond("Please answer.", on_event=events.append)
+
+    streamed = [event.text for event in events if event.kind is TurnStreamKind.REPLY]
+    assert streamed[0] == "x" * 1_201
+    assert streamed[-1] == turn.text == "**Valid reply.**"
+    transcript = store.session_transcript(store.active_session().id)  # type: ignore[union-attr]
+    assert "x" * 1_201 not in transcript
+    assert "**Valid reply.**" in transcript
+
+
+def test_stream_emits_tool_input_and_output_before_final_reply(tmp_path: Path) -> None:
+    async def stream(messages: list[Any], _info: Any):
+        yield (
+            "**What creates the most pressure?**"
+            if _has_tool_return(messages)
+            else _record_memory_call()
+        )
+
+    events: list[TurnStreamEvent] = []
+    ChatSession(
+        FunctionModel(stream_function=stream),
+        _pack(),
+        MemoryStore(tmp_path),
+        "en-US",
+    ).respond("I feel pressure at work.", on_event=events.append)
+
+    kinds = [event.kind for event in events]
+    assert kinds[:2] == [TurnStreamKind.TOOL_INPUT, TurnStreamKind.TOOL_OUTPUT]
+    assert kinds[-1] is TurnStreamKind.REPLY
+    assert events[-1].text == "**What creates the most pressure?**"
 
 
 def test_tool_can_repair_two_validation_errors_within_global_budget(

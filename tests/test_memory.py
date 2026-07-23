@@ -38,6 +38,19 @@ def test_memory_round_trip_never_writes_plaintext(tmp_path: Path) -> None:
     assert (tmp_path / "memory.key").stat().st_mode & 0o777 == 0o600
 
 
+def test_session_messages_returns_only_the_latest_turns_in_order(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    for index in range(60):
+        store.save_turn(session, f"user {index}", f"assistant {index}", [])
+
+    messages = store.session_messages(session.id, turn_limit=50)
+
+    assert len(messages) == 100
+    assert messages[0] == ("user", "user 10")
+    assert messages[-1] == ("assistant", "assistant 59")
+
+
 def test_hypotheses_require_confirmation_and_corrections_override_derived_text(
     tmp_path: Path,
 ) -> None:

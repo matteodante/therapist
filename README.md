@@ -64,8 +64,11 @@ definition contains only command paths and reads tokens and provider credentials
 encrypted store. Use `telegram-service restart` after configuration changes and
 `telegram-service uninstall` to stop the process and remove its background definition.
 
-Run `uv run thera --help` for all commands. Inside chat, `/help` lists memory, session, correction,
-forgetting, and session-closing commands.
+`thera chat` opens a full-screen, colored Textual interface, renders assistant Markdown, restores
+the latest 50 turns from the active session, and streams replies while they are generated. Use
+`thera chat --plain` for the line-oriented interface; it is also selected automatically outside an
+interactive terminal. Inside chat, `/help` lists memory, session, correction, forgetting, and
+session-closing commands.
 
 Conversation context uses the selected model's limit up to an application cap of 128,000 tokens,
 always reserving 10% for model output. Use `--context-window-tokens` on `chat` or `telegram` to set a
@@ -110,8 +113,10 @@ insufficient. The remaining five tools stage validated memory observations, corr
 confirmations, focus changes, or one intervention update. The transcript and staged changes are
 committed atomically only after a successful final reply. Conversation history contains the complete
 successful run, including paired function-tool inputs and outputs. CLI and Telegram display those
-exchanges before the final reply, and export exposes them without internal prompts or private model
-reasoning. Repeated internal instructions and provider thinking are discarded before persistence.
+exchanges before the final reply and stream the model's temporary Markdown draft. A retry replaces
+the visible draft; only the validated final reply and successful tool history are encrypted and
+committed. Export exposes them without internal prompts or private model reasoning. Repeated
+internal instructions and provider thinking are discarded before persistence.
 Slash commands such as `/start`, `/status`, and `/quit`, their displayed output, and context
 lifecycle notices remain outside the conversation archive and model history. There is no
 intra-session compaction: complete successful runs remain available until a warning near the
