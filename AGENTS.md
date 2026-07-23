@@ -272,6 +272,12 @@ release updates the alpha without deleting encrypted application state or the sh
 model cache. `uv tool uninstall therapist-cli` removes the application command but intentionally
 leaves user data in place.
 
+The public README uses `main` only as a small latest-alpha bootstrap channel; that script always
+downloads one explicit immutable release tag. On macOS, the piped bootstrap starts interactive
+Questionary setup inside a fresh `script(1)` pseudoterminal because `prompt_toolkit` cannot register
+a `/dev/tty` descriptor reopened after a pipe with `kqueue`. Linux launches setup directly, and
+Windows PowerShell retains its console input.
+
 Both installers download uv directly from its immutable GitHub release when it is absent. They first
 require the release checksum manifest to match its repository-pinned SHA-256 digest and then require
 the selected platform archive to match the digest in that verified manifest. They install the

@@ -90,3 +90,14 @@ jobs:
           if [ -f "$thera.exe" ]; then thera="$thera.exe"; fi
           "$thera" protocol validate
           "$thera" doctor
+      - name: Validate piped macOS prompt
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          tool_python="$(uv tool dir)/therapist-cli/bin/python"
+          output="$(
+            sh -c 'sleep 0.2; printf "ok\n"' |
+              script -q -e /dev/null "$tool_python" -c \
+                'from prompt_toolkit import prompt; print("PROMPT_RESULT=" + prompt(""))'
+          )"
+          printf '%s\n' "$output" | grep -q 'PROMPT_RESULT=ok'

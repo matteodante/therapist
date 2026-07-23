@@ -24,17 +24,18 @@ _Actual Textual interface captured with synthetic data._
 macOS or Linux:
 
 ```bash
-curl -LsSf https://raw.githubusercontent.com/matteodante/therapist/v0.1.0/install.sh | sh
+curl -LsSf https://raw.githubusercontent.com/matteodante/therapist/main/install.sh | sh
 ```
 
 Windows PowerShell:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/matteodante/therapist/v0.1.0/install.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/matteodante/therapist/main/install.ps1 | iex"
 ```
 
 The installer needs no administrator privileges, existing Python, or Git checkout. It installs the
-tagged `v0.1.0` alpha, opens guided setup, and finishes with `thera doctor`.
+latest tagged alpha, opens guided setup, and finishes with `thera doctor`. Re-run the same command to
+update when a newer alpha is published; encrypted application data is preserved.
 
 ## Why this exists
 
@@ -143,8 +144,8 @@ thera memory model install
 thera memory model remove
 ```
 
-To reinstall this alpha, run the same installer again. To update later, use the installer command
-published for the newer release. Existing encrypted configuration, memory, and downloaded model data
+To reinstall or update the alpha, run the same installer again. The bootstrap on `main` always
+selects an exact release tag; existing encrypted configuration, memory, and downloaded model data
 are preserved. To uninstall the application while keeping user data:
 
 ```bash

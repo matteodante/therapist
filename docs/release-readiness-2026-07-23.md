@@ -90,10 +90,11 @@ These limits are public and must not be described as equivalent mature-project c
 
 ## Publication authorization
 
-The maintainer approves package version `0.1.0`, signed tag `v0.1.0`, and a GitHub prerelease from
-the exact final `main` candidate once its required checks and candidate workflow pass. The supported
-installer channel is the release-tagged `install.sh` and `install.ps1`; both install the immutable
-`v0.1.0` source rather than a moving branch.
+The maintainer approves package version `0.1.1`, signed tag `v0.1.1`, and a GitHub prerelease from
+the exact final `main` candidate once its required checks and candidate workflow pass. Version
+`v0.1.0` is withdrawn because macOS `prompt_toolkit` setup fails after a piped installer reopens
+`/dev/tty`. The supported latest-alpha bootstrap lives on `main` but selects the explicit immutable
+`v0.1.1` source; the tagged installer remains available for reproducible installation.
 
 The current privacy screening does not identify publisher-side application-data processing: there is
 no hosted instance, central account, telemetry, maintainer inference, or normal access to user data.
