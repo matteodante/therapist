@@ -44,3 +44,38 @@ jobs:
           uv tool install --python 3.12 "$wheel"
           "$(uv tool dir --bin)/thera" protocol validate
           "$(uv tool dir --bin)/thera" doctor
+
+  installer-smoke:
+    name: Installer smoke (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          version: "0.11.31"
+          python-version: "3.12"
+          enable-cache: true
+      - name: Validate POSIX installer
+        if: runner.os != 'Windows'
+        run: sh -n install.sh
+      - name: Validate PowerShell installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: $null = [scriptblock]::Create((Get-Content -Raw install.ps1))
+      - name: Build wheel
+        run: uv build --wheel
+      - name: Smoke-test installed wheel
+        shell: bash
+        run: |
+          wheel="$(find dist -name '*.whl' -print -quit)"
+          uv tool install --python 3.12 "$wheel"
+          thera="$(uv tool dir --bin)/thera"
+          if [ -f "$thera.exe" ]; then thera="$thera.exe"; fi
+          "$thera" protocol validate
+          "$thera" doctor
