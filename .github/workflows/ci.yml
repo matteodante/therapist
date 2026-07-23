@@ -21,7 +21,7 @@ jobs:
       - name: Install uv and Python
         uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
         with:
-          version: "0.11.30"
+          version: "0.11.31"
           python-version: "3.12"
           enable-cache: true
       - name: Install dependencies
@@ -32,5 +32,15 @@ jobs:
         run: uv run pytest -q
       - name: Validate protocol packs
         run: uv run thera protocol validate
+      - name: Validate installer syntax
+        run: |
+          sh -n install.sh
+          pwsh -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw install.ps1))'
       - name: Build package
         run: uv build
+      - name: Smoke-test installed wheel
+        run: |
+          wheel="$(find dist -name '*.whl' -print -quit)"
+          uv tool install --python 3.12 "$wheel"
+          "$(uv tool dir --bin)/thera" protocol validate
+          "$(uv tool dir --bin)/thera" doctor

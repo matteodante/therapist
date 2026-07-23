@@ -41,6 +41,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/therapist"]
 
+[tool.hatch.build.targets.wheel.force-include]
+"protocols/transdiagnostic" = "therapist/protocols/transdiagnostic"
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["live: requires real provider credentials and network access"]

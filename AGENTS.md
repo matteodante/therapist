@@ -226,6 +226,15 @@ it does not replace full-disk encryption or protect a compromised operating-syst
 
 ## CLI contract
 
+The normal end-user installation is a copy-paste bootstrap from GitHub: `install.sh` supports macOS
+and Linux, while `install.ps1` supports Windows PowerShell. Both download the current `main` source
+archive, install a pinned uv bootstrap only when uv is absent, use uv-managed Python 3.12 to install
+`therapist-cli` as an isolated user tool, expose `thera` on the user's PATH, run interactive
+`thera setup`, and then run `thera doctor`. They require no administrator privileges, existing
+Python, or Git checkout. Re-running the same installer updates the alpha without deleting encrypted
+application state or the shared Hugging Face model cache. `uv tool uninstall therapist-cli` removes
+the application command but intentionally leaves user data in place.
+
 Primary commands:
 
 ```text
@@ -401,6 +410,10 @@ source metadata, and SHA-256 hashes for every loaded skill and reference. Change
 files invalidate the pack. Protocol history and releases are identified by Git commits and tags
 rather than duplicated SemVer directories or a manifest version. Keep one directory per genuinely
 different protocol; do not copy a directory merely to preserve an older revision.
+
+The canonical protocol remains under `protocols/`. The wheel build copies the default pack into the
+installed `therapist` package so a user-tool installation is self-contained; source checkouts fall
+back to the canonical repository path.
 
 The pack contains original transdiagnostic abstractions informed by official WHO and NICE materials.
 Original protocol text is licensed under the repository license; linked sources are not copied or

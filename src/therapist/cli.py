@@ -35,8 +35,9 @@ from therapist.memory import MemoryStore
 from therapist.protocol import ProtocolError, ProtocolPack
 from therapist.telegram import TelegramBot, TelegramChannel, TelegramError
 
-ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_PROTOCOL = ROOT / "protocols" / "transdiagnostic"
+PACKAGE_PROTOCOL = Path(__file__).resolve().parent / "protocols" / "transdiagnostic"
+REPOSITORY_PROTOCOL = Path(__file__).resolve().parents[2] / "protocols" / "transdiagnostic"
+DEFAULT_PROTOCOL = PACKAGE_PROTOCOL if PACKAGE_PROTOCOL.is_dir() else REPOSITORY_PROTOCOL
 TELEGRAM_SECRET = "telegram_bot_token"
 DEFAULT_CODEX_MODEL = "codex:gpt-5.6-sol"
 DEFAULT_EMBEDDING_REPO = "Qwen/Qwen3-Embedding-0.6B"

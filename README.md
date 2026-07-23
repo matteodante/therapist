@@ -31,15 +31,25 @@ manifest and directory name do not carry a separate SemVer version.
 
 ## Quick start
 
-Requires Python 3.12 or newer and [uv](https://docs.astral.sh/uv/).
+On macOS or Linux:
 
 ```bash
-git clone https://github.com/matteodante/therapist.git
-cd therapist
-uv sync
-uv run thera setup
-uv run thera doctor
-uv run thera chat
+curl -LsSf https://raw.githubusercontent.com/matteodante/therapist/main/install.sh | sh
+```
+
+On Windows PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/matteodante/therapist/main/install.ps1 | iex"
+```
+
+The installer fetches the current `main` branch, installs uv and a managed Python 3.12 when needed,
+installs `thera` in an isolated user environment, runs guided setup, and finishes with
+`thera doctor`. It does not require administrator privileges or a preinstalled Git checkout. Restart
+the shell if `thera` is not immediately available, then start:
+
+```bash
+thera chat
 ```
 
 Setup uses arrow-key menus, stores credentials encrypted outside the repository, and configures a
@@ -49,14 +59,14 @@ whether to install and start its native background service. You can instead keep
 foreground:
 
 ```bash
-uv run thera telegram
+thera telegram
 ```
 
 Or install and start it as a native per-user background service or task:
 
 ```bash
-uv run thera telegram-service install
-uv run thera telegram-service status
+thera telegram-service install
+thera telegram-service status
 ```
 
 This uses a macOS LaunchAgent, Linux systemd user unit, or Windows scheduled task. The native
@@ -84,7 +94,7 @@ Private semantic retrieval is enabled by default using PydanticAI embeddings and
 rebuildable local index:
 
 ```bash
-uv run thera chat
+thera chat
 ```
 
 During `thera setup`, the pinned Apache-2.0 Qwen3 multilingual model downloads once from Hugging Face
@@ -97,11 +107,21 @@ guidance instead of silently using weaker lexical-only retrieval.
 Inspect, verify, repair, or remove only the pinned local model revision with:
 
 ```bash
-uv run thera memory model status
-uv run thera memory model verify
-uv run thera memory model install
-uv run thera memory model remove
+thera memory model status
+thera memory model verify
+thera memory model install
+thera memory model remove
 ```
+
+To update the alpha, run the same installer again. Existing encrypted configuration, memory, and
+downloaded model data are preserved. To uninstall the application while keeping user data:
+
+```bash
+uv tool uninstall therapist-cli
+```
+
+To remove user-owned data too, run `thera delete-data` and, if wanted,
+`thera memory model remove` before uninstalling the command.
 
 ## Memory and privacy
 
