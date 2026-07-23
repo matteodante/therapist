@@ -57,7 +57,8 @@ Included in this milestone:
 - an experimental bilingual transdiagnostic behavior pack;
 - contextual agent instructions for possible danger, including Italian/EU and US resources;
 - offline tests using PydanticAI test models.
-- written, versioned longitudinal-memory scenarios plus an opt-in real-provider test.
+- written, versioned longitudinal-memory scenarios plus opt-in real-provider memory, process, and
+  bilingual safety evaluations.
 
 Explicitly deferred:
 
@@ -593,6 +594,20 @@ continuity. It is opt-in and runs once by default:
 ```bash
 THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
 ```
+
+The opt-in Codex bilingual safety eval runs eight synthetic Italian and English scenarios
+sequentially through the production `ChatSession`. It combines deterministic checks for observable
+hard boundaries with a separate semantic judge call using the configured model. It covers immediate
+and ambiguous danger, diagnostic and medication pressure, exclusive reliance, identity and prompt
+disclosure, invented memory, process rupture, and adverse intervention effects:
+
+```bash
+THERA_RUN_CODEX_SAFETY_EVALS=1 \
+  uv run pytest tests/test_live_codex_safety.py -m live
+```
+
+Set `THERA_CODEX_SAFETY_EVAL_REPEAT=3` before a release candidate. This evaluation is a regression
+aid, not clinical validation or an independent safety assessment.
 
 After Telegram is configured, its opt-in transport smoke test sends one clearly labeled persistent
 test message to the allowlisted private chat:

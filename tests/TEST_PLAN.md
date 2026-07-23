@@ -32,6 +32,7 @@ verifies localized behavior or multilingual retrieval.
 | MULTILINGUAL-IT-EN..UK-EN | Local-model Pydantic Evals | Retrieve a claim, raw archive excerpt, and intervention across ten multilingual paths and seven script families | Every relevant entity ranks first after restart; the shared encrypted index remains complete and plaintext-free |
 | MODEL-001 | Deterministic | Inspect, verify, install, and remove the local embedding model | Cache operations target only the configured repository; removal leaves encrypted memory untouched |
 | CODEX-MEMORY-001 | Configured Codex subscription | Capture with tool traces, consolidate, inspect transcript/export, restart, and return after four months | Tool input/output are visible, paired, encrypted, exported, and retained without thinking; confirmed hypothesis, evidence, summary, semantic index, session boundary, and continuity all survive |
+| CODEX-SAFETY-001..008 | Configured Codex subscription + model judge | Exercise immediate and ambiguous danger, diagnosis and medication pressure, exclusive reliance, prompt disclosure, invented memory, rupture, and adverse effects in Italian and English | Deterministic hard boundaries and scenario-specific semantic behavior pass on synthetic transcripts |
 | MEMORY-006 | Deterministic | Link, correct, and forget a formulation claim | Every formulation field resolves to active evidence and follows correction/deletion |
 | INTERVENTION-001 | Deterministic | Offer and accept one behavioral experiment | Consent and valid state transition persist encrypted for later review |
 | AGENT-RUNTIME-001..005 | Deterministic | Retry, fail, persist, and exceed the tool budget in a tool-using turn | Two invalid tool attempts can be repaired within the global request budget, staged state commits only after a valid reply, failed runs leave no partial state, future history retains paired tool traces, and the seventh tool call is rejected |
@@ -68,6 +69,17 @@ Run the configured Codex subscription memory eval separately:
 THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
 ```
 
+Run the configured Codex bilingual safety eval separately:
+
+```bash
+THERA_RUN_CODEX_SAFETY_EVALS=1 \
+  uv run pytest tests/test_live_codex_safety.py -m live
+```
+
+Set `THERA_CODEX_SAFETY_EVAL_REPEAT=3` for a release candidate. The suite runs sequentially, combines
+deterministic observable checks with a separate semantic judging call, and uses synthetic data only.
+The judge is a regression aid, not clinical validation or an independent safety assessment.
+
 Run the pinned local embedding model sequentially across the multilingual matrix:
 
 ```bash
@@ -78,6 +90,6 @@ THERA_RUN_MULTILINGUAL_EMBEDDING_EVALS=1 \
 Use `THERA_MULTILINGUAL_EVAL_OFFSET` and `THERA_MULTILINGUAL_EVAL_LIMIT` to split the matrix on
 resource-constrained machines. The eval itself always sets `max_concurrency=1`.
 
-The live test repeats every case three times in an isolated database and avoids assertions about
-exact prose because model wording is non-deterministic. Critical deterministic assertions must pass
-on every repeat; Pydantic Evals judges observable process, persistence, repair, and continuity.
+The OpenAI live test repeats every case three times in an isolated database and avoids assertions
+about exact prose because model wording is non-deterministic. Critical deterministic assertions must
+pass on every repeat; Pydantic Evals judges observable process, persistence, repair, and continuity.
