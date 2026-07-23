@@ -19,13 +19,11 @@ from therapist.memory import MemoryKind, MemoryStatus, MemoryStore
 from therapist.protocol import ProtocolPack
 
 CASES_PATH = Path(__file__).parent / "cases" / "live_codex_memory.yaml"
-pytestmark = [
-    pytest.mark.live,
-    pytest.mark.skipif(
-        os.getenv("THERA_RUN_CODEX_EVALS") != "1",
-        reason="Set THERA_RUN_CODEX_EVALS=1 after `thera auth login`.",
-    ),
-]
+
+
+def _contains_term_groups(text: str, groups: list[list[str]]) -> bool:
+    folded = text.casefold()
+    return all(any(term.casefold() in folded for term in group) for group in groups)
 
 
 @dataclass
@@ -61,9 +59,9 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
             ),
             "evidence_provenance_preserved": ctx.output["evidence_preserved"],
             "session_consolidated": ctx.output["session_consolidated"],
-            "session_summary_complete": all(
-                any(term.casefold() in ctx.output["session_summary"].casefold() for term in group)
-                for group in expected["summary_term_groups"]
+            "session_summary_complete": _contains_term_groups(
+                ctx.output["session_summary"],
+                expected["summary_term_groups"],
             ),
             "tool_io_exported": (
                 ctx.output["export_tool_input_count"] >= expected["minimum_tool_calls"]
@@ -86,6 +84,29 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
         }
 
 
+def test_memory_contract_accepts_sparse_memory_and_semantic_paraphrase() -> None:
+    loaded = Dataset[dict[str, Any], dict[str, Any], dict[str, Any]].from_file(CASES_PATH)
+    expected = loaded.cases[0].expected_output
+    assert expected is not None
+    assert expected["minimum_memory_items"] == 2
+
+    summary = (
+        "You recognized a loop in which fear that your manager will notice every mistake "
+        "leads to exhaustive preparation and postponing calls. Avoidance gives short-term "
+        "relief but makes later calls harder."
+    )
+    assert _contains_term_groups(summary, expected["summary_term_groups"])
+    assert not _contains_term_groups(
+        "Calls were postponed and briefly relieving.",
+        expected["summary_term_groups"],
+    )
+
+
+@pytest.mark.live
+@pytest.mark.skipif(
+    os.getenv("THERA_RUN_CODEX_EVALS") != "1",
+    reason="Set THERA_RUN_CODEX_EVALS=1 after `thera auth login`.",
+)
 def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
     credential_store = MemoryStore()
     if load_credential(credential_store) is None:

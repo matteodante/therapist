@@ -29,7 +29,7 @@ clinical validation, legal approval, or a safety certification.
 | Ruff formatting | Passed |
 | ty static type check | Passed for `src/therapist` |
 | Branch coverage | 75% minimum enforced |
-| Offline deterministic suite | 129 passed, 5 live tests deselected |
+| Offline deterministic suite | 130 passed, 5 live tests deselected |
 | Protocol validation | Passed for `therapist.transdiagnostic` |
 | Root, nested skill, and reference hash enforcement | Passed |
 | POSIX installer syntax | Passed |

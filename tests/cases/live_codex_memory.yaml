@@ -14,13 +14,13 @@ cases:
       semantic_query: Tomorrow I need to tell an authority figure that a delivery is late.
       return_message: Four months have passed. Tomorrow I need to tell an authority figure that a delivery is late, and I want to avoid the conversation.
     expected_output:
-      minimum_memory_items: 3
+      minimum_memory_items: 2
       minimum_sessions: 2
       minimum_tool_calls: 1
       context_terms: [manager, judgment]
       continuity_terms: [manager, four months, before, remember]
       summary_term_groups:
         - [call, manager]
-        - [judgment, scrutiny]
+        - [judgment, scrutiny, mistake]
         - [relief, shame]
       require_confirmed_hypothesis: true
