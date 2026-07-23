@@ -413,7 +413,8 @@ different protocol; do not copy a directory merely to preserve an older revision
 
 The canonical protocol remains under `protocols/`. The wheel build copies the default pack into the
 installed `therapist` package so a user-tool installation is self-contained; source checkouts fall
-back to the canonical repository path.
+back to the canonical repository path. Git forces LF endings for protocol files so their byte-level
+manifest hashes remain valid on Windows checkouts.
 
 The pack contains original transdiagnostic abstractions informed by official WHO and NICE materials.
 Original protocol text is licensed under the repository license; linked sources are not copied or
