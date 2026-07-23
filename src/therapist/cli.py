@@ -11,10 +11,15 @@ from pathlib import Path
 from typing import Literal
 from urllib.request import Request, urlopen
 
+os.environ["HF_HUB_DISABLE_TELEMETRY"] = "1"
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+
 import questionary
 from huggingface_hub import HfApi, scan_cache_dir, snapshot_download
 from huggingface_hub.errors import CacheNotFound
 from pydantic_ai import Embedder
+from pydantic_ai.models import Model
+from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
 from rich.console import Console
 from rich.live import Live
 
@@ -233,13 +238,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         _load_provider_secret(store, selected_model)
         locale = args.locale or state.default_locale or "en-US"
         try:
-            model = (
-                codex_model(store, selected_model.removeprefix("codex:"))
-                if selected_model.startswith("codex:")
-                else selected_model
-            )
+            model = _conversation_model(store, selected_model)
             if selected_model.startswith("ollama:"):
-                os.environ.setdefault("OLLAMA_BASE_URL", "http://localhost:11434/v1")
+                os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434/v1"
         except AuthError as error:
             print(f"Authentication error: {error}")
             return 2
@@ -586,6 +587,17 @@ def _provider_secret_config(model: str) -> tuple[str, str, str] | None:
         (config for prefix, config in PROVIDER_SECRETS.items() if model.startswith(prefix)),
         None,
     )
+
+
+def _conversation_model(store: MemoryStore, model: str) -> str | Model:
+    if model.startswith("codex:"):
+        return codex_model(store, model.removeprefix("codex:"))
+    if model.startswith("openai:"):
+        return OpenAIResponsesModel(
+            model.removeprefix("openai:"),
+            settings=OpenAIResponsesModelSettings(openai_store=False),
+        )
+    return model
 
 
 def _ollama_models() -> list[str]:
@@ -992,7 +1004,7 @@ def _ensure_chat_consent(store: MemoryStore) -> bool:
     consent = "I UNDERSTAND"
     if state.consent_version != "alpha-2":
         notice = (
-            "Thera is experimental AI for adults using it privately for self-reflection. "
+            "Therapist is experimental AI for adults using it privately for self-reflection. "
             "It is not therapy, diagnosis, medical advice, emergency care, or human monitoring, "
             "and its output can be wrong. A remote model provider receives your messages, "
             "successful session history, and selected context when configured. "

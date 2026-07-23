@@ -36,6 +36,7 @@ def test_tui_loads_history_and_renders_streamed_markdown(tmp_path: Path) -> None
 
     async def scenario() -> None:
         async with app.run_test() as pilot:
+            assert app.title == "Therapist"
             assert len(app.query(".user")) == 1
             assert len(app.query(".assistant")) == 1
 
@@ -48,7 +49,9 @@ def test_tui_loads_history_and_renders_streamed_markdown(tmp_path: Path) -> None
 
             assert len(app.query(".user")) == 2
             assert len(app.query(".tool")) == 2
-            assert app.query(".assistant").last(Markdown).source.endswith("**Streaming reply.**")
+            reply = app.query(".assistant").last(Markdown).source
+            assert reply.startswith("**Therapist**")
+            assert reply.endswith("**Streaming reply.**")
             assert app.query(".notice").last(Static).content == "Context notice."
             assert not app.query_one("#input", Input).disabled
 

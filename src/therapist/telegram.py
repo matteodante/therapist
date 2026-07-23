@@ -16,7 +16,7 @@ from therapist.chat import ChatSession, TurnStreamEvent, TurnStreamKind
 from therapist.memory import MemoryStore
 
 API_ROOT = "https://api.telegram.org"
-CONSENT_VERSION = "alpha-2"
+CONSENT_VERSION = "alpha-3"
 MESSAGE_LIMIT = 4_000
 MEMORY_PAGE_SIZE = 10
 SESSION_PAGE_SIZE = 5
@@ -83,7 +83,8 @@ class TelegramBot:
             "setMyDescription",
             {
                 "description": "Experimental AI for adult self-reflection with encrypted local "
-                "memory. Not therapy, diagnosis, medical advice, monitoring, or emergency care."
+                "memory. Not therapy, diagnosis, medical advice, monitoring, or emergency care. "
+                "Privacy: https://github.com/matteodante/therapist/blob/main/PRIVACY.md"
             },
         )
 
@@ -537,6 +538,7 @@ class TelegramChannel:
         return (
             "PRIVACY AND TRANSPARENCY\n"
             "• Telegram receives messages, replies, and data you ask to view here.\n"
+            "• Telegram cloud chats are not end-to-end encrypted.\n"
             "• The model provider receives the message and only selected context.\n"
             "• Archive, structured memory, and semantic index stay encrypted on the host.\n"
             "• Semantic retrieval uses a local model; it does not establish facts or evidence.\n"
@@ -545,7 +547,9 @@ class TelegramChannel:
             "• Agent tool inputs and outputs are shown and retained in encrypted history.\n"
             "• Any durable changes are disclosed after each reply.\n"
             "• Internal prompts, tokens, and private reasoning are not shown.\n\n"
-            "Use the local CLI for export, correction, forgetting, and full deletion."
+            "Use the local CLI for export, correction, forgetting, and local deletion. "
+            "Deleting local data does not delete Telegram messages; delete the bot chat or "
+            "messages separately in Telegram."
         )
 
     def _durable_snapshot(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -583,11 +587,12 @@ class TelegramChannel:
 
     def _consent_notice(self, consented: bool) -> str:
         notice = (
-            "Thera is experimental AI for adults using it privately for self-reflection. "
+            "Therapist is experimental AI for adults using it privately for self-reflection. "
             "It is not therapy, diagnosis, medical advice, emergency care, or human monitoring, "
             "and its output can be wrong. "
             "Telegram receives messages, replies, and data you choose to view here; "
-            "any remote provider receives messages, successful session history, and selected "
+            "its cloud chats are not end-to-end encrypted. "
+            "Any remote provider receives messages, successful session history, and selected "
             "context. By continuing, you confirm that you are at least 18 and accept these data "
             "flows. "
         )

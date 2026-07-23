@@ -27,9 +27,14 @@ Before creating a tag, link durable evidence for every item below in the release
   match the actual release;
 - the EU AI Act Article 50 machine-readable marking decision is recorded and implemented where
   required;
-- a monitored private Code of Conduct enforcement contact and a repository recovery owner exist;
-- `main` protection, required CI, private vulnerability reporting, dependency alerts, secret
-  scanning, push protection, and CodeQL are enabled;
+- the Code of Conduct and reporting routes accurately state that there is no confidential
+  project-specific conduct inbox;
+- the candidate was pushed directly to `main` only after local checks, and the resulting required CI
+  and CodeQL runs are green;
+- private vulnerability reporting, dependency alerts, secret scanning, push protection, and CodeQL
+  are enabled;
+- the latest OpenSSF Scorecard result has been reviewed as a diagnostic, with accepted
+  single-maintainer findings recorded rather than represented as certification;
 - current provider terms and safety policies have been reviewed;
 - the bilingual safety suite has passed three repeats, with model, provider, protocol commit,
   locale, results, and residual failures recorded;
@@ -43,6 +48,24 @@ Before creating a tag, link durable evidence for every item below in the release
 
 If any legal, privacy, AI Act, safety, or conduct gate is open, stop. A green CI run is not authority
 to release.
+
+Use [docs/compliance-assessment-brief.md](docs/compliance-assessment-brief.md) for the external
+review, [docs/dpia-screening.md](docs/dpia-screening.md) for the preliminary data-protection record,
+and [docs/article-50-assessment.md](docs/article-50-assessment.md) for the open transparency decision.
+Use [docs/release-readiness-2026-07-23.md](docs/release-readiness-2026-07-23.md) as the current
+engineering evidence and open-blocker record.
+
+## Accepted alpha governance risks
+
+The individual publisher has explicitly chosen direct pushes to `main`, no required pull-request
+review, no second administrator or recovery owner, and no private project-specific conduct inbox for
+this phase. These are documented single-maintainer limitations, not waived security, privacy, or
+regulatory gates.
+
+Before every direct push, run the proportionate local checks. After the push, inspect the exact
+commit's GitHub CI and CodeQL results before tagging. Never describe the release as independently
+reviewed, protected by multi-person governance, continuously recoverable, or able to accept
+confidential conduct cases. Reassess these constraints before broader promotion or material growth.
 
 ## Version and tag policy
 

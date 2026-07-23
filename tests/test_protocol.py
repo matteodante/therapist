@@ -30,6 +30,7 @@ def test_manifest_version_is_rejected_in_favor_of_git_history(tmp_path: Path) ->
 version: 1.2.3
 status: experimental
 locales: [en-US]
+root_sha256: deadbeef
 references: []
 """,
         encoding="utf-8",
@@ -47,6 +48,7 @@ def test_changed_reference_is_rejected(tmp_path: Path) -> None:
         """id: test.pack
 status: experimental
 locales: [it-IT]
+root_sha256: 238fa28a94976c7da14563bc873c2729bd5cd325389085bb4c6dd0de28923590
 references:
   - path: references/source.md
     sha256: deadbeef
@@ -69,6 +71,7 @@ def test_changed_skill_is_rejected(tmp_path: Path) -> None:
         """id: test.pack
 status: experimental
 locales: [en-US]
+root_sha256: 16ffc8b69356ecb4270367c806b5397a633d824d9225065c332ae7c7095a5c5c
 skills:
   - path: skills/test.md
     sha256: deadbeef
@@ -78,4 +81,20 @@ references: []
     )
 
     with pytest.raises(ProtocolError, match="skill hash"):
+        ProtocolPack.load(tmp_path)
+
+
+def test_changed_root_skill_is_rejected(tmp_path: Path) -> None:
+    (tmp_path / "SKILL.md").write_text("changed", encoding="utf-8")
+    (tmp_path / "manifest.yaml").write_text(
+        """id: test.pack
+status: experimental
+locales: [en-US]
+root_sha256: deadbeef
+references: []
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ProtocolError, match="root skill hash"):
         ProtocolPack.load(tmp_path)

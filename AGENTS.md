@@ -23,6 +23,8 @@ local CLI and one private Telegram transport before building broader infrastruct
 
 Original code and project content are open source under `AGPL-3.0-or-later`. Linked or referenced
 third-party materials remain under their owners' terms and are not relicensed by this repository.
+The public alpha is published by Matteo Dante as an individual, without charge, donations,
+sponsorship, paid support, hosted operation, or other commercial activity.
 
 ## Current scope
 
@@ -71,6 +73,10 @@ Explicitly deferred:
 - MDR, AI Act, FDA, GDPR/HIPAA compliance work;
 - formal threat modeling, penetration tests, audits, and certifications.
 
+The current single-maintainer workflow uses direct pushes to `main` and has no second repository
+administrator, recovery owner, or confidential project-specific conduct inbox. These are explicit
+alpha governance limitations, not equivalent controls or release-safety claims.
+
 The alpha retains baseline safeguards already present: transparent AI identity, no clinical claims,
 and contextual agent instructions for possible danger and emergency resources. These are not a
 validated clinical safety system.
@@ -79,6 +85,9 @@ validated clinical safety system.
 `docs/maintainer-ai-literacy.md` records the minimum AI-literacy baseline for maintainers and release
 decision-makers. Keep both synchronized with changes to release scope, providers, data flows,
 behavioral safeguards, evaluation strategy, or project roles.
+`docs/dpia-screening.md`, `docs/article-50-assessment.md`, and
+`docs/compliance-assessment-brief.md` record preliminary compliance facts and unresolved external
+decisions; they are not compliance claims or substitutes for qualified review.
 
 ## Conversation behavior
 
@@ -317,6 +326,8 @@ refuse missing or stale setup state. Provider and Telegram secrets are staged in
 with app defaults only after all interactive validation succeeds, so cancellation does not leave a
 partially configured provider. When Telegram is configured, setup asks whether to install and start
 its native per-user background service or task after the encrypted configuration is committed.
+Hugging Face telemetry and implicit credential sending are disabled before importing its client.
+Conversation-time embedding loads use only the verified local revision.
 
 After `thera auth login`, omitting `--model` selects `codex:gpt-5.6-sol`. An explicit model can be
 selected with `--model codex:<model-id>`. Access and refresh tokens are encrypted in the same local
@@ -327,6 +338,8 @@ open-source Codex client. It is experimental, self-hosted/personal only, and not
 OpenAI API contract. OpenAI documents third-party coding harnesses, but does not document non-coding
 subscription use; do not enable this provider in a SaaS or make compatibility/availability claims
 without explicit terms and product review. API-key and local-model providers remain supported.
+Ordinary OpenAI Responses requests explicitly set `store=false`; provider abuse-monitoring retention
+can still apply. Ollama conversation models are forced to the loopback base URL.
 
 Interactive chat commands:
 
@@ -365,7 +378,9 @@ messages, replies, and any local data the user requests to inspect there, while 
 provider receives message content, successful session history, and selected context. Both consent
 flows disclose the adult-only private-use scope, output fallibility, non-clinical and
 non-emergency boundary, lack of human monitoring, and relevant data flows before conversation input
-is accepted. Changing this notice increments its stored version and requires renewed consent.
+is accepted. The Telegram notice also states that cloud chats are not end-to-end encrypted; its
+privacy view explains that local deletion does not delete Telegram messages. Changing this notice
+increments its stored version and requires renewed consent.
 
 Telegram is a conversation and read-only transparency surface, not a remote administration surface.
 `/status`, `/case`, `/memory [page]`, `/sessions [page|id]`, `/interventions [page]`, and `/privacy`
@@ -401,7 +416,8 @@ definition. macOS operational output is written to the application data director
 Minimal setup:
 
 1. Create a bot with Telegram's `@BotFather`, keep its token private, and disable group joins as
-   defense in depth.
+   defense in depth. Set its privacy-policy URL to
+   `https://github.com/matteodante/therapist/blob/main/PRIVACY.md`.
 2. Run `thera setup`, choose the model and locale, then paste the bot token in the hidden prompt.
 3. Open the one-time `t.me` link printed by setup, press Start, and confirm the detected account.
 4. Choose whether setup should install the background service, or run `thera telegram` manually.
@@ -426,10 +442,11 @@ protocols/<id>/
 ```
 
 The manifest contains the pack ID, experimental/review status, locales, ordered therapeutic skills,
-source metadata, and SHA-256 hashes for every loaded skill and reference. Changed skill or reference
-files invalidate the pack. Protocol history and releases are identified by Git commits and tags
-rather than duplicated SemVer directories or a manifest version. Keep one directory per genuinely
-different protocol; do not copy a directory merely to preserve an older revision.
+source metadata, and SHA-256 hashes for the root skill, every loaded nested skill, and every
+reference. Changed skill or reference files invalidate the pack. Protocol history and releases are
+identified by Git commits and tags rather than duplicated SemVer directories or a manifest version.
+Keep one directory per genuinely different protocol; do not copy a directory merely to preserve an
+older revision.
 
 The canonical protocol remains under `protocols/`. The wheel build copies the default pack into the
 installed `therapist` package so a user-tool installation is self-contained; source checkouts fall
@@ -493,6 +510,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - Prefer the standard library, native platform behavior, and installed dependencies.
 - Keep `ruff check`, `ruff format --check`, the offline test suite, protocol validation, and package
   build green in CI.
+- Keep the pinned OpenSSF Scorecard workflow green and treat its results as diagnostics rather than
+  certification; do not hide findings caused by the documented direct-push workflow.
 - Do not add infrastructure or abstractions for deferred milestones.
 - Preserve input validation, encryption, error handling that prevents data loss, and contextual
   safety instructions.

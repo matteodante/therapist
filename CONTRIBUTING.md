@@ -26,7 +26,7 @@ summaries and abstractions; do not copy therapeutic source material unless its l
 permits this repository's use.
 
 Do not use issues for personal support, clinical advice, or emergencies. Follow [SUPPORT.md](SUPPORT.md)
-and use only synthetic, fully redacted examples.
+and the [Code of Conduct](CODE_OF_CONDUCT.md), and use only synthetic, fully redacted examples.
 
 ## Developer Certificate of Origin
 

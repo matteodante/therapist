@@ -6,6 +6,9 @@ change.
 
 ## Who operates the software
 
+Therapist is published by Matteo Dante as an individual. The alpha is free and non-commercial and
+has no hosted service, donation, sponsorship, paid support, advertising, or telemetry.
+
 The person who installs Therapist operates their own single-user instance and chooses any model
 provider and Telegram account. The repository maintainer does not receive conversations, memory, or
 credentials during normal use. Data reaches the maintainer only when a user deliberately submits it
@@ -52,8 +55,10 @@ PydanticAI model ID. Each service has its own retention, abuse-monitoring, train
 region, transfer, and deletion terms. Therapist does not control those terms and does not promise
 zero retention. Review the selected provider's current terms before sending sensitive content.
 
-Deleting local data does not delete data already retained by Telegram, a model provider, terminal
-capture, exports, or backups.
+Telegram bot conversations are cloud chats and are not end-to-end encrypted. Deleting local data
+does not delete data already retained by Telegram, a model provider, terminal capture, exports, or
+backups. Delete the bot messages or chat separately in Telegram when removal from that transport is
+wanted.
 
 ## Retention, access, export, and deletion
 

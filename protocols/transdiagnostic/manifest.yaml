@@ -1,6 +1,7 @@
 id: therapist.transdiagnostic
 status: experimental
 locales: [it-IT, en-US]
+root_sha256: a9d0ca0dd3f15e306403e82cf4bf5863fd4c67ece6b65e63e8a266cc19306062
 population: adults-18-plus
 reviewers: []
 next_review: null

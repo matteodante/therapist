@@ -6,6 +6,10 @@ Local-first conversations and user-controlled memory for self-reflection and men
 Therapist runs in a terminal or a private Telegram chat, supports Italian and English conversation,
 and keeps its archive and structured memory encrypted on your machine.
 
+![Therapist TUI showing a synthetic conversation and visible memory-tool trace](docs/assets/therapist-tui.png)
+
+_Actual Textual interface captured with synthetic data._
+
 > [!WARNING]
 > Experimental and not clinically validated. Therapist is an AI, not therapy, diagnosis, medical
 > advice, emergency care, or human monitoring, and its output can be wrong. Your selected model
@@ -69,8 +73,9 @@ thera chat
 Setup uses arrow-key menus, stores credentials encrypted outside the repository, and configures a
 model and locale. It displays the current conversation context limit in an editable field together
 with the allowed range. For Telegram, create a bot with `@BotFather`; setup configures it and asks
-whether to install and start its native background service. You can instead keep the listener in the
-foreground:
+whether to install and start its native background service. Set the bot's privacy-policy URL in
+BotFather to `https://github.com/matteodante/therapist/blob/main/PRIVACY.md`. You can instead keep
+the listener in the foreground:
 
 ```bash
 thera telegram
@@ -116,7 +121,8 @@ and both query and document embeddings are verified before the encrypted data st
 Provider and Telegram configuration is saved only after the interactive flow succeeds. It then runs
 on-device. Semantic retrieval for claims, interventions, and historical excerpts is mandatory:
 incomplete or stale setup state and unavailable local embeddings stop conversation with setup
-guidance instead of silently using weaker lexical-only retrieval.
+guidance instead of silently using weaker lexical-only retrieval. The download client disables
+Hugging Face telemetry, and conversation-time embedding loads use only the pinned local revision.
 
 Inspect, verify, repair, or remove only the pinned local model revision with:
 
@@ -180,13 +186,17 @@ unless a case explicitly verifies localized behavior or multilingual retrieval.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Report vulnerabilities privately
 according to [SECURITY.md](SECURITY.md). For installation help, project support, and rules about
-sensitive information, see [SUPPORT.md](SUPPORT.md). Project decisions and maintainer responsibilities
-are described in [GOVERNANCE.md](GOVERNANCE.md). Release gates and maintainer AI-literacy
+sensitive information, see [SUPPORT.md](SUPPORT.md), and follow the
+[Code of Conduct](CODE_OF_CONDUCT.md). Project decisions and maintainer responsibilities are
+described in [GOVERNANCE.md](GOVERNANCE.md). Release gates and maintainer AI-literacy
 expectations are defined in [RELEASING.md](RELEASING.md) and
 [docs/maintainer-ai-literacy.md](docs/maintainer-ai-literacy.md). The release assumptions and public
 claim boundaries are versioned in
 [docs/claims-and-intended-purpose.md](docs/claims-and-intended-purpose.md); local and external data
-flows are documented in [PRIVACY.md](PRIVACY.md).
+flows are documented in [PRIVACY.md](PRIVACY.md). The preliminary data-protection and AI Act records
+are [docs/dpia-screening.md](docs/dpia-screening.md) and
+[docs/article-50-assessment.md](docs/article-50-assessment.md); the factual review package is
+[docs/compliance-assessment-brief.md](docs/compliance-assessment-brief.md).
 
 ## License
 

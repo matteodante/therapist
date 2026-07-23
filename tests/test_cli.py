@@ -1,10 +1,12 @@
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.messages import TextPart, ToolCallPart, ToolReturnPart
+from pydantic_ai.models.openai import OpenAIResponsesModel
 
 from therapist.chat import TurnStreamEvent, TurnStreamKind
 from therapist.cli import (
@@ -13,6 +15,7 @@ from therapist.cli import (
     DEFAULT_EMBEDDING_REVISION,
     _chat,
     _chat_command,
+    _conversation_model,
     _ensure_chat_consent,
     _model_context_window,
     build_parser,
@@ -33,10 +36,27 @@ def test_chat_consent_discloses_scope_fallibility_and_data_flow(
     assert _ensure_chat_consent(store)
 
     output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert "Therapist is experimental AI" in output
     assert "at least 18" in output
     assert "output can be wrong" in output
     assert "selected context" in output
     assert store.load_app_state().consent_version == "alpha-2"
+
+
+def test_openai_responses_storage_is_disabled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    model = _conversation_model(MemoryStore(tmp_path), "openai:gpt-5.6-sol")
+
+    assert isinstance(model, OpenAIResponsesModel)
+    assert model.settings["openai_store"] is False
+
+
+def test_hugging_face_telemetry_is_disabled() -> None:
+    assert os.environ["HF_HUB_DISABLE_TELEMETRY"] == "1"
+    assert os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] == "1"
 
 
 def test_embedding_model_commands_manage_only_the_model_cache(
@@ -382,6 +402,26 @@ def test_ollama_context_window_is_detected_and_capped(
     monkeypatch.setattr("therapist.cli.urlopen", lambda *args, **kwargs: Response())
 
     assert _model_context_window("ollama:test") == 128_000
+
+
+def test_ollama_conversation_is_forced_to_loopback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.default_model = "ollama:test"
+    state.default_context_window_tokens = 32_000
+    state.default_locale = "en-US"
+    state.embedding_model = DEFAULT_EMBEDDING_MODEL
+    state.consent_version = "alpha-2"
+    store.save_app_state(state)
+    monkeypatch.setenv("OLLAMA_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.setattr("therapist.cli._default_embedder", lambda **_: object())
+    monkeypatch.setattr("therapist.cli.ChatSession", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr("therapist.cli._chat", lambda *_: 0)
+
+    assert main(["--data-dir", str(tmp_path), "chat", "--plain"]) == 0
+    assert os.environ["OLLAMA_BASE_URL"] == "http://localhost:11434/v1"
 
 
 def test_context_override_cannot_exceed_saved_model_limit(

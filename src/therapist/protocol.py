@@ -28,6 +28,7 @@ class Manifest(BaseModel):
     id: str
     status: str
     locales: list[str]
+    root_sha256: str
     skills: list[PackSkill] = Field(default_factory=list)
     references: list[Reference]
 
@@ -49,11 +50,13 @@ class ProtocolPack:
             if isinstance(raw, dict) and "version" in raw:
                 raise ProtocolError("Protocol revisions are tracked by Git, not manifest versions.")
             manifest = Manifest.model_validate(raw)
-            root_instructions = (root / "SKILL.md").read_text(encoding="utf-8")
         except (OSError, ValidationError, yaml.YAMLError) as error:
             raise ProtocolError(f"Invalid protocol pack: {error}") from error
         if manifest.status not in {"experimental", "reviewed", "validated"}:
             raise ProtocolError("Invalid protocol status.")
+        root_instructions = _verified_file(
+            root, "SKILL.md", manifest.root_sha256, "root skill"
+        ).decode("utf-8")
         skill_instructions: list[str] = []
         for skill in manifest.skills:
             skill_instructions.append(

@@ -26,7 +26,9 @@ alleviation of any disease, disorder, injury, or disability.
 
 ## Initial release assumptions
 
+- the project name is Therapist and the publisher is Matteo Dante acting as an individual;
 - source and installers are distributed without charge and outside commercial activity;
+- there is no donation, sponsorship, paid support, or other monetization program;
 - one adult operates one private self-hosted instance;
 - there is no hosted service, telemetry, advertising, analytics, paid support, or
   maintainer-controlled inference;
@@ -41,6 +43,7 @@ Public material may describe behavior verified by code and tests:
 
 - open-source under AGPL-3.0-or-later;
 - self-hosted and local-first, with explicit remote-provider and Telegram data flows;
+- OpenAI Responses storage disabled by the client, without implying zero provider retention;
 - encrypted sensitive SQLite payloads and a separate local key;
 - user inspection, correction, forgetting, export, and deletion controls;
 - evidence-linked distinction between user-supported claims and agent hypotheses;
@@ -77,5 +80,5 @@ The claim and limitation must remain consistent in:
 The first public release still requires a written EU medical-device classification assessment by
 qualified counsel or a regulatory specialist. Reassess this document before adding symptom scales,
 named-condition pathways, medication advice, clinical dashboards, institutional deployment,
-efficacy claims, minors, hosted operation, paid support, sponsorship tied to the product, or
-maintainer access to user data.
+efficacy claims, minors, hosted operation, paid support, donations, sponsorship tied to the product,
+or maintainer access to user data.

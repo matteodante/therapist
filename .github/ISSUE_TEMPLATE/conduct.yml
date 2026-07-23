@@ -1,0 +1,35 @@
+name: Public conduct concern
+description: Report project-specific conduct only when it is safe to describe publicly.
+title: "conduct: "
+labels: ["conduct"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This issue is public. Do not include personal, health, crisis, or identifying information.
+        For conduct that may violate GitHub policy, use GitHub's private Report abuse flow. The
+        project currently has no confidential project-specific conduct inbox.
+  - type: input
+    id: location
+    attributes:
+      label: Public location
+      description: Link the public issue, pull request, review, or comment involved.
+    validations:
+      required: true
+  - type: textarea
+    id: concern
+    attributes:
+      label: Conduct concern
+      description: Describe only the minimum public facts needed to evaluate the project rule.
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Public-report boundary
+      options:
+        - label: This report is safe to publish and contains no personal, health, crisis, or identifying information.
+          required: true
+        - label: I understand that security vulnerability reporting is not a confidential conduct channel.
+          required: true
+
