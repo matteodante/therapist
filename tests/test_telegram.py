@@ -1,12 +1,19 @@
+from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from urllib.error import HTTPError
 
 import pytest
 
 from therapist.chat import TurnStreamEvent, TurnStreamKind
 from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
-from therapist.telegram import TelegramBot, TelegramChannel, split_message
+from therapist.telegram import (
+    TelegramBot,
+    TelegramChannel,
+    TelegramError,
+    split_message,
+)
 
 
 class FakeBot:
@@ -157,6 +164,30 @@ def test_run_persists_update_watermark_after_dispatch(tmp_path: Path) -> None:
     assert bot.interface == 42
     assert len(bot.messages) == 1
     assert channel.store.load_app_state().telegram_update_offset == 8
+
+
+def test_run_retries_delivery_without_advancing_offset(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class FailingDeliveryBot(FakeBot):
+        def send_message(self, chat_id: int, text: str) -> None:
+            raise TelegramError(
+                "rate limited",
+                error_code=429,
+                retry_after=7,
+            )
+
+    bot = FailingDeliveryBot([[private_update(7, 42, "/start")]])
+    store = MemoryStore(tmp_path)
+    sleeps: list[int] = []
+    monkeypatch.setattr("therapist.telegram.time.sleep", sleeps.append)
+    channel = TelegramChannel(bot, FakeSession(), store, 42)  # type: ignore[arg-type]
+
+    with pytest.raises(KeyboardInterrupt):
+        channel.run()
+
+    assert store.load_app_state().telegram_update_offset is None
+    assert sleeps == [7]
 
 
 def test_split_message_preserves_content_with_telegram_safe_chunks() -> None:
@@ -385,6 +416,33 @@ def test_bot_uses_native_rich_draft_and_final_message(
     ]
 
 
+def test_bot_preserves_retry_after_from_telegram(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    body = BytesIO(
+        b'{"ok":false,"error_code":429,"description":"Too Many Requests",'
+        b'"parameters":{"retry_after":6}}'
+    )
+    error = HTTPError(
+        "https://api.telegram.org",
+        429,
+        "Too Many Requests",
+        hdrs=None,
+        fp=body,
+    )
+    monkeypatch.setattr(
+        "therapist.telegram.urlopen",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(error),
+    )
+
+    with pytest.raises(TelegramError) as raised:
+        TelegramBot("token").get_me()
+
+    assert raised.value.error_code == 429
+    assert raised.value.retry_after == 6
+    assert not raised.value.fatal
+
+
 def test_channel_throttles_streamed_drafts_with_one_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -417,6 +475,62 @@ def test_channel_throttles_streamed_drafts_with_one_id(
     assert bot.rich_messages == [(42, "**One two three**")]
 
 
+def test_channel_bounds_rejected_draft_to_plain_message_limit(tmp_path: Path) -> None:
+    bot = FakeBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+
+    class LongDraftSession(FakeSession):
+        def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
+            assert on_event is not None
+            on_event(TurnStreamEvent(TurnStreamKind.REPLY, "x" * 5_000))  # type: ignore[operator]
+            return SimpleNamespace(text="Done.")
+
+    channel = TelegramChannel(bot, LongDraftSession(), store, 42)  # type: ignore[arg-type]
+    channel.process_update(private_update(1, 42, "Stream this"))
+
+    assert len(bot.rich_drafts[0][2]) == 4_000
+    assert bot.rich_messages == [(42, "Done.")]
+
+
+def test_channel_rate_limits_draft_attempts_after_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class RateLimitedDraftBot(FakeBot):
+        def __init__(self) -> None:
+            super().__init__()
+            self.draft_attempts: list[tuple[int, int, str]] = []
+
+        def send_rich_message_draft(self, chat_id: int, draft_id: int, text: str) -> None:
+            self.draft_attempts.append((chat_id, draft_id, text))
+            raise TelegramError("rate limited", error_code=429, retry_after=5)
+
+    class StreamingSession(FakeSession):
+        def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
+            assert on_event is not None
+            for partial in ("One", "One two", "One two three", "One two three four"):
+                on_event(TurnStreamEvent(TurnStreamKind.REPLY, partial))  # type: ignore[operator]
+            return SimpleNamespace(text="Done.")
+
+    bot = RateLimitedDraftBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+    times = iter((1.0, 1.1, 1.3, 6.1))
+    monkeypatch.setattr("therapist.telegram.time.monotonic", lambda: next(times))
+    channel = TelegramChannel(bot, StreamingSession(), store, 42)  # type: ignore[arg-type]
+
+    channel.process_update(private_update(1, 42, "Stream this"))
+
+    assert [attempt[2] for attempt in bot.draft_attempts] == [
+        "One",
+        "One two three four",
+    ]
+
+
 def test_channel_uses_plain_delivery_for_unsafe_markdown(tmp_path: Path) -> None:
     bot = FakeBot()
     store = MemoryStore(tmp_path)
@@ -439,3 +553,78 @@ def test_channel_uses_plain_delivery_for_unsafe_markdown(tmp_path: Path) -> None
     assert bot.message_drafts[0][2].startswith("![remote image]")
     assert bot.rich_messages == []
     assert bot.messages[-1][1].startswith("![remote image]")
+
+
+def test_channel_falls_back_to_plain_only_for_rejected_rich_format(
+    tmp_path: Path,
+) -> None:
+    class RejectedRichBot(FakeBot):
+        def send_rich_message(self, chat_id: int, text: str) -> None:
+            raise TelegramError("bad rich format", error_code=400)
+
+    bot = RejectedRichBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+    channel = TelegramChannel(bot, FakeSession(), store, 42)  # type: ignore[arg-type]
+
+    channel.process_update(private_update(1, 42, "Hello"))
+
+    assert bot.messages[-1] == (42, "reply: Hello")
+
+
+def test_channel_does_not_plain_fallback_after_transient_rich_error(
+    tmp_path: Path,
+) -> None:
+    class UnavailableRichBot(FakeBot):
+        def send_rich_message(self, chat_id: int, text: str) -> None:
+            raise TelegramError("rate limited", error_code=429, retry_after=5)
+
+    bot = UnavailableRichBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+    channel = TelegramChannel(bot, FakeSession(), store, 42)  # type: ignore[arg-type]
+
+    with pytest.raises(TelegramError, match="rate limited"):
+        channel.process_update(private_update(1, 42, "Hello"))
+
+    assert bot.messages == []
+
+
+def test_channel_retries_missing_tool_events_separately_without_duplicates(
+    tmp_path: Path,
+) -> None:
+    class FirstToolFailureBot(FakeBot):
+        failed = False
+
+        def send_message(self, chat_id: int, text: str) -> None:
+            if not self.failed and text.startswith("TOOL INPUT"):
+                self.failed = True
+                raise TelegramError("temporary failure")
+            super().send_message(chat_id, text)
+
+    bot = FirstToolFailureBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+
+    class ToolSession(FakeSession):
+        def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
+            assert on_event is not None
+            on_event(TurnStreamEvent(TurnStreamKind.TOOL_INPUT, "TOOL INPUT · test"))  # type: ignore[operator]
+            on_event(TurnStreamEvent(TurnStreamKind.TOOL_OUTPUT, "TOOL OUTPUT · test"))  # type: ignore[operator]
+            on_event(TurnStreamEvent(TurnStreamKind.REPLY, "Done."))  # type: ignore[operator]
+            return SimpleNamespace(text="Done.")
+
+    channel = TelegramChannel(bot, ToolSession(), store, 42)  # type: ignore[arg-type]
+    channel.process_update(private_update(1, 42, "Use a tool"))
+
+    assert bot.messages == [
+        (42, "TOOL INPUT · test"),
+        (42, "TOOL OUTPUT · test"),
+    ]
+    assert bot.rich_messages == [(42, "Done.")]

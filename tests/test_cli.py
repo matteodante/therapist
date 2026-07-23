@@ -180,6 +180,7 @@ def test_interactive_chat_prints_tool_input_and_output(
     store.save_app_state(state)
     inputs = iter(["Please remember this.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+
     def respond(_: str, *, on_event: object) -> SimpleNamespace:
         on_event(  # type: ignore[operator]
             TurnStreamEvent(
@@ -207,6 +208,71 @@ def test_interactive_chat_prints_tool_input_and_output(
     assert '"content": "detail"' in output
     assert "TOOL OUTPUT · record_memory · success" in output
     assert output.index("TOOL INPUT") < output.index("thera> Done.")
+
+
+def test_plain_chat_does_not_persist_rejected_draft_in_redirected_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.consent_version = "alpha-1"
+    store.save_app_state(state)
+    inputs = iter(["Please answer.", "/quit"])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+
+    def respond(_: str, *, on_event: object) -> SimpleNamespace:
+        on_event(TurnStreamEvent(TurnStreamKind.REPLY, "rejected draft"))  # type: ignore[operator]
+        on_event(TurnStreamEvent(TurnStreamKind.REPLY, "Validated reply."))  # type: ignore[operator]
+        return SimpleNamespace(text="Validated reply.", notice=None)
+
+    assert _chat(SimpleNamespace(respond=respond), store) == 0  # type: ignore[arg-type]
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert "rejected draft" not in output
+    assert output.count("thera> Validated reply.") == 1
+
+
+def test_plain_chat_replaces_draft_in_interactive_terminal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.consent_version = "alpha-1"
+    store.save_app_state(state)
+    inputs = iter(["Please answer.", "/quit"])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    updates: list[str] = []
+
+    class FakeConsole:
+        is_terminal = True
+
+        def print(self, _: str) -> None:
+            pass
+
+    class FakeLive:
+        def __init__(self, _: str, *, console: object, **_kwargs: object) -> None:
+            self.console = console
+
+        def start(self) -> None:
+            pass
+
+        def stop(self) -> None:
+            pass
+
+        def update(self, text: str, *, refresh: bool) -> None:
+            assert refresh
+            updates.append(text)
+
+    def respond(_: str, *, on_event: object) -> SimpleNamespace:
+        on_event(TurnStreamEvent(TurnStreamKind.REPLY, "rejected draft"))  # type: ignore[operator]
+        on_event(TurnStreamEvent(TurnStreamKind.REPLY, "Validated reply."))  # type: ignore[operator]
+        return SimpleNamespace(text="Validated reply.", notice=None)
+
+    monkeypatch.setattr("therapist.cli.Console", FakeConsole)
+    monkeypatch.setattr("therapist.cli.Live", FakeLive)
+
+    assert _chat(SimpleNamespace(respond=respond), store) == 0  # type: ignore[arg-type]
+    assert updates == ["thera> rejected draft", "thera> Validated reply."]
 
 
 def test_export_outputs_all_user_owned_layers(tmp_path: Path, capsys: object) -> None:

@@ -15,6 +15,8 @@ import questionary
 from huggingface_hub import HfApi, scan_cache_dir, snapshot_download
 from huggingface_hub.errors import CacheNotFound
 from pydantic_ai import Embedder
+from rich.console import Console
+from rich.live import Live
 
 from therapist import telegram_service
 from therapist.auth import (
@@ -926,36 +928,44 @@ def _chat(session: ChatSession, store: MemoryStore) -> int:
                 continue
             print("Unknown command. Use /help.")
             continue
-        rendered_reply = ""
-        reply_started = False
+        console = Console()
+        live = (
+            Live(
+                "",
+                console=console,
+                auto_refresh=False,
+                transient=True,
+                redirect_stdout=False,
+                redirect_stderr=False,
+            )
+            if console.is_terminal
+            else None
+        )
 
-        def render(event: TurnStreamEvent) -> None:
-            nonlocal rendered_reply, reply_started
+        def render(
+            event: TurnStreamEvent,
+            live_display: Live | None = live,
+        ) -> None:
             if event.kind is not TurnStreamKind.REPLY:
-                if reply_started:
-                    print()
-                    reply_started = False
-                    rendered_reply = ""
-                print(event.text)
+                (live_display.console.print if live_display else print)(event.text)
                 return
-            if not reply_started or not event.text.startswith(rendered_reply):
-                if reply_started:
-                    print()
-                print("thera> ", end="", flush=True)
-                rendered_reply = ""
-                reply_started = True
-            print(event.text[len(rendered_reply) :], end="", flush=True)
-            rendered_reply = event.text
+            if live_display:
+                live_display.update(f"thera> {event.text}", refresh=True)
 
+        if live:
+            live.start()
+        failure: Exception | None = None
         try:
             turn = session.respond(user_text, on_event=render)
         except Exception as error:  # Provider SDKs expose different error types.
-            if reply_started:
-                print()
-            print(f"Model error: {error}")
+            failure = error
+        finally:
+            if live:
+                live.stop()
+        if failure is not None:
+            print(f"Model error: {failure}")
             continue
-        if reply_started:
-            print()
+        print(f"thera> {turn.text}")
         if turn.notice:
             print(f"notice> {turn.notice}")
 

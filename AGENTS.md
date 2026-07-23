@@ -268,8 +268,10 @@ thera protocol validate [path]
 `thera chat` uses a full-screen Textual interface in an interactive terminal. It restores the latest
 50 user/assistant turns from the active session, renders assistant Rich Markdown, displays live tool
 events, and disables input while one sequential turn is running. `--plain` forces the line-oriented
-streaming interface; non-interactive stdin or stdout selects it automatically. The TUI never loads
-more than 50 historical turns and does not replay old tool traces.
+interface; on an interactive terminal it uses one replaceable Rich live draft, while redirected
+output emits tool events followed by only the validated final reply because an append-only stream
+cannot replace a rejected attempt. Non-interactive stdin or stdout selects plain mode automatically.
+The TUI never loads more than 50 historical turns and does not replay old tool traces.
 
 `setup` downloads and verifies the local multilingual Apache-2.0
 `sentence-transformers:Qwen/Qwen3-Embedding-0.6B` model at the repository-pinned revision. The model
@@ -362,12 +364,16 @@ transport-only and are not archived or sent back to the conversation model. Inte
 secrets, and private model reasoning are never exposed. Function-tool inputs and outputs are sent as
 separate messages before the final reply and remain in encrypted model history. Reply generation
 uses a random non-zero `sendRichMessageDraft` ID, updates the ephemeral Rich Markdown draft at most
-four times per second, and persists the validated output with `sendRichMessage`. Unsupported or
-rejected rich formatting falls back to plain text. Durable-change notices remain separate plain-text
-messages. Incoming text and outgoing content stay below Telegram's limits. The encrypted update offset
-survives restarts. A crash between model state commit and offset persistence can still cause one
-update to be processed again; full durable inbox idempotency is deferred until `ChatSession` can
-atomically accept an external idempotency key.
+four times per second including failed attempts, bounds every draft below Telegram's plain-text
+limit, and persists the validated output with `sendRichMessage`. An HTTP 400 rich-format rejection
+falls back to plain text; ambiguous transport failures, rate limits, and server failures never
+trigger a second delivery format. Failed tool-event deliveries are retried separately and in order
+before the final reply. Durable-change notices remain separate plain-text messages. Incoming text
+and outgoing content stay below Telegram's limits. The encrypted update offset survives restarts and
+advances only after all output for the update is delivered; transient failures honor Telegram's
+`retry_after` before the update is retried. A crash or ambiguous transport failure between model
+state commit and offset persistence can still cause one update to be processed again; full durable
+inbox idempotency is deferred until `ChatSession` can atomically accept an external idempotency key.
 
 `thera telegram-service install` validates the saved configuration and starts the listener without
 putting secrets in process arguments. It writes a mode-`0600` LaunchAgent in
@@ -509,7 +515,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   turns, renders Markdown and live tool events, and retains a streaming `--plain` fallback.
 - Rejected output attempts may appear only as replaceable transport drafts; only the validated final
   reply is committed. Telegram uses one throttled non-zero rich draft ID and a persistent rich final
-  message, with safe plain-text fallback.
+  message, with safe plain-text fallback only after a definitive format rejection. Redirected CLI
+  output withholds replaceable drafts and emits only the validated final reply.
 - Function-tool inputs and outputs are visible in CLI and Telegram, persist atomically with the
   successful turn, appear in user export without internal prompts or reasoning, and return in future
   model history.
@@ -523,7 +530,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   localized response without diagnosis, scoring, or claims of monitoring.
 - Telegram rejects unauthorized/non-private input before model invocation, requires channel-specific
   consent, persists its update offset, exposes read-only state with evidence and pagination, reports
-  durable turn changes, and keeps privileged memory operations local.
+  durable turn changes, keeps privileged memory operations local, honors flood-control delays, and
+  does not advance the update offset after failed delivery.
 - Telegram background installation uses the native per-user service or task manager, keeps secrets
   out of process arguments and native definitions, and supports status, restart, and clean removal
   on macOS, Linux, and Windows.
@@ -574,6 +582,13 @@ continuity. It is opt-in and runs once by default:
 
 ```bash
 THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
+```
+
+After Telegram is configured, its opt-in transport smoke test sends one clearly labeled persistent
+test message to the allowlisted private chat:
+
+```text
+THERA_RUN_TELEGRAM_TEST=1 uv run pytest tests/test_live_telegram.py -m live
 ```
 
 The deterministic semantic-memory Pydantic Evals dataset remains offline by using a fixed bilingual

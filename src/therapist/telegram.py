@@ -27,9 +27,21 @@ DRAFT_INTERVAL_SECONDS = 0.25
 class TelegramError(RuntimeError):
     """A privacy-safe Telegram transport error."""
 
-    def __init__(self, message: str, *, fatal: bool = False) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        error_code: int | None = None,
+        retry_after: int | None = None,
+    ) -> None:
         super().__init__(message)
-        self.fatal = fatal
+        self.error_code = error_code
+        self.retry_after = retry_after
+        self.fatal = (
+            error_code is not None
+            and 400 <= error_code < 500
+            and error_code != 429
+        )
 
 
 class TelegramBot:
@@ -134,10 +146,11 @@ class TelegramBot:
             with urlopen(request, timeout=timeout) as response:
                 body = json.load(response)
         except HTTPError as error:
-            description = _http_error_description(error)
+            description, error_code, retry_after = _http_error_details(error)
             raise TelegramError(
                 f"Telegram API rejected the request: {description}",
-                fatal=error.code in {400, 401, 409},
+                error_code=error_code,
+                retry_after=retry_after,
             ) from error
         except (URLError, TimeoutError, json.JSONDecodeError) as error:
             raise TelegramError(
@@ -150,8 +163,16 @@ class TelegramBot:
                 else "unknown error"
             )
             error_code = body.get("error_code") if isinstance(body, dict) else None
+            parameters = body.get("parameters") if isinstance(body, dict) else None
+            retry_after = (
+                parameters.get("retry_after")
+                if isinstance(parameters, dict) and isinstance(parameters.get("retry_after"), int)
+                else None
+            )
             raise TelegramError(
-                f"Telegram API error: {description}", fatal=error_code in {400, 401, 409}
+                f"Telegram API error: {description}",
+                error_code=error_code if isinstance(error_code, int) else None,
+                retry_after=retry_after,
             )
         return body.get("result")
 
@@ -177,7 +198,7 @@ class TelegramChannel:
                 if error.fatal:
                     raise
                 print(f"Telegram polling error: {error}")
-                time.sleep(3)
+                time.sleep(error.retry_after or 3)
                 continue
             for update in updates:
                 update_id = update.get("update_id")
@@ -189,11 +210,14 @@ class TelegramChannel:
                     self.process_update(update)
                 except TelegramError as error:
                     print(f"Telegram delivery error: {error}")
-                finally:
-                    offset = update_id + 1
-                    state = self.store.load_app_state()
-                    state.telegram_update_offset = offset
-                    self.store.save_app_state(state)
+                    if error.fatal:
+                        raise
+                    time.sleep(error.retry_after or 3)
+                    break
+                offset = update_id + 1
+                state = self.store.load_app_state()
+                state.telegram_update_offset = offset
+                self.store.save_app_state(state)
 
     def process_update(self, update: dict[str, Any]) -> bool:
         message = update.get("message")
@@ -249,59 +273,68 @@ class TelegramChannel:
             print(f"Telegram typing indicator error: {error}")
         draft_id = secrets.randbits(31) or 1
         last_draft_at = 0.0
-        tool_delivery_failed = False
+        draft_retry_at = 0.0
+        undelivered_tool_events: list[str] = []
 
         def render(event: TurnStreamEvent) -> None:
-            nonlocal last_draft_at, tool_delivery_failed
+            nonlocal last_draft_at, draft_retry_at
             if event.kind is not TurnStreamKind.REPLY:
+                if undelivered_tool_events:
+                    undelivered_tool_events.append(event.text)
+                    return
                 try:
                     self.bot.send_message(chat_id, event.text)
                 except TelegramError as error:
-                    tool_delivery_failed = True
+                    undelivered_tool_events.append(event.text)
                     print(f"Telegram tool trace delivery error: {error}")
                 return
             now = time.monotonic()
-            if now - last_draft_at < DRAFT_INTERVAL_SECONDS:
+            if now < draft_retry_at or now - last_draft_at < DRAFT_INTERVAL_SECONDS:
                 return
-            rich = _safe_rich_markdown(event.text)
+            draft = event.text[:MESSAGE_LIMIT]
+            if not draft:
+                return
+            last_draft_at = now
+            rich = _safe_rich_markdown(draft)
             try:
                 if rich:
-                    self.bot.send_rich_message_draft(chat_id, draft_id, event.text)
+                    self.bot.send_rich_message_draft(chat_id, draft_id, draft)
                 else:
-                    self.bot.send_message_draft(chat_id, draft_id, event.text)
+                    self.bot.send_message_draft(chat_id, draft_id, draft)
             except TelegramError as error:
                 print(f"Telegram draft delivery error: {error}")
-                if rich and error.fatal:
+                if error.retry_after:
+                    draft_retry_at = now + error.retry_after
+                if rich and error.error_code == 400:
                     try:
-                        self.bot.send_message_draft(chat_id, draft_id, event.text)
+                        self.bot.send_message_draft(chat_id, draft_id, draft)
                     except TelegramError as fallback_error:
                         print(f"Telegram plain draft delivery error: {fallback_error}")
-                    else:
-                        last_draft_at = now
-            else:
-                last_draft_at = now
 
+        succeeded = False
         try:
             turn = self.session.respond(text, on_event=render)
         except Exception as error:  # Provider SDKs expose different error types.
             print(f"Model error while handling Telegram message: {type(error).__name__}")
             reply = self._model_error()
             notice = None
-            tool_trace = None
         else:
+            succeeded = True
             reply = turn.text
             notice = getattr(turn, "notice", None)
-            tool_trace = getattr(turn, "tool_trace", None)
         changes = self._durable_changes(before)
+        if succeeded:
+            for tool_event in undelivered_tool_events:
+                self.bot.send_message(chat_id, tool_event)
         if notice:
             self.bot.send_message(chat_id, notice)
-        if tool_trace and tool_delivery_failed:
-            self.bot.send_message(chat_id, tool_trace)
         if _safe_rich_markdown(reply):
             try:
                 self.bot.send_rich_message(chat_id, reply)
             except TelegramError as error:
                 print(f"Telegram rich message delivery error: {error}")
+                if error.error_code != 400:
+                    raise
                 self.bot.send_message(chat_id, reply)
         else:
             self.bot.send_message(chat_id, reply)
@@ -654,11 +687,23 @@ def _status_label(value: str) -> str:
     return labels.get(value, value)
 
 
-def _http_error_description(error: HTTPError) -> str:
+def _http_error_details(error: HTTPError) -> tuple[str, int, int | None]:
     try:
         body = json.loads(error.read())
     except (OSError, json.JSONDecodeError):
-        return f"HTTP {error.code}"
-    if isinstance(body, dict) and isinstance(body.get("description"), str):
-        return body["description"]
-    return f"HTTP {error.code}"
+        return f"HTTP {error.code}", error.code, None
+    if not isinstance(body, dict):
+        return f"HTTP {error.code}", error.code, None
+    description = body.get("description")
+    error_code = body.get("error_code")
+    parameters = body.get("parameters")
+    retry_after = (
+        parameters.get("retry_after")
+        if isinstance(parameters, dict) and isinstance(parameters.get("retry_after"), int)
+        else None
+    )
+    return (
+        description if isinstance(description, str) else f"HTTP {error.code}",
+        error_code if isinstance(error_code, int) else error.code,
+        retry_after,
+    )

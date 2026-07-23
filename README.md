@@ -134,8 +134,11 @@ confirmations, focus changes, or one intervention update. The transcript and sta
 committed atomically only after a successful final reply. Conversation history contains the complete
 successful run, including paired function-tool inputs and outputs. CLI and Telegram display those
 exchanges before the final reply and stream the model's temporary Markdown draft. A retry replaces
-the visible draft; only the validated final reply and successful tool history are encrypted and
-committed. Export exposes them without internal prompts or private model reasoning. Repeated
+the visible draft; redirected plain output instead withholds drafts and prints only the validated
+reply. Telegram rate-limits and bounds draft attempts, honors flood-control delays, advances its
+update offset only after delivery, and uses plain fallback only for a definitive rich-format
+rejection. Only the validated final reply and successful tool history are encrypted and committed.
+Export exposes them without internal prompts or private model reasoning. Repeated
 internal instructions and provider thinking are discarded before persistence.
 Slash commands such as `/start`, `/status`, and `/quit`, their displayed output, and context
 lifecycle notices remain outside the conversation archive and model history. There is no
