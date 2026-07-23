@@ -20,6 +20,7 @@ from therapist.cli import (
     _ensure_chat_consent,
     _model_context_window,
     _select_model,
+    _setup,
     build_parser,
     main,
 )
@@ -43,6 +44,15 @@ def test_guided_setup_advertises_only_the_supported_chatgpt_provider(
     assert [(choice.title, choice.value) for choice in choices] == [
         ("ChatGPT Plus/Pro — GPT-5.6 Sol", DEFAULT_CODEX_MODEL)
     ]
+
+
+def test_setup_builds_questionary_selects_with_available_defaults(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    answers = iter([DEFAULT_CODEX_MODEL, "it-IT", "128000", False, False])
+    monkeypatch.setattr("therapist.cli._ask", lambda _: next(answers))
+
+    assert _setup(MemoryStore(tmp_path), SimpleNamespace()) == 0
 
 
 def test_chat_consent_discloses_scope_fallibility_and_data_flow(

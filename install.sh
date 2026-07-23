@@ -6,7 +6,7 @@ UV_RELEASE_URL="https://github.com/astral-sh/uv/releases/download/${UV_VERSION}"
 UV_CHECKSUMS_SHA256="cae3a06391dd65895dc22246115fd998250fa43ab3aa8ffd0d6ab71ae301b4e1"
 UV_LICENSE_URL="https://raw.githubusercontent.com/astral-sh/uv/b7fdec626cdafcfb0d0db54d39d3d5f114aefb5c/LICENSE-MIT"
 UV_LICENSE_SHA256="860e3d7a86b84e6a7012c7a635fc64df475cebc6cce34dfeb73a5982ec58176c"
-THERAPIST_VERSION="v0.1.1"
+THERAPIST_VERSION="v0.1.2"
 SOURCE_URL="https://github.com/matteodante/therapist/archive/refs/tags/${THERAPIST_VERSION}.tar.gz"
 
 case "$(uname -s)" in

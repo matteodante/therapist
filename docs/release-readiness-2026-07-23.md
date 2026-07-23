@@ -90,11 +90,13 @@ These limits are public and must not be described as equivalent mature-project c
 
 ## Publication authorization
 
-The maintainer approves package version `0.1.1`, signed tag `v0.1.1`, and a GitHub prerelease from
-the exact final `main` candidate once its required checks and candidate workflow pass. Version
-`v0.1.0` is withdrawn because macOS `prompt_toolkit` setup fails after a piped installer reopens
-`/dev/tty`. The supported latest-alpha bootstrap lives on `main` but selects the explicit immutable
-`v0.1.1` source; the tagged installer remains available for reproducible installation.
+The maintainer approves package version `0.1.2`, signed tag `v0.1.2`, and a GitHub prerelease from
+the exact final `main` candidate once its required checks and candidate workflow pass. Versions
+`v0.1.0` and `v0.1.1` are withdrawn because guided macOS setup respectively fails when a piped
+installer reopens `/dev/tty` and when Questionary receives a newly constructed `Choice` as the
+default for a later yes/no prompt. The supported latest-alpha bootstrap lives on `main` but selects
+the explicit immutable `v0.1.2` source; the tagged installer remains available for reproducible
+installation.
 
 The current privacy screening does not identify publisher-side application-data processing: there is
 no hosted instance, central account, telemetry, maintainer inference, or normal access to user data.

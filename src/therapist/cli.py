@@ -416,16 +416,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
         )
 
         has_telegram = _telegram_config(store)
-        configure_telegram = _ask(
-            questionary.select(
-                "Configure Telegram?",
-                choices=[
-                    questionary.Choice("Yes", value=True),
-                    questionary.Choice("No", value=False),
-                ],
-                default=questionary.Choice("Yes" if has_telegram else "No", value=has_telegram),
-            )
-        )
+        configure_telegram = _ask(_yes_no_select("Configure Telegram?", default=has_telegram))
         if configure_telegram:
             token = _ask(
                 questionary.password(
@@ -449,13 +440,9 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
                 user_id = current_id
             state.telegram_allowed_user_id = user_id
             install_background = _ask(
-                questionary.select(
+                _yes_no_select(
                     "Install and start Telegram as a background service?",
-                    choices=[
-                        questionary.Choice("Yes", value=True),
-                        questionary.Choice("No", value=False),
-                    ],
-                    default=questionary.Choice("No", value=False),
+                    default=False,
                 )
             )
         else:
@@ -466,16 +453,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
         state.default_locale = locale
         state.embedding_model = DEFAULT_EMBEDDING_MODEL
         if model.startswith("codex:") and not load_credential(store):
-            login_now = _ask(
-                questionary.select(
-                    "Log in with ChatGPT now?",
-                    choices=[
-                        questionary.Choice("Yes", value=True),
-                        questionary.Choice("No", value=False),
-                    ],
-                    default=questionary.Choice("Yes", value=True),
-                )
-            )
+            login_now = _ask(_yes_no_select("Log in with ChatGPT now?", default=True))
             if login_now:
                 try:
                     login_codex(store)
@@ -640,16 +618,7 @@ def _pair_telegram_user(token: str) -> tuple[int, int]:
             ):
                 continue
             label = sender.get("username") or sender.get("first_name") or sender["id"]
-            confirmed = _ask(
-                questionary.select(
-                    f"Connect Telegram account {label}?",
-                    choices=[
-                        questionary.Choice("Yes", value=True),
-                        questionary.Choice("No", value=False),
-                    ],
-                    default=questionary.Choice("Yes", value=True),
-                )
-            )
+            confirmed = _ask(_yes_no_select(f"Connect Telegram account {label}?", default=True))
             if confirmed:
                 return sender["id"], offset
 
@@ -659,6 +628,18 @@ def _ask(question: questionary.Question):
     if answer is None:
         raise KeyboardInterrupt
     return answer
+
+
+def _yes_no_select(message: str, *, default: bool) -> questionary.Question:
+    choices = [
+        questionary.Choice("Yes", value=True),
+        questionary.Choice("No", value=False),
+    ]
+    return questionary.select(
+        message,
+        choices=choices,
+        default=choices[0 if default else 1],
+    )
 
 
 def _telegram_config(store: MemoryStore) -> bool:
