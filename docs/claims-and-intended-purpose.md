@@ -75,10 +75,11 @@ The claim and limitation must remain consistent in:
 - screenshots, demonstrations, examples, issue templates, and contributor documentation;
 - protocol documentation and model-facing instructions where they affect visible behavior.
 
-## Release gate and change triggers
+## Release decision and change triggers
 
-The first public release still requires a written EU medical-device classification assessment by
-qualified counsel or a regulatory specialist. Reassess this document before adding symptom scales,
-named-condition pathways, medication advice, clinical dashboards, institutional deployment,
-efficacy claims, minors, hosted operation, paid support, donations, sponsorship tied to the product,
-or maintainer access to user data.
+For the first public alpha, the maintainer records this non-medical intended-purpose assessment
+without making a regulatory-compliance claim or requiring an external opinion. Reassess it, and
+obtain specialist review where proportionate, before adding symptom scales, named-condition
+pathways, medication advice, clinical dashboards, institutional deployment, efficacy claims,
+minors, hosted operation, paid support, donations, sponsorship tied to the product, or maintainer
+access to user data.

@@ -20,8 +20,8 @@ to support a public claim. It does not mean that the opposite is true.
 - Each user runs one local installation and supplies any remote-provider credentials and Telegram
   bot token.
 - The publisher does not receive conversation content through the normal product path.
-- No personal email address will be published. A role-based privacy/security address or a private
-  web form is therefore required before any policy asks users to contact the publisher.
+- No personal email address will be published. Public issues reject personal data and GitHub private
+  vulnerability reporting handles confidential security reports.
 - The intended use is self-reflection and mental wellbeing, not therapy, diagnosis, medical advice,
   treatment, clinical practice, or emergency monitoring.
 
@@ -54,7 +54,7 @@ provider receives, its retention, its legal role, or its terms.
 | Google Gemini Developer API | **Disable for alpha pending review** | EEA API clients require Paid Services; terms are for professional/business use and prohibit clinical/medical-advice/device uses |
 | Ollama local | **Allow conditionally** | Loopback is enforced; identify local models and review each model's license and safety behavior |
 | Personal ChatGPT Codex OAuth | **Allow experimentally by publisher decision** | Hermes Agent provides an open-source implementation precedent; independent backend use is still not an OpenAI API contract, API retention and DPA claims do not apply, and compatibility or availability is not promised |
-| Telegram Bot API | **Allow after remaining P0 privacy work** | Cloud and deletion disclosures plus a stable policy URL exist; a non-personal private privacy contact and per-bot BotFather policy configuration remain |
+| Telegram Bot API | **Allow for the self-hosted alpha** | Cloud and deletion disclosures, a stable privacy URL, `/privacy`, and per-operator BotFather setup are documented |
 | Hugging Face Hub model download | **Allow** | Download is pinned and verified; telemetry and implicit credentials are disabled and runtime loads are local-only |
 | OpenRouter technical override | **Unsupported for alpha** | Aggregator plus variable downstream provider; the public DPA does not cover this individual non-commercial use and does not intend sensitive-data processing |
 | Arbitrary custom PydanticAI model | **Unsupported escape hatch** | No privacy, residency, retention, training, DPA, or policy claim can be made |
@@ -454,13 +454,13 @@ API. It is only a transport and must not be treated as a safety system.
 Before enabling Telegram in the public alpha:
 
 1. publish an accurate privacy/data-flow policy under Matteo Dante's name;
-2. use a role-based privacy address or private web form rather than a personal email;
-3. provide a stable policy URL that each user can configure for the bot in BotFather;
-4. disclose before consent that Telegram cloud stores messages and is not end-to-end encrypted;
-5. identify every remote model recipient separately;
-6. explain that local `/forget` or `delete-data` does not itself erase Telegram's cloud copies;
-7. document how the user deletes both Telegram messages/chat and local Therapist data;
-8. retain the allowlist, private-chat-only enforcement, encryption at rest, and explicit,
+2. provide a stable policy URL that each user can configure for the bot in BotFather;
+3. disclose before consent that Telegram cloud stores messages and is not end-to-end encrypted;
+4. identify every remote model recipient separately;
+5. provide local correction, export, and deletion controls;
+6. explain that local `/forget` or `delete-data` does not itself erase Telegram's cloud copies and
+   document how the user deletes both Telegram messages/chat and local Therapist data;
+7. retain the allowlist, private-chat-only enforcement, encryption at rest, and explicit,
    revocable consent.
 
 Allowed public wording: “optional private, single-user, allowlisted Telegram bot.” Disallowed
@@ -617,19 +617,17 @@ Before any remote provider is enabled:
       prompts, claims, and behavior.
 - [ ] Run provider-specific, bilingual, multi-turn safety evaluations on the exact model revision.
 - [ ] Recheck policies when a preview model, endpoint, or provider changes.
-- [ ] Provide a non-personal privacy contact that still reaches Matteo Dante.
 
 ## Recommended alpha configuration
 
-The lowest-risk non-commercial adult-only release configuration is:
+The selected non-commercial adult-only release configuration is:
 
-1. **Primary path:** a reviewed local model through Ollama with cloud disabled.
+1. **Conversation:** the explicitly accepted experimental personal Codex OAuth path.
 2. **Embedding:** pinned Hugging Face download during setup, telemetry disabled, then offline.
-3. **Transport:** local CLI; Telegram only after the custom privacy policy and cloud-chat disclosure
-   are complete.
-4. **Remote inference:** no provider enabled by default.
-5. **Experimental providers:** OpenAI API, Anthropic, Gemini, Codex OAuth, OpenRouter, and arbitrary
-   custom providers hidden or disabled until their individual blockers above are resolved.
+3. **Transport:** local CLI or one allowlisted private Telegram bot with the published policy and
+   cloud-chat disclosure.
+4. **Technical overrides:** other PydanticAI providers remain unsupported and are not advertised for
+   the alpha.
 
 This configuration does not make Therapist clinically validated or legally compliant by itself. It
 does keep the public alpha's factual privacy claims within what the current official sources support.

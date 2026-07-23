@@ -1,12 +1,11 @@
 # Data protection impact assessment screening
 
-**Status:** preliminary screening for the planned public alpha  
+**Status:** maintainer screening completed for the planned public alpha
 **Date:** 2026-07-23  
 **Owner:** Matteo Dante, individual maintainer and publisher
 
-This is an engineering record, not a completed DPIA, legal advice, or a compliance claim. It maps
-the current design against official screening criteria so a qualified adviser can decide the
-applicable roles, law, and required assessment.
+This is an engineering record, not legal advice or a compliance claim. It maps the current design
+against official screening criteria and records the proportionate release decision.
 
 ## Release facts
 
@@ -56,9 +55,15 @@ against the actual controller, deployment, users, scale, and providers.
 | Innovative technology | Present | A generative AI agent builds longitudinal, semantic, evidence-linked memory. |
 | Preventing access to a service or contract | Not intended | No eligibility or service-access decision exists. |
 
-Multiple criteria are present. If the maintainer is a controller for any in-scope processing, or the
-software is deployed outside a purely personal or household activity, a full DPIA is a prudent
-release requirement and may be legally required. This screening does not resolve that threshold.
+Multiple criteria are present in the software's local operation. They do not by themselves establish
+publisher-side processing: the maintainer distributes source and installers but does not determine
+an individual's conversation content, receive it, host inference, run the Telegram bot, or observe
+usage. The normal operator is one adult using their own device and accounts for private activity.
+
+On those facts, this screening does not identify publisher-side processing that makes a full DPIA a
+proportionate prerequisite to publishing the source alpha. It also does not make a general finding
+for every self-hoster or external provider. Each operator chooses and contracts with those services,
+and their legal position depends on actual use.
 
 ## Existing controls
 
@@ -76,20 +81,19 @@ release requirement and may be legally required. This screening does not resolve
 These controls reduce exposure but do not establish GDPR compliance, anonymity, confidentiality, or
 provider deletion.
 
-## Open decisions before a tagged alpha
+## Release decision and change triggers
 
-1. Record the controller, joint-controller, processor, and independent-controller roles for the
-   maintainer, self-hoster, each model provider, Telegram, GitHub, and Hugging Face.
-2. Determine territorial scope and whether the personal-or-household exemption applies to each
-   actual actor and flow.
-3. If the maintainer is a controller, record Article 6 and Article 9 conditions, notices, data
-   subject handling, retention, processor contracts, transfers, subprocessors, and breach duties.
-4. Obtain and review the applicable ChatGPT terms, regions, transfer mechanisms, retention,
-   training, safety monitoring, and deletion behavior for the selected personal Codex OAuth path.
-5. Decide whether a full DPIA is required and, if so, complete it before processing begins; consult
-   the supervisory authority if high residual risk remains.
-6. Re-screen before SaaS, telemetry, accounts, organizational use, minors, clinical claims, paid
-   operation, donations, sponsorship, or maintainer access to user data.
+- Publishing this source alpha is not treated as operating a hosted processing service.
+- The repository notice documents local and external recipients without claiming that Therapist,
+  Telegram, or ChatGPT is confidential, anonymous, zero-retention, or GDPR compliant.
+- A dedicated privacy email, external GDPR opinion, processor contract, and full DPIA are not gates
+  for this release because the publisher does not receive normal application data.
+- Users remain responsible for the accounts and providers they choose and for uses outside the
+  intended private single-user scope.
+- Re-screen before SaaS, telemetry, central accounts, organizational use, minors, clinical claims,
+  paid operation, donations, sponsorship, or any maintainer access to user data. If that later
+  screening identifies likely high residual risk, complete a DPIA and consult the supervisory
+  authority where Article 36 requires it.
 
 ## Primary sources
 

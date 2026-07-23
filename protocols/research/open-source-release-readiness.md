@@ -7,6 +7,14 @@ summarizes the current repository and primary official sources available on 2026
 assessment must be repeated if the intended purpose, users, distribution, providers, data flows, or
 business model change.
 
+> **Maintainer decision:** the initial external-review gates below were later replaced by the
+> proportionate self-assessments in
+> [`docs/release-readiness-2026-07-23.md`](../../docs/release-readiness-2026-07-23.md),
+> [`docs/dpia-screening.md`](../../docs/dpia-screening.md), and
+> [`docs/article-50-assessment.md`](../../docs/article-50-assessment.md) for the narrow free,
+> self-hosted alpha. This file preserves the original research recommendations and future
+> change-trigger checklist; it is not the current go/no-go record.
+
 The safest first release is a non-commercial, open-source public alpha for adults, positioned
 for self-reflection and mental wellbeing rather than therapy or treatment. A hosted service, paid
 support, institutional deployment, use with minors, or clinical positioning would materially change

@@ -9,11 +9,13 @@ change.
 Therapist is published by Matteo Dante as an individual. The alpha is free and non-commercial and
 has no hosted service, donation, sponsorship, paid support, advertising, or telemetry.
 
-The person who installs Therapist operates their own single-user instance and chooses any model
-provider and Telegram account. The repository maintainer does not receive conversations, memory, or
-credentials during normal use. Data reaches the maintainer only when a user deliberately submits it
-through a support, security, or contribution channel; those channels prohibit real conversations,
-health information, credentials, and other personal data.
+The person who installs Therapist operates their own single-user instance and chooses the ChatGPT
+account and Telegram bot used by that instance. Publishing and downloading the repository does not
+create a hosted Therapist account or send application data to the repository maintainer. The
+maintainer does not receive conversations, memory, or credentials during normal use. Data reaches
+the maintainer only when a user deliberately submits it through a support, security, or contribution
+channel; those channels prohibit real conversations, health information, credentials, and other
+personal data.
 
 The public alpha is intended for adults using it privately for self-reflection. It is not intended
 for organizations to deploy to patients, clients, employees, students, or other third parties.
@@ -50,10 +52,11 @@ The selected configuration determines where content goes:
 | Experimental personal Codex OAuth | The same model input is sent through the user's ChatGPT Codex account under that product's terms |
 | Telegram | Telegram receives incoming messages, outgoing replies, tool events, notices, and any local data the user asks to view; the selected model provider also receives model input |
 
-Supported remote configurations currently include OpenAI, Anthropic, Google, OpenRouter, and a custom
-PydanticAI model ID. Each service has its own retention, abuse-monitoring, training, subprocessors,
-region, transfer, and deletion terms. Therapist does not control those terms and does not promise
-zero retention. Review the selected provider's current terms before sending sensitive content.
+The first public alpha supports only the experimental personal Codex OAuth configuration. Other
+PydanticAI model IDs remain unsupported technical overrides. Every external service has its own
+retention, abuse-monitoring, training, subprocessor, region, transfer, and deletion terms. Therapist
+does not control those terms and does not promise zero retention. Review the selected provider's
+current terms before sending sensitive content.
 
 Telegram bot conversations are cloud chats and are not end-to-end encrypted. Deleting local data
 does not delete data already retained by Telegram, a model provider, terminal capture, exports, or
@@ -81,3 +84,7 @@ See [SUPPORT.md](SUPPORT.md) for the complete reporting boundary.
 Questions about an external provider's data should be directed to that provider. Because the
 maintainer does not hold normal application data, local access, export, correction, and deletion are
 performed by the user through the application commands.
+
+Each person who enables Telegram operates their own bot. Setup and the README instruct that operator
+to configure this notice as the bot's privacy-policy URL in BotFather; the bot also exposes the same
+data-flow information through `/privacy`.

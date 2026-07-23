@@ -73,7 +73,8 @@ Explicitly deferred:
 - SaaS, accounts, billing, multi-tenancy, PostgreSQL, workers, and queues;
 - reminders, background jobs, MCP integrations, and external tools;
 - standalone vector databases, knowledge graphs, and multi-agent orchestration;
-- commercial dual licensing, a CLA, and formal release/PyPI publishing;
+- commercial dual licensing, a CLA, a stable release, and PyPI publishing; the first GitHub alpha
+  remains a prerelease;
 - clinical ownership, clinical validation, efficacy studies, and formal risk management;
 - MDR, AI Act, FDA, GDPR/HIPAA compliance work;
 - formal threat modeling, penetration tests, audits, and certifications.
@@ -94,9 +95,11 @@ The manual `Release candidate` GitHub workflow repeats offline gates on `main`, 
 distributions, exports a CycloneDX SBOM from locked runtime dependencies and checksums, creates
 provenance and SBOM attestations, and uploads a temporary candidate bundle without publishing a tag
 or release.
-`docs/dpia-screening.md`, `docs/article-50-assessment.md`, and
-`docs/compliance-assessment-brief.md` record preliminary compliance facts and unresolved external
-decisions; they are not compliance claims or substitutes for qualified review.
+`docs/dpia-screening.md` and `docs/article-50-assessment.md` record proportionate maintainer
+self-assessments for the narrow alpha; `docs/compliance-assessment-brief.md` preserves the questions
+for an optional future external review. They are not compliance claims. Re-open them before hosted,
+commercial, organizational, clinical, minor-facing, telemetry-enabled, or maintainer-accessible
+operation.
 
 ## Conversation behavior
 

@@ -1,6 +1,6 @@
 # EU AI Act Article 50 assessment record
 
-**Status:** open release gate; qualified role and marking decision required  
+**Status:** maintainer assessment recorded; monitor the applicable marking deadline
 **Date:** 2026-07-23  
 **Scope:** free, non-commercial, adult-only public alpha published by Matteo Dante
 
@@ -25,13 +25,12 @@ This disclosure appears in the README, guided setup, terminal consent, Telegram 
 surfaces. It should remain clear, distinguishable, accessible, and present from the start of the
 first interaction.
 
-## Unresolved role and obligation
+## Role and obligation assessment
 
 The Commission defines a provider as a person or body that develops or has an AI system developed
-and places it on the EU market or puts it into service under its own name or trademark. On the known
-facts, publishing a composed agent under the Therapist name creates a material risk that the
-publisher is a provider rather than only a distributor of upstream models. A qualified specialist
-must record that role analysis for this open-source, non-commercial distribution.
+and places it on the EU market or puts it into service under its own name or trademark. For release
+planning, Therapist conservatively assumes that its publisher may be the provider of the composed
+system rather than only a distributor of upstream models.
 
 Article 2(12) does not create a general Article 50 safe harbor for free and open-source AI: its
 exclusion expressly does not cover systems that fall under Article 50. Free distribution and an
@@ -47,26 +46,24 @@ If Therapist is a provider:
 
 The Commission's final guidance says Article 50 applies from 2 August 2026. Systems placed on the
 market before then receive a limited grace period only for Article 50(2) marking, until
-2 December 2026. The project will not treat early publication as a substitute for a role and
-implementation decision.
+2 December 2026. Publication before the application date is recorded as a transition fact, not a
+general compliance conclusion.
 
-## Go/no-go record
+## Release decision
 
-Before a tagged public alpha, record one of these outcomes with the responsible specialist, source,
-date, scope, and rationale:
+The current alpha already implements the clear Article 50(1) interaction disclosure and does not
+rely on the “obvious” exception. For a source alpha released before the obligations apply, the
+unresolved Article 50(2) marking method is tracked against the official transition dates rather than
+treated as a reason to withhold the repository or prerelease.
 
-1. Therapist is a provider and implements an adequate Article 50(2) marking method plus the existing
-   Article 50(1) disclosure;
-2. Therapist is a provider but a documented exemption or transition rule applies to the exact
-   release, with its end date and follow-up owner;
-3. Therapist is not the relevant provider for a stated legal reason, and the actual provider and
-   downstream obligations are identified.
-
-Current result: **no outcome has been approved; release remains blocked on this gate.**
+Before a release on or after the applicable deadline, recheck whether Therapist is the relevant
+provider, whether a transition rule applies to that exact version, and which interoperable marking
+method is then required. Implement it where required or stop that release. Record the source, date,
+scope, rationale, and next review date.
 
 Any technical implementation must follow the Commission's final guidance and current Code of
 Practice, including output-format interoperability and accessibility. Do not invent a custom marker
-and call it compliant without review.
+and call it compliant.
 
 ## Primary sources
 

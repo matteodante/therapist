@@ -3,13 +3,14 @@
 ## Decision
 
 **Technical candidate:** ready for review on `main`  
-**Tagged public product release:** no-go  
+**Tagged public product release:** ready after the remaining operational release checks
 **Source repository:** public
 
 The code, documentation, packaging, and configured evaluation gates passed on the working candidate.
-A tag, GitHub prerelease, installer announcement, or broader promotion remains blocked by the
-external legal and provider decisions below. This record is evidence of engineering checks, not
-clinical validation, legal approval, or a safety certification.
+A tag and GitHub prerelease still require the release mechanics and live Telegram smoke test listed
+below. The proportionate EU and privacy self-assessments for this narrow release are recorded; an
+external legal opinion is not a gate for the current free self-hosted alpha. This record is evidence
+of engineering checks, not clinical validation, legal approval, or a safety certification.
 
 ## Candidate scope
 
@@ -86,18 +87,27 @@ provider's product terms.
 
 These limits are public and must not be described as equivalent mature-project controls.
 
-## Open release blockers
+## Remaining release work
 
-1. A qualified EU specialist must record the MDR medical-device qualification for the exact claim,
-   functionality, and distribution.
-2. GDPR roles, Article 6 and 9 conditions, transfers, provider contracts, and the DPIA decision must
-   be approved for the actual release.
-3. The publisher/provider role and machine-readable output-marking obligation under EU AI Act
-   Article 50 must be decided and implemented where required.
-4. Telegram still lacks a non-personal confidential privacy contact and requires each bot owner to
-   configure the published policy in BotFather.
+1. Run a synthetic end-to-end smoke test with an actual private, allowlisted Telegram bot for the
+   candidate revision.
+2. Select the alpha version, update package metadata, create the signed tag and human release notes,
+   then verify the published installer path.
+
+The current privacy screening does not identify publisher-side application-data processing: there is
+no hosted instance, central account, telemetry, maintainer inference, or normal access to user data.
+The published notice, consent surfaces, local data controls, `/privacy`, and per-operator BotFather
+policy configuration are the proportionate controls for this release. A dedicated privacy mailbox,
+external GDPR opinion, and full DPIA are not current release gates.
+
+The intended purpose expressly excludes the medical purposes that would qualify software under the
+MDR. Article 50 interaction disclosure is already implemented. Medical-device, data-protection, and
+AI Act assessments remain change-triggered legal risks rather than claims of compliance: re-open
+them before SaaS, telemetry, maintainer access, organizational or clinical use, minors, efficacy or
+treatment claims, or any legally required output-marking deadline.
 
 See [compliance-assessment-brief.md](compliance-assessment-brief.md),
 [dpia-screening.md](dpia-screening.md), [article-50-assessment.md](article-50-assessment.md), and the
-[provider matrix](../protocols/research/provider-data-and-policy-matrix-2026-07-23.md) for the
-review packages and primary sources.
+[privacy and regulatory proportionality assessment](../protocols/research/privacy-and-regulatory-proportionality-2026-07-23.md)
+and [provider matrix](../protocols/research/provider-data-and-policy-matrix-2026-07-23.md) for the
+review records and primary sources.

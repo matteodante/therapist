@@ -208,9 +208,10 @@ expectations are defined in [RELEASING.md](RELEASING.md) and
 [docs/maintainer-ai-literacy.md](docs/maintainer-ai-literacy.md). The release assumptions and public
 claim boundaries are versioned in
 [docs/claims-and-intended-purpose.md](docs/claims-and-intended-purpose.md); local and external data
-flows are documented in [PRIVACY.md](PRIVACY.md). The preliminary data-protection and AI Act records
-are [docs/dpia-screening.md](docs/dpia-screening.md) and
-[docs/article-50-assessment.md](docs/article-50-assessment.md); the factual review package is
+flows are documented in [PRIVACY.md](PRIVACY.md). The proportionate maintainer data-protection and AI
+Act assessments are [docs/dpia-screening.md](docs/dpia-screening.md) and
+[docs/article-50-assessment.md](docs/article-50-assessment.md); questions preserved for an optional
+future external review are in
 [docs/compliance-assessment-brief.md](docs/compliance-assessment-brief.md).
 
 ## License

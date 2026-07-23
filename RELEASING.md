@@ -24,12 +24,15 @@ Before creating a tag, link durable evidence for every item below in the release
 
 - the intended purpose, public claim, initial operator, users, jurisdictions, and non-commercial
   distribution assumptions are approved;
-- qualified EU counsel or a regulatory specialist has recorded the medical-device classification
-  assessment;
-- the GDPR role map, legal-basis and Article 9 analysis, provider/transfer review, and DPIA screening
-  match the actual release;
-- the EU AI Act Article 50 machine-readable marking decision is recorded and implemented where
-  required;
+- the maintainer has rechecked that the exact intended purpose still excludes diagnosis,
+  prevention, monitoring, prediction, prognosis, treatment, and alleviation of disease, and has
+  recorded any feature or claim that could change the MDR assessment;
+- the privacy notice and DPIA screening match the actual data flow, and there is still no hosted
+  service, central account, telemetry, maintainer-operated inference, or normal maintainer access to
+  application data;
+- the EU AI Act Article 50 interaction disclosure remains present from the first interaction, and
+  any marking duty applicable on the release date has been rechecked against current official
+  guidance;
 - the Code of Conduct and reporting routes accurately state that there is no confidential
   project-specific conduct inbox;
 - the candidate was pushed directly to `main` only after local checks, and the resulting required CI
@@ -50,12 +53,15 @@ Before creating a tag, link durable evidence for every item below in the release
 - the package version, tag, installer channel, supported revision, and rollback target are explicit;
 - the pinned uv version and checksum-manifest SHA-256 match uv's immutable official release assets.
 
-If any legal, privacy, AI Act, safety, or conduct gate is open, stop. A green CI run is not authority
-to release.
+Stop if the actual release has moved beyond the documented self-hosted scope, if a current legal
+requirement is known to be unmet, or if any safety or conduct gate is open. Uncertainty alone is not
+an automatic veto for this experimental source alpha, but it must not be converted into a compliance
+claim.
 
-Use [docs/compliance-assessment-brief.md](docs/compliance-assessment-brief.md) for the external
-review, [docs/dpia-screening.md](docs/dpia-screening.md) for the preliminary data-protection record,
-and [docs/article-50-assessment.md](docs/article-50-assessment.md) for the open transparency decision.
+Use [docs/compliance-assessment-brief.md](docs/compliance-assessment-brief.md) when an external review
+becomes proportionate, [docs/dpia-screening.md](docs/dpia-screening.md) for the data-protection
+screening, and [docs/article-50-assessment.md](docs/article-50-assessment.md) for the transparency
+record.
 Use [docs/release-readiness-2026-07-23.md](docs/release-readiness-2026-07-23.md) as the current
 engineering evidence and open-blocker record.
 

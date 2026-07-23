@@ -1,13 +1,14 @@
-# External compliance assessment brief
+# Optional external compliance assessment brief
 
 **Prepared:** 2026-07-23  
 **Project:** Therapist  
 **Publisher:** Matteo Dante, acting as an individual  
-**Requested reviewer:** qualified EU medical-device, AI Act, data-protection, and consumer-software
-specialist
+**Use when:** the project materially expands beyond the current private self-hosted alpha, or the
+maintainer chooses to obtain an external opinion
 
-This brief supplies implementation facts and asks for written decisions. It is not a self-issued
-legal opinion, conformity assessment, or compliance claim.
+This brief preserves implementation facts and questions for a future external review. That review is
+not a prerequisite for the current free, single-user, self-hosted alpha. This document is not a
+self-issued legal opinion, conformity assessment, or compliance claim.
 
 ## Proposed release
 
