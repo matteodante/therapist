@@ -2,6 +2,8 @@ import base64
 import json
 from pathlib import Path
 
+import pytest
+
 import therapist.auth as auth
 from therapist.auth import CodexCredential
 from therapist.memory import MemoryStore
@@ -57,12 +59,40 @@ def test_device_login_rejects_invalid_poll_interval(tmp_path: Path, monkeypatch:
         },
     )  # type: ignore[attr-defined]
 
-    try:
+    with pytest.raises(auth.AuthError, match="invalid interval"):
         auth.login_codex(MemoryStore(tmp_path))
-    except auth.AuthError as error:
-        assert "invalid interval" in str(error)
-    else:
-        raise AssertionError("Invalid polling intervals must be rejected.")
+
+
+def test_device_login_respects_pending_and_slow_down(tmp_path: Path, monkeypatch: object) -> None:
+    access = _token("account-123")
+    attempts = 0
+
+    def fake_request(url: str, payload: dict[str, object], *, form: bool = False):
+        nonlocal attempts
+        if url == auth.DEVICE_USER_CODE_URL:
+            return {"device_auth_id": "device", "user_code": "ABCD", "interval": 1}
+        if url == auth.DEVICE_TOKEN_URL:
+            attempts += 1
+            if attempts == 1:
+                raise auth._HTTPError(400, '{"error":"deviceauth_authorization_pending"}')
+            if attempts == 2:
+                raise auth._HTTPError(429, '{"error":{"code":"slow_down"}}')
+            return {"authorization_code": "code", "code_verifier": "verifier"}
+        assert form
+        return {"access_token": access, "refresh_token": "refresh", "expires_in": 3600}
+
+    monkeypatch.setattr(auth, "_request_json", fake_request)  # type: ignore[attr-defined]
+    sleeps: list[float] = []
+
+    auth.login_codex(
+        MemoryStore(tmp_path),
+        notify=lambda _message: None,
+        open_browser=lambda _url: None,
+        sleep=sleeps.append,
+        monotonic=lambda: 0,
+    )
+
+    assert sleeps == [1.0, 1.0, 6.0]
 
 
 def test_expired_token_is_refreshed_when_building_model(

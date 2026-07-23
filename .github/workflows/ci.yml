@@ -36,8 +36,10 @@ jobs:
         run: uv run ruff format --check src tests
       - name: Type check
         run: uv run ty check src/therapist
-      - name: Test
-        run: uv run pytest -q
+      - name: Test with branch coverage
+        run: |
+          uv run coverage run -m pytest -q
+          uv run coverage report
       - name: Validate protocol packs
         run: uv run thera protocol validate
       - name: Validate installer syntax

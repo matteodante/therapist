@@ -25,7 +25,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.4,<10", "ruff>=0.12,<1", "ty>=0.0.63,<0.1"]
+dev = [
+  "coverage>=7.15,<8",
+  "pytest>=8.4,<10",
+  "ruff>=0.12,<1",
+  "ty>=0.0.63,<0.1",
+]
 
 [project.scripts]
 thera = "therapist.cli:main"
@@ -49,6 +54,15 @@ packages = ["src/therapist"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["live: requires real provider credentials and network access"]
+
+[tool.coverage.run]
+branch = true
+source = ["therapist"]
+
+[tool.coverage.report]
+fail_under = 75
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100

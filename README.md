@@ -186,7 +186,8 @@ review the provider and model they enable.
 uv sync --all-groups --extra dev
 uv run ruff check src tests
 uv run ty check src/therapist
-uv run pytest -q
+uv run coverage run -m pytest -q
+uv run coverage report
 uv run thera protocol validate
 uv build
 ```
