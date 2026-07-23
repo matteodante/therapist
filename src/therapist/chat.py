@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import AsyncIterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated
@@ -20,10 +20,9 @@ from pydantic_ai import (
     ModelRetry,
     RunContext,
     UsageLimits,
-    UserPromptPart,
 )
 from pydantic_ai.exceptions import AgentRunError
-from pydantic_ai.messages import TextPart
+from pydantic_ai.messages import RetryPromptPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.models import Model
 
 from therapist.memory import (
@@ -140,6 +139,7 @@ class SessionReflection(BaseModel):
 class ChatTurn:
     text: str
     notice: str | None = None
+    tool_trace: str | None = None
 
 
 class ChatSession:
@@ -467,14 +467,17 @@ class ChatSession:
         )
         reply = result.output
         actions = deps.actions
-        canonical_messages = [
-            ModelRequest(parts=[UserPromptPart(content=text)]),
-            ModelResponse(parts=[TextPart(content=reply)]),
+        run_messages = [
+            replace(message, instructions=None)
+            if isinstance(message, ModelRequest)
+            else message
+            for message in result.new_messages()
         ]
+        tool_trace = _format_tool_trace(run_messages)
         session.last_context_tokens = _estimate_context_tokens(
             self.protocol.instructions,
             _bounded_context_json(context),
-            [*history, *canonical_messages],
+            [*history, *run_messages],
             "",
         )
         warning_threshold = math.floor(
@@ -488,7 +491,7 @@ class ChatSession:
             warning = self._context_warning_notice()
             notice = f"{notice}\n{warning}" if notice else warning
         with self.memory.transaction():
-            evidence_id = self.memory.save_turn(session, text, reply, canonical_messages, now)
+            evidence_id = self.memory.save_turn(session, text, reply, run_messages, now)
             for correction in actions.corrections:
                 self.memory.correct_memory(
                     correction.memory_id,
@@ -600,7 +603,7 @@ class ChatSession:
                     )
                     app_state.pending_intervention_id = created.id
             self.memory.save_app_state(app_state)
-        return ChatTurn(reply, notice)
+        return ChatTurn(reply, notice, tool_trace)
 
     def end(self, now: datetime | None = None) -> SessionRecord | None:
         session = self.memory.active_session()
@@ -755,6 +758,36 @@ def _estimate_context_tokens(
         character_count / 4 * TOKEN_ESTIMATE_MARGIN
     )
     return estimated_text_tokens + CONTEXT_TOOL_RESERVE_TOKENS
+
+
+def _format_tool_trace(messages: list[ModelRequest | ModelResponse]) -> str | None:
+    blocks: list[str] = []
+    for message in messages:
+        for part in message.parts:
+            if isinstance(part, ToolCallPart):
+                blocks.append(
+                    f"TOOL INPUT · {part.tool_name}\n{_format_tool_value(part.args)}"
+                )
+            elif isinstance(part, ToolReturnPart):
+                blocks.append(
+                    f"TOOL OUTPUT · {part.tool_name} · {part.outcome}\n"
+                    f"{_format_tool_value(part.content)}"
+                )
+            elif isinstance(part, RetryPromptPart) and part.tool_name:
+                blocks.append(
+                    f"TOOL OUTPUT · {part.tool_name} · retry\n"
+                    f"{_format_tool_value(part.content)}"
+                )
+    return "\n\n".join(blocks) or None
+
+
+def _format_tool_value(value: object) -> str:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError:
+            return value
+    return json.dumps(value, ensure_ascii=False, indent=2, default=str)
 
 
 def _quote_in_text(quote: str | None, text: str) -> bool:

@@ -3,11 +3,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart
+from pydantic_ai.messages import TextPart, ToolCallPart, ToolReturnPart
 
 from therapist.cli import (
     DEFAULT_EMBEDDING_MODEL,
     DEFAULT_EMBEDDING_REPO,
     DEFAULT_EMBEDDING_REVISION,
+    _chat,
     _chat_command,
     _model_context_window,
     build_parser,
@@ -167,16 +170,84 @@ def test_interactive_command_and_output_stay_out_of_transcript(
     assert "Rendered command output." not in before
 
 
+def test_interactive_chat_prints_tool_input_and_output(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.consent_version = "alpha-1"
+    store.save_app_state(state)
+    inputs = iter(["Please remember this.", "/quit"])
+    monkeypatch.setattr("builtins.input", lambda _: next(inputs))
+    session = SimpleNamespace(
+        respond=lambda _: SimpleNamespace(
+            text="Done.",
+            notice=None,
+            tool_trace=(
+                'TOOL INPUT · record_memory\n{"content": "detail"}\n\n'
+                'TOOL OUTPUT · record_memory · success\n{"staged": 1}'
+            ),
+        )
+    )
+
+    assert _chat(session, store) == 0  # type: ignore[arg-type]
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert "TOOL INPUT · record_memory" in output
+    assert '"content": "detail"' in output
+    assert "TOOL OUTPUT · record_memory · success" in output
+    assert output.index("TOOL INPUT") < output.index("thera> Done.")
+
+
 def test_export_outputs_all_user_owned_layers(tmp_path: Path, capsys: object) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
-    store.save_turn(session, "Busy month", "What made it busy?", [])
+    store.save_turn(
+        session,
+        "Busy month",
+        "What made it busy?",
+        [
+            ModelRequest(parts=[UserPromptPart(content="Busy month")]),
+            ModelResponse(
+                parts=[
+                    ToolCallPart(
+                        "record_memory",
+                        {"content": "Busy month"},
+                        tool_call_id="record",
+                    )
+                ]
+            ),
+            ModelRequest(
+                parts=[
+                    ToolReturnPart(
+                        "record_memory",
+                        {"staged": 1},
+                        tool_call_id="record",
+                    )
+                ]
+            ),
+            ModelResponse(parts=[TextPart(content="What made it busy?")]),
+        ],
+    )
 
     assert main(["--data-dir", str(tmp_path), "export"]) == 0
 
     exported = json.loads(capsys.readouterr().out.splitlines()[-1])  # type: ignore[attr-defined]
     assert exported["messages"][0]["content"] == "Busy month"
     assert exported["sessions"][0]["id"] == session.id
+    assert exported["messages"][1]["tool_exchanges"] == [
+        {
+            "direction": "input",
+            "tool_name": "record_memory",
+            "content": {"content": "Busy month"},
+        },
+        {
+            "direction": "output",
+            "tool_name": "record_memory",
+            "content": {"staged": 1},
+            "outcome": "success",
+        },
+    ]
     assert "case_formulation" in exported
     assert "interventions" in exported
 

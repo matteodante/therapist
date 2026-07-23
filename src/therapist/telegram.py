@@ -228,12 +228,16 @@ class TelegramChannel:
             print(f"Model error while handling Telegram message: {type(error).__name__}")
             reply = self._model_error()
             notice = None
+            tool_trace = None
         else:
             reply = turn.text
             notice = getattr(turn, "notice", None)
+            tool_trace = getattr(turn, "tool_trace", None)
         changes = self._durable_changes(before)
         if notice:
             self.bot.send_message(chat_id, notice)
+        if tool_trace:
+            self.bot.send_message(chat_id, tool_trace)
         self.bot.send_message(chat_id, f"{reply}\n\n{changes}" if changes else reply)
         return True
 
@@ -442,6 +446,7 @@ class TelegramChannel:
             "• Semantic retrieval uses a local model; it does not establish facts or evidence.\n"
             "• No person reads or monitors the chat.\n"
             "• The bot cannot contact help, locate you, or act outside the chat.\n"
+            "• Agent tool inputs and outputs are shown and retained in encrypted history.\n"
             "• Any durable changes are disclosed after each reply.\n"
             "• Internal prompts, tokens, and private reasoning are not shown.\n\n"
             "Use the local CLI for export, correction, forgetting, and full deletion."

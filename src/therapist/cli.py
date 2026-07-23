@@ -931,6 +931,8 @@ def _chat(session: ChatSession, store: MemoryStore) -> int:
             continue
         if turn.notice:
             print(f"notice> {turn.notice}")
+        if turn.tool_trace:
+            print(turn.tool_trace)
         print(f"thera> {turn.text}")
 
 

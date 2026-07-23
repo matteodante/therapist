@@ -189,6 +189,7 @@ def test_transparency_commands_show_status_memory_case_and_privacy(
     assert f"[evidence: {item.id}]" in output
     assert f"Evidence: messages {message_id}" in output
     assert "Telegram receives messages" in output
+    assert "Agent tool inputs and outputs are shown" in output
     assert "Internal prompts, tokens, and private reasoning are not shown" in output
     assert session.received == []
     assert store.session_transcript(active.id) == transcript_before
@@ -254,6 +255,38 @@ def test_normal_turn_discloses_committed_memory_change(tmp_path: Path) -> None:
     assert bot.messages[-1][1].startswith("Understood.\n\n")
     assert "THIS TURN'S RECORD" in bot.messages[-1][1]
     assert "Saved fact: I work from home" in bot.messages[-1][1]
+
+
+def test_normal_turn_sends_tool_input_and_output_before_reply(tmp_path: Path) -> None:
+    bot = FakeBot()
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.telegram_consent_version = "alpha-1"
+    store.save_app_state(state)
+
+    class ToolSession(FakeSession):
+        def respond(self, text: str) -> SimpleNamespace:
+            self.received.append(text)
+            return SimpleNamespace(
+                text="Done.",
+                tool_trace=(
+                    'TOOL INPUT · record_memory\n{"content": "detail"}\n\n'
+                    'TOOL OUTPUT · record_memory · success\n{"staged": 1}'
+                ),
+            )
+
+    channel = TelegramChannel(bot, ToolSession(), store, 42)  # type: ignore[arg-type]
+
+    channel.process_update(private_update(1, 42, "Remember this"))
+
+    assert bot.messages == [
+        (
+            42,
+            'TOOL INPUT · record_memory\n{"content": "detail"}\n\n'
+            'TOOL OUTPUT · record_memory · success\n{"staged": 1}',
+        ),
+        (42, "Done."),
+    ]
 
 
 def test_bot_configures_commands_only_for_allowlisted_chat(

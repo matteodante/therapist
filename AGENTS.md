@@ -126,9 +126,12 @@ call six bounded function tools: `search_memory`, `record_memory`, `correct_memo
 `confirm_hypotheses`, `set_focus`, and `record_intervention`. The first is an optional read-only
 longitudinal lookup; the other five validate and stage actions without mutating SQLite during the
 model run. After a valid final reply, the transcript and all staged actions are committed in one
-transaction; failure leaves both unchanged. Tool exchanges are not retained in model history, which
-stores only the canonical user/assistant pair. Slash commands, rendered command output, and
-transport-level notices are also excluded from the transcript and model history.
+transaction; failure leaves both unchanged. The successful PydanticAI message sequence is retained
+in encrypted model history, including paired function-tool inputs and outputs but excluding repeated
+internal instructions, and those tool exchanges are rendered before the final reply in both CLI and
+Telegram. Slash commands such as `/start`,
+`/status`, and `/quit`, their rendered output, and transport-level notices remain excluded from the
+conversation archive and model history.
 
 A conversation run permits at most eight model requests, six successful tool calls, and two output retries
 within that global budget. All model-written strings and collections have size limits. Accepted
@@ -142,8 +145,8 @@ to summarize the episode and link existing claims into the case formulation. Con
 two output retries and at most three model requests. It cannot create a confirmed claim. If it fails,
 preserve the transcript, record a content-free error class, and leave the previous formulation
 intact. Both agent runs use PydanticAI's complete synchronous API with an event stream handler so the
-experimental ChatGPT Codex backend can require `stream=true`; the CLI prints only the validated
-final reply.
+experimental ChatGPT Codex backend can require `stream=true`; the transports print tool inputs and
+outputs followed by the validated final reply.
 
 Consolidation preserves valid formulation links when the model omits them and removes a link only
 through an explicit `formulation_unlinks` entry. Existing evidence is retained before new links when
@@ -161,7 +164,7 @@ silently switching to lexical-only ranking. Historical excerpts use the same hyb
 minimum semantic relevance threshold; lexical tokenization adds standard-library character bigrams
 for Chinese, Japanese, and Thai text without spaces. Context is reduced by complete structured items
 and serialized only as valid JSON; model history and consolidation retain complete turns instead of
-slicing messages mid-run. There is no intra-session compaction. Canonical history grows until a
+slicing messages mid-run. There is no intra-session compaction. Successful-run history grows until a
 conservative estimate reaches 80% of the input budget, when the user receives one warning. Before a
 later user turn would exceed that budget, the old session is consolidated with `context_limit` as
 its end reason and the pending message starts a new session. The effective context window is the
@@ -197,8 +200,9 @@ Memory states:
 
 The complete archive is retained until the user deletes it. Corrections and forgotten items must be
 removed from derived formulation and summaries and suppressed from future retrieval. Current-session
-model history retains every complete canonical turn until the context boundary; long-term continuity
-across the resulting sessions comes from structured context and relevant excerpts.
+model history retains every complete successful run, including tool exchanges, until the context
+boundary; long-term continuity across the resulting sessions comes from structured context and
+relevant excerpts.
 When generated derived text paraphrases corrected or forgotten evidence, the overlapping derived
 field is conservatively invalidated instead of risking stale personal information returning.
 Explicit corrections from natural conversation target an existing claim ID, retain the old wording
@@ -309,7 +313,8 @@ and consolidates the previous session if at least eight hours elapsed. `/end` cl
 When the active history approaches its context boundary, a warning is printed without archiving it.
 The next over-budget message closes and consolidates the old session, starts a new one, and is
 processed there. Commands, their output, and these lifecycle notices never enter conversation
-history.
+history. Agent function-tool calls are not commands: their input and output are displayed and saved
+in encrypted model history.
 
 Telegram normally reads its token and user ID from the encrypted configuration written by `setup`.
 The user never needs to know or type that ID: setup validates the bot token, creates a random
@@ -332,7 +337,9 @@ session. After each normal reply, the bot reports any durable memory, focus, or 
 committed for that turn. Correcting or forgetting memory, auth, export, and deletion remain local CLI
 operations. Command messages, rendered command output, context warnings, and rollover notices are
 transport-only and are not archived or sent back to the conversation model. Internal prompts,
-secrets, and private model reasoning are never exposed. Incoming text and outgoing chunks stay below
+secrets, and private model reasoning are never exposed. Function-tool inputs and outputs are sent as
+separate messages before the final reply and remain in encrypted model history. Incoming text and
+outgoing chunks stay below
 Telegram's message limit and use plain text without a parse mode. The encrypted update offset
 survives restarts. A crash between model state commit and offset persistence can still cause one
 update to be processed again; full durable inbox idempotency is deferred until `ChatSession` can
@@ -466,6 +473,9 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   at 128,000 tokens while preserving a 10% output reserve.
 - Slash commands, rendered command output, and lifecycle notices never enter the archive or model
   history.
+- Function-tool inputs and outputs are visible in CLI and Telegram, persist atomically with the
+  successful turn, appear in user export without internal prompts or reasoning, and return in future
+  model history.
 - Semantic retrieval ranks meaning-equivalent claims, archive excerpts, and interventions across the
   evaluated Latin, Arabic, Devanagari, Han, Japanese, Thai, and Cyrillic scripts without weakening
   evidence, encryption, correction, or forgetting contracts; setup fails if the model is unavailable.
@@ -516,7 +526,7 @@ manually before releases or after changing model integration; do not make ordina
 depend on an external provider.
 
 Deterministic runtime-contract tests additionally verify that staged tool actions survive output
-retry but never persist after a failed run, canonical history excludes tool exchanges, and the
+retry but never persist after a failed run, successful history retains paired tool exchanges, and the
 per-turn tool-call budget is enforced before commit.
 
 A separate Codex-subscription memory eval exercises the configured experimental OAuth backend with

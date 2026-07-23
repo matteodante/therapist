@@ -108,12 +108,14 @@ is derived from claims, active interventions, and candidate user messages and is
 of truth. The agent can request an additional bounded local lookup when the initial context is
 insufficient. The remaining five tools stage validated memory observations, corrections, hypothesis
 confirmations, focus changes, or one intervention update. The transcript and staged changes are
-committed atomically only after a successful final reply. Tool exchanges are not retained:
-conversation history contains only the canonical user message and plain-text assistant reply.
-Slash commands, their displayed output, tool traces, and context lifecycle notices are never stored
-as conversation turns or returned to the conversation model. There is no intra-session compaction:
-complete canonical turns remain available until a warning near the effective context limit, followed
-by consolidation and a fresh session before the next message would exceed it. End-of-session
+committed atomically only after a successful final reply. Conversation history contains the complete
+successful run, including paired function-tool inputs and outputs. CLI and Telegram display those
+exchanges before the final reply, and export exposes them without internal prompts or private model
+reasoning. Slash commands such as `/start`, `/status`, and `/quit`, their displayed output, and
+context lifecycle notices remain outside the conversation archive and model history. There is no
+intra-session compaction: complete successful runs remain available until a warning near the
+effective context limit, followed by consolidation and a fresh session before the next message would
+exceed it. End-of-session
 consolidation separately uses a structured `SessionReflection`; conversation turns do not return
 process-stage or selected-skill fields. The agent sends only relevant context to the selected model
 provider. Remote providers and Telegram receive the content needed to answer or deliver messages.

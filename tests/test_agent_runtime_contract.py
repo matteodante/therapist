@@ -91,7 +91,7 @@ def test_staged_action_commits_after_model_repairs_invalid_final_reply(
     )
 
 
-def test_next_turn_receives_canonical_history_without_tool_trace(
+def test_next_turn_receives_complete_history_with_tool_trace(
     tmp_path: Path,
 ) -> None:
     async def first_stream(messages: list[Any], _info: Any):
@@ -116,7 +116,13 @@ def test_next_turn_receives_canonical_history_without_tool_trace(
         "I need a moment."
     )
 
-    assert received_part_kinds == ["user-prompt", "text", "user-prompt"]
+    assert received_part_kinds == [
+        "user-prompt",
+        "tool-call",
+        "tool-return",
+        "text",
+        "user-prompt",
+    ]
 
 
 def test_tool_budget_rejects_seventh_call_before_state_can_commit(

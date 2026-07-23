@@ -853,16 +853,39 @@ class MemoryStore:
             rows = database.execute(
                 "SELECT id, session_id, role, created_at, payload FROM messages ORDER BY id"
             ).fetchall()
-        messages = [
-            {
+        messages = []
+        for row in rows:
+            payload = self._decrypt_json(row[4])
+            message = {
                 "id": row[0],
                 "session_id": row[1],
                 "role": row[2],
                 "created_at": row[3],
-                "content": self._decrypt_json(row[4]).get("content", ""),
+                "content": payload.get("content", ""),
             }
-            for row in rows
-        ]
+            tool_exchanges = [
+                {
+                    "direction": "input" if part["part_kind"] == "tool-call" else "output",
+                    "tool_name": part.get("tool_name"),
+                    "content": (
+                        part.get("args")
+                        if part["part_kind"] == "tool-call"
+                        else part.get("content")
+                    ),
+                    **(
+                        {"outcome": part.get("outcome", "retry")}
+                        if part["part_kind"] != "tool-call"
+                        else {}
+                    ),
+                }
+                for model_message in payload.get("model_messages", [])
+                for part in model_message.get("parts", [])
+                if part.get("part_kind") in {"tool-call", "tool-return", "retry-prompt"}
+                and (part.get("part_kind") != "retry-prompt" or part.get("tool_name"))
+            ]
+            if tool_exchanges:
+                message["tool_exchanges"] = tool_exchanges
+            messages.append(message)
         return {
             "app": self.load_app_state().model_dump(),
             "case_formulation": self.load_formulation().model_dump(),

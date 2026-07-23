@@ -38,9 +38,14 @@ def _tool_model(
     reply: str,
 ) -> FunctionModel:
     async def stream(messages: list[Any], _info: Any):
+        current_turn_start = max(
+            index
+            for index, message in enumerate(messages)
+            if any(part.part_kind == "user-prompt" for part in message.parts)
+        )
         if any(
             getattr(part, "part_kind", "") == "tool-return"
-            for message in messages
+            for message in messages[current_turn_start:]
             for part in message.parts
         ):
             yield reply
@@ -118,12 +123,24 @@ def test_normal_turn_returns_text_and_persists_tool_staged_observation(
     )
 
     assert turn.text == "I am here. What is happening at work?"
+    assert turn.tool_trace is not None
+    assert "TOOL INPUT · record_memory" in turn.tool_trace
+    assert '"evidence_quote": "under pressure at work"' in turn.tool_trace
+    assert "TOOL OUTPUT · record_memory · success" in turn.tool_trace
+    assert '"staged": 1' in turn.tool_trace
     assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
     history = store.load_session_history(store.active_session().id)  # type: ignore[union-attr]
     assert [part.part_kind for message in history for part in message.parts] == [
         "user-prompt",
+        "tool-call",
+        "tool-return",
         "text",
     ]
+    assert all(
+        message.instructions is None
+        for message in history
+        if isinstance(message, ModelRequest)
+    )
 
 
 def test_turn_persistence_rolls_back_as_one_transaction(
@@ -566,7 +583,7 @@ def test_correction_tool_replaces_existing_memory_without_duplicate(
     assert "lives alone" not in store.working_context("mother aunt").model_dump_json()
 
 
-def test_lookup_authorizes_an_out_of_context_correction_without_persisting_tool_results(
+def test_lookup_authorizes_an_out_of_context_correction_and_persists_tool_results(
     tmp_path: Path,
 ) -> None:
     store = MemoryStore(tmp_path)
@@ -635,16 +652,22 @@ def test_lookup_authorizes_an_out_of_context_correction_without_persisting_tool_
     assert target.id not in {
         item.id for item in store.working_context("revise an old detail").confirmed_memory
     }
-    ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(user_text)
+    ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        user_text,
+        datetime(2026, 1, 1, 1, tzinfo=UTC),
+    )
 
     corrected = next(item for item in store.list_memory() if item.id == target.id)
     assert corrected.content == "The oak cabin is blue."
     history = store.load_session_history(active.id)
-    assert all(
-        part.part_kind not in {"tool-call", "tool-return"}
-        for message in history
-        for part in message.parts
-    )
+    assert [part.part_kind for message in history for part in message.parts] == [
+        "user-prompt",
+        "tool-call",
+        "tool-return",
+        "tool-call",
+        "tool-return",
+        "text",
+    ]
 
 
 def test_focus_and_intervention_tools_update_existing_records(tmp_path: Path) -> None:
