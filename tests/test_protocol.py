@@ -17,6 +17,7 @@ def test_bundled_protocol_is_bilingual_git_versioned_and_experimental() -> None:
     assert "build-shared-formulation" in pack.instructions
     assert "do not claim to be a psychologist" in pack.instructions.casefold()
     assert "do not append routine" in pack.instructions.casefold()
+    assert "explicitly says they are under 18" in pack.instructions.casefold()
     assert "never infer danger from a keyword alone" in pack.instructions.casefold()
     assert "repair-misattunement" in pack.instructions
     assert "Use state tools" in pack.instructions

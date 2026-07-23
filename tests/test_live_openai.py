@@ -70,7 +70,7 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
             for index, message in enumerate(inputs["initial_messages"]):
                 turn = chat.respond(message, started_at + timedelta(minutes=index * 20))
                 replies.append(turn.text)
-                transcript.append(f"USER: {message}\nTHERA: {turn.text}")
+                transcript.append(f"USER: {message}\nTHERAPIST: {turn.text}")
             closed = chat.end(started_at + timedelta(minutes=90))
 
             restarted = MemoryStore(Path(data_directory))
@@ -83,7 +83,7 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
                     started_at + timedelta(days=inputs["return_after_days"], minutes=index * 20),
                 )
                 replies.append(turn.text)
-                transcript.append(f"USER: {message}\nTHERA: {turn.text}")
+                transcript.append(f"USER: {message}\nTHERAPIST: {turn.text}")
             items = restarted.list_memory()
             context = restarted.working_context(inputs["return_messages"][-1])
             return {

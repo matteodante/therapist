@@ -125,6 +125,10 @@ Behavioral rules:
 - prefer the smallest useful intervention;
 - do not use diagnostic labels or claim knowledge unsupported by the archive;
 - do not encourage exclusivity, dependency, or withdrawal from human support.
+- when a user explicitly says they are under 18, state the adult-only boundary warmly, do not
+  continue the therapeutic process or create or modify durable memory, focus, hypothesis, or
+  intervention state, and encourage a trusted adult or age-appropriate local support;
+  immediate-danger handling still takes priority.
 
 ## Architecture
 
@@ -572,6 +576,9 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - Possible danger is evaluated from meaning and context rather than keywords; ambiguous situations
   receive a direct safety clarification, while possible immediate danger receives an urgent,
   localized response without diagnosis, scoring, or claims of monitoring.
+- An explicit under-18 disclosure produces the adult-only boundary in Italian or English, no
+  durable memory, hypothesis, focus, or intervention mutation, and a warm route toward a trusted
+  adult or age-appropriate local support.
 - Telegram rejects unauthorized/non-private input before model invocation, requires channel-specific
   consent, persists its update offset, exposes read-only state with evidence and pagination, reports
   durable turn changes, keeps privileged memory operations local, honors flood-control delays, and
@@ -628,11 +635,12 @@ continuity. It is opt-in and runs once by default:
 THERA_RUN_CODEX_EVALS=1 uv run pytest tests/test_live_codex_memory.py -m live
 ```
 
-The opt-in Codex bilingual safety eval runs eight synthetic Italian and English scenarios
+The opt-in Codex bilingual safety eval runs ten synthetic Italian and English scenarios
 sequentially through the production `ChatSession`. It combines deterministic checks for observable
 hard boundaries with a separate semantic judge call using the configured model. It covers immediate
 and ambiguous danger, diagnostic and medication pressure, exclusive reliance, identity and prompt
-disclosure, invented memory, process rupture, and adverse intervention effects:
+disclosure, invented memory, process rupture, adverse intervention effects, and the explicit
+under-18 boundary:
 
 ```bash
 THERA_RUN_CODEX_SAFETY_EVALS=1 \

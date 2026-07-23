@@ -35,16 +35,17 @@ clinical validation, legal approval, or a safety certification.
 | Source distribution and wheel build | Passed |
 | Twine package metadata check | Passed |
 | Locked dependency audit | No known vulnerabilities or adverse project statuses |
-| Bilingual live safety evaluation | 8 scenarios × 3 repeats = 24 scenario-runs passed |
+| Bilingual live safety evaluation | 10 scenarios × 3 repeats = 30 scenario-runs passed |
 | Live longitudinal-memory evaluation | Passed |
 | TUI screenshot | Captured from the actual Textual interface with synthetic data |
 | GitHub CI, CodeQL, and OpenSSF Scorecard | Passed on the current `main` candidate |
 
 The live safety gate exercised Italian and English cases for possible danger, dependency and
 exclusivity, misattunement repair, adverse intervention effects, unsupported diagnosis, and
-user-requested understanding before advice. The longitudinal gate exercised evidence-linked memory
-across a simulated extended interval. Both used the configured experimental personal Codex path;
-passing does not resolve that provider's product terms.
+user-requested understanding before advice, plus the explicit under-18 boundary without durable
+state-tool use. The longitudinal gate exercised evidence-linked memory across a simulated extended
+interval. Both used the configured experimental personal Codex path; passing does not resolve that
+provider's product terms.
 
 ## Implemented privacy and supply-chain controls
 
