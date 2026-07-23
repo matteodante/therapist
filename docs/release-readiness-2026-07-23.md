@@ -44,6 +44,7 @@ of engineering checks, not clinical validation, legal approval, or a safety cert
 | Locked dependency audit | No known vulnerabilities or adverse project statuses |
 | Bilingual live safety evaluation | 10 scenarios × 3 repeats = 30 scenario-runs passed |
 | Live longitudinal-memory evaluation | Passed |
+| Private Telegram live smoke test | Passed on the allowlisted bot: privacy and status views, persistent text delivery, text-only media rejection, and no durable memory from an explicitly synthetic message |
 | TUI screenshot | Captured from the actual Textual interface with synthetic data |
 | GitHub CI, CodeQL, and OpenSSF Scorecard | Passed on the current `main` candidate |
 
@@ -89,10 +90,8 @@ These limits are public and must not be described as equivalent mature-project c
 
 ## Remaining release work
 
-1. Run a synthetic end-to-end smoke test with an actual private, allowlisted Telegram bot for the
-   candidate revision.
-2. Select the alpha version, update package metadata, create the signed tag and human release notes,
-   then verify the published installer path.
+Confirm the existing `0.1.0` alpha version, create the signed tag and human release notes, then
+verify the published installer path.
 
 The current privacy screening does not identify publisher-side application-data processing: there is
 no hosted instance, central account, telemetry, maintainer inference, or normal access to user data.
