@@ -1,5 +1,10 @@
 # Agent scope improvements — 2026-07-22
 
+> Historical design review. The evidence-bound memory, intervention lifecycle, semantic repair,
+> progressive formulation, and behavioral-eval recommendations below have since been implemented
+> or superseded. Consult `AGENTS.md`, `README.md`, and `src/therapist/chat.py` for the current
+> contract.
+
 ## Scope and conclusion
 
 This review covers the current bilingual, single-user CLI/Telegram agent, its longitudinal memory,

@@ -113,7 +113,7 @@ User
 CLI or private Telegram -> deterministic explicit-danger fallback -> 112 / 911 / 988
   |
   v
-Versioned experimental behavior pack
+Git-versioned experimental behavior pack
   |
   v
 PydanticAI tool loop + plain-text reply -> local model or configured remote provider
@@ -122,13 +122,13 @@ PydanticAI tool loop + plain-text reply -> local model or configured remote prov
 Encrypted SQLite archive + structured longitudinal memory
 ```
 
-Use one PydanticAI agent run per normal turn. The agent returns the visible reply as plain text and
-uses six bounded function tools: one optional read-only longitudinal-memory search plus staged tools
-for memory observations, corrections, hypothesis confirmations, focus, and one intervention update.
-Tools validate and buffer actions but never mutate SQLite during the model run. After a valid final
-reply, the transcript and all staged actions are committed in one transaction; failure leaves both
-unchanged. Tool exchanges are not retained in model history, which stores only the canonical
-user/assistant pair.
+Use one PydanticAI agent run per normal turn. The agent returns the visible reply as `str` and may
+call six bounded function tools: `search_memory`, `record_memory`, `correct_memory`,
+`confirm_hypotheses`, `set_focus`, and `record_intervention`. The first is an optional read-only
+longitudinal lookup; the other five validate and stage actions without mutating SQLite during the
+model run. After a valid final reply, the transcript and all staged actions are committed in one
+transaction; failure leaves both unchanged. Tool exchanges are not retained in model history, which
+stores only the canonical user/assistant pair.
 
 A normal run permits at most eight model requests, six successful tool calls, and two output retries
 within that global budget. All model-written strings and collections have size limits. Accepted
@@ -137,12 +137,13 @@ the current user message. The IDs of the last explicitly offered hypothesis and 
 remain pending so confirmation, agreement, and outcome update the original records instead of
 creating copies. Provider transport retries remain a separate concern.
 
-When a session closes, use one additional structured model call to summarize the episode and link
-existing claims into the case formulation. Consolidation allows two output retries and at most three
-model requests. It cannot create a confirmed claim. If it fails, preserve the transcript, record a
-content-free error class, and leave the previous formulation intact. Both agent runs use PydanticAI's
-complete synchronous API with an event stream handler so the experimental ChatGPT Codex backend can
-require `stream=true`; the CLI prints only the validated final reply.
+When a session closes, use one additional model call with the structured `SessionReflection` output
+to summarize the episode and link existing claims into the case formulation. Consolidation allows
+two output retries and at most three model requests. It cannot create a confirmed claim. If it fails,
+preserve the transcript, record a content-free error class, and leave the previous formulation
+intact. Both agent runs use PydanticAI's complete synchronous API with an event stream handler so the
+experimental ChatGPT Codex backend can require `stream=true`; the CLI prints only the validated
+final reply.
 
 Consolidation preserves valid formulation links when the model omits them and removes a link only
 through an explicit `formulation_unlinks` entry. Existing evidence is retained before new links when
@@ -346,7 +347,9 @@ skill routes each turn and permits at most one intervention skill at a time.
 The normal turn returns plain text capped at 1,200 characters. Durable changes use validated staged
 tools, including a hypothesis offered for confirmation so a later user confirmation promotes that
 exact pending memory item. Questions are optional and normally sparse; naturalness and avoidance of
-interrogation are evaluated at the conversation level.
+interrogation are evaluated at the conversation level. The turn has no `process_stage`,
+`selected_skill`, or other model-written process classifier; the prompt supplies the full protocol
+and the agent chooses conversational behavior and tools from meaning and context.
 
 Memory tool use is intentionally sparse: at most two durable items total per turn, with no more than
 one hypothesis.
@@ -447,6 +450,10 @@ intervention effects. Offline workflow evals also assert the available tool surf
 path, persistence result, and absence of state changes when no tool is needed. Run live evals
 manually before releases or after changing model integration; do not make ordinary local or CI runs
 depend on an external provider.
+
+Deterministic runtime-contract tests additionally verify that staged tool actions survive output
+retry but never persist after a failed run, canonical history excludes tool exchanges, and the
+per-turn tool-call budget is enforced before commit.
 
 A separate Codex-subscription memory eval exercises the configured experimental OAuth backend with
 synthetic data through the production `ChatSession`: capture, explicit hypothesis confirmation,

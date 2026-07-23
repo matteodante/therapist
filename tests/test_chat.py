@@ -345,7 +345,9 @@ def test_hypothesis_tools_offer_then_confirm_the_same_claim(tmp_path: Path) -> N
     )
 
     assert store.load_app_state().pending_hypothesis_id is None
-    assert store.list_memory()[0].status is MemoryStatus.USER_CONFIRMED
+    confirmed_item = store.list_memory()[0]
+    assert confirmed_item.status is MemoryStatus.USER_CONFIRMED
+    assert len(confirmed_item.evidence_message_ids) == 2
 
 
 def test_unsupported_direct_observation_is_rejected_before_persistence(
@@ -569,6 +571,87 @@ def test_focus_and_intervention_tools_update_existing_records(tmp_path: Path) ->
     assert len(store.list_interventions()) == 1
     assert store.list_interventions()[0].state is InterventionState.AGREED
     assert store.load_app_state().pending_intervention_id == intervention.id
+
+
+def test_intervention_update_preserves_omitted_links(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    active = store.start_session()
+    evidence_id = store.save_turn(active, "Calls are difficult.", "I hear you.", [])
+    claim = store.add_observations(
+        [MemoryObservation(kind=MemoryKind.EVENT, content="Calls are difficult.")],
+        evidence_id,
+    )[0]
+    intervention = store.create_intervention(
+        skill="change-avoidance-behavior",
+        description="Make one short call",
+        prediction=None,
+        state=InterventionState.AGREED,
+        linked_memory_ids=[claim.id],
+        evidence_message_id=evidence_id,
+    )
+    model = _tool_model(
+        [
+            (
+                "record_intervention",
+                {
+                    "action": {
+                        "record_id": intervention.id,
+                        "skill": intervention.skill,
+                        "description": intervention.description,
+                        "state": "tried",
+                        "evidence_quote": "I tried the short call",
+                    }
+                },
+            )
+        ],
+        "What did you notice when you tried it?",
+    )
+
+    ChatSession(model, _pack(), store, "en-US").respond(
+        "I tried the short call this morning."
+    )
+
+    updated = store.list_interventions()[0]
+    assert updated.state is InterventionState.TRIED
+    assert updated.linked_memory_ids == [claim.id]
+
+
+def test_intervention_update_rejects_a_different_skill(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    active = store.start_session()
+    evidence_id = store.save_turn(active, "Calls are difficult.", "I hear you.", [])
+    intervention = store.create_intervention(
+        skill="change-avoidance-behavior",
+        description="Make one short call",
+        prediction=None,
+        state=InterventionState.AGREED,
+        linked_memory_ids=[],
+        evidence_message_id=evidence_id,
+    )
+    model = _tool_model(
+        [
+            (
+                "record_intervention",
+                {
+                    "action": {
+                        "record_id": intervention.id,
+                        "skill": "solve-practical-problems",
+                        "description": intervention.description,
+                        "state": "tried",
+                        "evidence_quote": "I tried the short call",
+                    }
+                },
+            )
+        ],
+        "What did you notice?",
+    )
+
+    with pytest.raises(AgentRunError):
+        ChatSession(model, _pack(), store, "en-US").respond(
+            "I tried the short call this morning."
+        )
+
+    assert store.list_interventions()[0].state is InterventionState.AGREED
 
 
 def test_unaccepted_proposed_focus_expires_when_session_ends(tmp_path: Path) -> None:

@@ -13,7 +13,7 @@ It supports Italian and English through a terminal chat and a private Telegram b
 
 - Natural, varied conversation guided by an internal protocol rather than a visible script, without
   mandatory questions, goals, or forms.
-- Agent-selected memory and intervention tools with atomic local persistence.
+- Plain-text agent replies plus six agent-selected memory, focus, and intervention tools.
 - Encrypted SQLite archive, structured memory, and local semantic retrieval across months or years.
 - Visible, correctable facts, hypotheses, case formulation, sessions, and interventions.
 - PydanticAI providers, local models, and experimental personal ChatGPT Codex OAuth.
@@ -23,6 +23,8 @@ It supports Italian and English through a terminal chat and a private Telegram b
 
 The current protocol is experimental and has not undergone clinical validation. See
 [AGENTS.md](AGENTS.md) for the complete scope, architecture, memory model, and behavioral contract.
+Its stable directory is `protocols/transdiagnostic/`; Git commits and tags track revisions, so the
+manifest and directory name do not carry a separate SemVer version.
 
 ## Quick start
 

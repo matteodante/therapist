@@ -1,5 +1,9 @@
 # Pydantic AI ecosystem review — 2026-07-22
 
+> Historical design review. Its "Now" section describes the implementation before commit
+> `e5382b7`; the normal turn now returns plain text and uses validated state tools. Consult
+> `AGENTS.md`, `README.md`, and `src/therapist/chat.py` for the current contract.
+
 ## Scope and conclusion
 
 The repository currently resolves `pydantic-ai-slim==2.15.0` and

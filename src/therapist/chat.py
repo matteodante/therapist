@@ -75,7 +75,7 @@ class InterventionAction(BaseModel):
     prediction: ShortText | None = None
     state: InterventionState
     evidence_quote: ShortText | None = None
-    linked_memory_ids: list[str] = Field(default_factory=list, max_length=5)
+    linked_memory_ids: Annotated[list[str], Field(max_length=5)] | None = None
     outcome: ShortText | None = None
     user_appraisal: ShortText | None = None
     follow_up_at: str | None = None
@@ -381,7 +381,7 @@ class ChatSession:
             _ensure_unused_tool(ctx.deps.actions, "record_intervention")
             if action.skill is TherapeuticSkill.REPAIR:
                 raise ModelRetry("Repair is conversational behavior, not an intervention record.")
-            unknown_links = set(action.linked_memory_ids) - set(
+            unknown_links = set(action.linked_memory_ids or []) - set(
                 ctx.deps.available_memory
             )
             if unknown_links:
@@ -395,6 +395,10 @@ class ChatSession:
                 ):
                     raise ModelRetry(
                         "Update an active intervention through a valid state transition."
+                    )
+                if action.skill.value != current.skill:
+                    raise ModelRetry(
+                        "An intervention update must keep the record's original skill."
                     )
             elif action.state not in {
                 InterventionState.OFFERED,
@@ -483,6 +487,21 @@ class ChatSession:
                 now,
                 evidence_text=text,
             )
+            if actions.confirmed_memory_ids:
+                self.memory.add_observations(
+                    [
+                        MemoryObservation(
+                            kind=available_memory[item_id].kind,
+                            content=available_memory[item_id].content,
+                            evidence_quote=actions.confirmation_evidence_quote,
+                            merge_into_id=item_id,
+                        )
+                        for item_id in actions.confirmed_memory_ids
+                    ],
+                    evidence_id,
+                    now,
+                    evidence_text=text,
+                )
             for item_id in actions.confirmed_memory_ids:
                 self.memory.confirm_memory(item_id, now)
                 if item_id == app_state.pending_hypothesis_id:
@@ -537,7 +556,7 @@ class ChatSession:
                         description=action.description,
                         prediction=action.prediction,
                         state=action.state,
-                        linked_memory_ids=action.linked_memory_ids,
+                        linked_memory_ids=action.linked_memory_ids or [],
                         evidence_message_id=evidence_id,
                         follow_up_at=action.follow_up_at,
                         now=now,
