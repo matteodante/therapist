@@ -13,11 +13,30 @@ from therapist.cli import (
     DEFAULT_EMBEDDING_REVISION,
     _chat,
     _chat_command,
+    _ensure_chat_consent,
     _model_context_window,
     build_parser,
     main,
 )
 from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
+
+
+def test_chat_consent_discloses_scope_fallibility_and_data_flow(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.consent_version = "alpha-1"
+    store.save_app_state(state)
+    monkeypatch.setattr("builtins.input", lambda _: "I UNDERSTAND")
+
+    assert _ensure_chat_consent(store)
+
+    output = capsys.readouterr().out  # type: ignore[attr-defined]
+    assert "at least 18" in output
+    assert "output can be wrong" in output
+    assert "selected context" in output
+    assert store.load_app_state().consent_version == "alpha-2"
 
 
 def test_embedding_model_commands_manage_only_the_model_cache(
@@ -176,7 +195,7 @@ def test_interactive_chat_prints_tool_input_and_output(
 ) -> None:
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.consent_version = "alpha-1"
+    state.consent_version = "alpha-2"
     store.save_app_state(state)
     inputs = iter(["Please remember this.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
@@ -215,7 +234,7 @@ def test_plain_chat_does_not_persist_rejected_draft_in_redirected_output(
 ) -> None:
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.consent_version = "alpha-1"
+    state.consent_version = "alpha-2"
     store.save_app_state(state)
     inputs = iter(["Please answer.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
@@ -237,7 +256,7 @@ def test_plain_chat_replaces_draft_in_interactive_terminal(
 ) -> None:
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.consent_version = "alpha-1"
+    state.consent_version = "alpha-2"
     store.save_app_state(state)
     inputs = iter(["Please answer.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
@@ -358,9 +377,7 @@ def test_ollama_context_window_is_detected_and_capped(
             pass
 
         def read(self) -> bytes:
-            return json.dumps(
-                {"model_info": {"model.context_length": 262_144}}
-            ).encode()
+            return json.dumps({"model_info": {"model.context_length": 262_144}}).encode()
 
     monkeypatch.setattr("therapist.cli.urlopen", lambda *args, **kwargs: Response())
 
@@ -409,7 +426,7 @@ def test_tui_preloads_embedding_model_before_start(
     state = store.load_app_state()
     state.default_model = "test:model"
     state.embedding_model = DEFAULT_EMBEDDING_MODEL
-    state.consent_version = "alpha-1"
+    state.consent_version = "alpha-2"
     store.save_app_state(state)
     embedder = object()
     verified: list[object] = []
@@ -530,9 +547,7 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.text",
-        lambda *args, **kwargs: type(
-            "Prompt", (), {"ask": lambda _: kwargs["default"]}
-        )(),
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: kwargs["default"]})(),
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.password",
@@ -604,9 +619,7 @@ def test_setup_can_install_telegram_background_service(
     )
     monkeypatch.setattr(
         "therapist.cli.questionary.text",
-        lambda *args, **kwargs: type(
-            "Prompt", (), {"ask": lambda _: kwargs["default"]}
-        )(),
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: kwargs["default"]})(),
     )
     monkeypatch.setattr(
         "therapist.cli.questionary.password",
@@ -664,9 +677,7 @@ def test_setup_stores_remote_provider_key_encrypted(tmp_path: Path, monkeypatch:
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.text",
-        lambda *args, **kwargs: type(
-            "Prompt", (), {"ask": lambda _: kwargs["default"]}
-        )(),
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: kwargs["default"]})(),
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.password",

@@ -62,10 +62,7 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
             "evidence_provenance_preserved": ctx.output["evidence_preserved"],
             "session_consolidated": ctx.output["session_consolidated"],
             "session_summary_complete": all(
-                any(
-                    term.casefold() in ctx.output["session_summary"].casefold()
-                    for term in group
-                )
+                any(term.casefold() in ctx.output["session_summary"].casefold() for term in group)
                 for group in expected["summary_term_groups"]
             ),
             "tool_io_exported": (
@@ -136,9 +133,7 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
                 for exchange in message.get("tool_exchanges", [])
             ]
             exported_inputs = [
-                exchange
-                for exchange in exported_tool_exchanges
-                if exchange["direction"] == "input"
+                exchange for exchange in exported_tool_exchanges if exchange["direction"] == "input"
             ]
             exported_outputs = [
                 exchange
@@ -177,27 +172,19 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
                 "visible_tool_trace_count": sum(bool(turn.tool_trace) for turn in turns),
                 "all_visible_tool_traces_paired": all(
                     not turn.tool_trace
-                    or (
-                        "TOOL INPUT ·" in turn.tool_trace
-                        and "TOOL OUTPUT ·" in turn.tool_trace
-                    )
+                    or ("TOOL INPUT ·" in turn.tool_trace and "TOOL OUTPUT ·" in turn.tool_trace)
                     for turn in turns
                 ),
                 "history_tool_call_count": len(history_tool_calls),
-                "history_tools_paired": sorted(history_tool_calls)
-                == sorted(history_tool_returns),
+                "history_tools_paired": sorted(history_tool_calls) == sorted(history_tool_returns),
                 "thinking_excluded": all(
-                    part.part_kind != "thinking"
-                    for message in history
-                    for part in message.parts
+                    part.part_kind != "thinking" for message in history for part in message.parts
                 ),
                 "instructions_excluded": all(
                     getattr(message, "instructions", None) is None for message in history
                 ),
                 "export_tool_input_count": len(exported_inputs),
-                "export_tools_paired": sorted(
-                    exchange["tool_name"] for exchange in exported_inputs
-                )
+                "export_tools_paired": sorted(exchange["tool_name"] for exchange in exported_inputs)
                 == sorted(exchange["tool_name"] for exchange in exported_outputs),
                 "export_tool_inputs_structured": all(
                     isinstance(exchange["content"], dict) for exchange in exported_inputs

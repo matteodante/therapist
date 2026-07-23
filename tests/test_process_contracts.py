@@ -76,8 +76,6 @@ def test_deterministic_process_contracts(tmp_path: Path) -> None:
     report = dataset.evaluate_sync(run_case, progress=False)
 
     assert not report.failures, report.render(include_errors=True)
-    assert all(
-        result.value
-        for case in report.cases
-        for result in case.assertions.values()
-    ), report.render(include_input=True, include_output=True, include_reasons=True)
+    assert all(result.value for case in report.cases for result in case.assertions.values()), (
+        report.render(include_input=True, include_output=True, include_reasons=True)
+    )

@@ -88,24 +88,17 @@ async def _stream_model_events(
             text_parts[event.index] = event.part.content
             emit(TurnStreamEvent(TurnStreamKind.REPLY, _joined_text_parts(text_parts)))
         elif isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
-            text_parts[event.index] = (
-                text_parts.get(event.index, "") + event.delta.content_delta
-            )
+            text_parts[event.index] = text_parts.get(event.index, "") + event.delta.content_delta
             emit(TurnStreamEvent(TurnStreamKind.REPLY, _joined_text_parts(text_parts)))
         elif isinstance(event, FunctionToolCallEvent):
             emit(
                 TurnStreamEvent(
                     TurnStreamKind.TOOL_INPUT,
-                    f"TOOL INPUT · {event.part.tool_name}\n"
-                    f"{_format_tool_value(event.part.args)}",
+                    f"TOOL INPUT · {event.part.tool_name}\n{_format_tool_value(event.part.args)}",
                 )
             )
         elif isinstance(event, FunctionToolResultEvent):
-            outcome = (
-                event.part.outcome
-                if isinstance(event.part, ToolReturnPart)
-                else "retry"
-            )
+            outcome = event.part.outcome if isinstance(event.part, ToolReturnPart) else "retry"
             emit(
                 TurnStreamEvent(
                     TurnStreamKind.TOOL_OUTPUT,
@@ -226,9 +219,7 @@ class ChatSession:
             raise ValueError(
                 f"Conversation models require at least {MIN_CONTEXT_WINDOW_TOKENS} context tokens."
             )
-        self.context_window_tokens = min(
-            context_window_tokens, MAX_CONTEXT_WINDOW_TOKENS
-        )
+        self.context_window_tokens = min(context_window_tokens, MAX_CONTEXT_WINDOW_TOKENS)
         self.output_token_reserve = math.ceil(
             self.context_window_tokens * CONTEXT_OUTPUT_RESERVE_RATIO
         )
@@ -254,9 +245,7 @@ class ChatSession:
         notice: str | None = None
         if estimated_tokens > self.input_token_budget:
             if not history:
-                raise ValueError(
-                    "This message does not fit the configured model context window."
-                )
+                raise ValueError("This message does not fit the configured model context window.")
             self._consolidate(
                 session,
                 now,
@@ -272,9 +261,7 @@ class ChatSession:
                 text,
             )
             if estimated_tokens > self.input_token_budget:
-                raise ValueError(
-                    "This message does not fit the configured model context window."
-                )
+                raise ValueError("This message does not fit the configured model context window.")
             notice = self._context_rollover_notice()
         return_guidance = ""
         if not history and context.recent_sessions:
@@ -571,13 +558,8 @@ class ChatSession:
             [*history, *run_messages],
             "",
         )
-        warning_threshold = math.floor(
-            self.input_token_budget * CONTEXT_WARNING_RATIO
-        )
-        if (
-            session.last_context_tokens >= warning_threshold
-            and not session.context_warning_sent
-        ):
+        warning_threshold = math.floor(self.input_token_budget * CONTEXT_WARNING_RATIO)
+        if session.last_context_tokens >= warning_threshold and not session.context_warning_sent:
             session.context_warning_sent = True
             warning = self._context_warning_notice()
             notice = f"{notice}\n{warning}" if notice else warning
@@ -851,9 +833,7 @@ def _estimate_context_tokens(
         + len(serialized_history)
         + len(user_text.encode())
     )
-    estimated_text_tokens = math.ceil(
-        character_count / 4 * TOKEN_ESTIMATE_MARGIN
-    )
+    estimated_text_tokens = math.ceil(character_count / 4 * TOKEN_ESTIMATE_MARGIN)
     return estimated_text_tokens + CONTEXT_TOOL_RESERVE_TOKENS
 
 
@@ -862,9 +842,7 @@ def _format_tool_trace(messages: list[ModelRequest | ModelResponse]) -> str | No
     for message in messages:
         for part in message.parts:
             if isinstance(part, ToolCallPart):
-                blocks.append(
-                    f"TOOL INPUT · {part.tool_name}\n{_format_tool_value(part.args)}"
-                )
+                blocks.append(f"TOOL INPUT · {part.tool_name}\n{_format_tool_value(part.args)}")
             elif isinstance(part, ToolReturnPart):
                 blocks.append(
                     f"TOOL OUTPUT · {part.tool_name} · {part.outcome}\n"
@@ -872,8 +850,7 @@ def _format_tool_trace(messages: list[ModelRequest | ModelResponse]) -> str | No
                 )
             elif isinstance(part, RetryPromptPart) and part.tool_name:
                 blocks.append(
-                    f"TOOL OUTPUT · {part.tool_name} · retry\n"
-                    f"{_format_tool_value(part.content)}"
+                    f"TOOL OUTPUT · {part.tool_name} · retry\n{_format_tool_value(part.content)}"
                 )
     return "\n\n".join(blocks) or None
 

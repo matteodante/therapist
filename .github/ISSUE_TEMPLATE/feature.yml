@@ -1,0 +1,35 @@
+name: Feature or documentation proposal
+description: Propose a scoped improvement to the current milestone.
+title: "proposal: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What current user or maintainer problem needs solving?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: Describe the smallest useful change and any alternatives considered.
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Privacy, safety, and maintenance impact
+      description: Note changes to data flow, model behavior, dependencies, protocol, or support load.
+    validations:
+      required: true
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Scope check
+      options:
+        - label: I reviewed the current scope and deferred milestones in AGENTS.md.
+          required: true
+        - label: This issue contains no real conversations, secrets, identifiers, or personal data.
+          required: true

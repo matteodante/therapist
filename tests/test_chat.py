@@ -118,9 +118,7 @@ def test_normal_turn_returns_text_and_persists_tool_staged_observation(
         "I am here. What is happening at work?",
     )
 
-    turn = ChatSession(model, _pack(), store, "en-US").respond(
-        "I feel under pressure at work."
-    )
+    turn = ChatSession(model, _pack(), store, "en-US").respond("I feel under pressure at work.")
 
     assert turn.text == "I am here. What is happening at work?"
     assert turn.tool_trace is not None
@@ -137,9 +135,7 @@ def test_normal_turn_returns_text_and_persists_tool_staged_observation(
         "text",
     ]
     assert all(
-        message.instructions is None
-        for message in history
-        if isinstance(message, ModelRequest)
+        message.instructions is None for message in history if isinstance(message, ModelRequest)
     )
 
 
@@ -304,9 +300,9 @@ def test_active_session_history_is_not_truncated_after_ten_turns(tmp_path: Path)
         captured["messages"] = messages
         yield "Current reply."
 
-    ChatSession(
-        FunctionModel(stream_function=stream), _pack(), store, "en-US"
-    ).respond("Current user turn.")
+    ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        "Current user turn."
+    )
 
     user_prompts = [
         part.content
@@ -323,9 +319,7 @@ def test_active_session_history_is_not_truncated_after_ten_turns(tmp_path: Path)
 def test_context_limit_rolls_current_message_into_a_new_session(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def estimate(
-        _protocol: str, _context: str, history: list[Any], user_text: str
-    ) -> int:
+    def estimate(_protocol: str, _context: str, history: list[Any], user_text: str) -> int:
         return 101 if history and user_text else 10
 
     monkeypatch.setattr("therapist.chat._estimate_context_tokens", estimate)
@@ -363,9 +357,7 @@ def test_context_limit_rolls_current_message_into_a_new_session(
             return
         yield "Fresh reply."
 
-    session = ChatSession(
-        FunctionModel(stream_function=stream), _pack(), store, "en-US"
-    )
+    session = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US")
     session.input_token_budget = 100
 
     turn = session.respond("First message in the replacement session.")
@@ -660,9 +652,7 @@ def test_correction_tool_replaces_existing_memory_without_duplicate(
     assert len(items) == 1
     assert items[0].id == old.id
     assert items[0].status is MemoryStatus.USER_CORRECTED
-    assert (
-        items[0].content == "The user's mother lives with the user's aunt most of the week."
-    )
+    assert items[0].content == "The user's mother lives with the user's aunt most of the week."
     assert "lives alone" not in store.working_context("mother aunt").model_dump_json()
 
 

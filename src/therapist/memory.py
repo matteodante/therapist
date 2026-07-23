@@ -96,9 +96,7 @@ class AppState(BaseModel):
     telegram_consent_version: str | None = None
     telegram_update_offset: int | None = Field(default=None, ge=0)
     default_model: str | None = None
-    default_context_window_tokens: int | None = Field(
-        default=None, ge=16_000, le=128_000
-    )
+    default_context_window_tokens: int | None = Field(default=None, ge=16_000, le=128_000)
     default_locale: str | None = None
     embedding_model: str | None = None
     telegram_allowed_user_id: int | None = Field(default=None, gt=0)
@@ -466,9 +464,7 @@ class MemoryStore:
             )
         return user_message_id
 
-    def load_session_history(
-        self, session_id: str, limit: int | None = None
-    ) -> list[ModelMessage]:
+    def load_session_history(self, session_id: str, limit: int | None = None) -> list[ModelMessage]:
         sql = (
             "SELECT payload FROM messages WHERE session_id = ? AND role = 'assistant' "
             "ORDER BY id DESC"
@@ -498,15 +494,12 @@ class MemoryStore:
             used += len(group)
         return [message for group in reversed(selected) for message in group]
 
-    def session_messages(
-        self, session_id: str, turn_limit: int = 50
-    ) -> list[tuple[str, str]]:
+    def session_messages(self, session_id: str, turn_limit: int = 50) -> list[tuple[str, str]]:
         if turn_limit < 1:
             raise ValueError("Turn limit must be positive.")
         with self._connect() as database:
             rows = database.execute(
-                "SELECT role, payload FROM messages WHERE session_id = ? "
-                "ORDER BY id DESC LIMIT ?",
+                "SELECT role, payload FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?",
                 (session_id, turn_limit * 2),
             ).fetchall()
         return [
@@ -595,8 +588,7 @@ class MemoryStore:
                 MemoryStatus.USER_CONFIRMED
                 if (
                     observation.confirmed_by_user
-                    or observation.kind
-                    not in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
+                    or observation.kind not in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
                 )
                 else MemoryStatus.AGENT_HYPOTHESIS
             )
@@ -900,9 +892,7 @@ class MemoryStore:
                         continue
                     if part_kind == "retry-prompt" and not part.get("tool_name"):
                         continue
-                    content = (
-                        part.get("args") if part_kind == "tool-call" else part.get("content")
-                    )
+                    content = part.get("args") if part_kind == "tool-call" else part.get("content")
                     if part_kind == "tool-call" and isinstance(content, str):
                         with suppress(json.JSONDecodeError):
                             content = json.loads(content)

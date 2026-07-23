@@ -128,9 +128,9 @@ def test_stream_replaces_rejected_output_and_finishes_with_validated_reply(
 
     events: list[TurnStreamEvent] = []
     store = MemoryStore(tmp_path)
-    turn = ChatSession(
-        FunctionModel(stream_function=stream), _pack(), store, "en-US"
-    ).respond("Please answer.", on_event=events.append)
+    turn = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        "Please answer.", on_event=events.append
+    )
 
     streamed = [event.text for event in events if event.kind is TurnStreamKind.REPLY]
     assert streamed[0] == "x" * 1_201

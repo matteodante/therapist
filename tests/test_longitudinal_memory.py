@@ -120,9 +120,7 @@ def test_written_longitudinal_dataset() -> None:
 def test_longitudinal_context_stays_bounded_with_hundreds_of_records(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     for index in range(120):
-        started_at = datetime.fromisoformat(
-            f"2025-01-{index % 28 + 1:02d}T09:00:00+00:00"
-        )
+        started_at = datetime.fromisoformat(f"2025-01-{index % 28 + 1:02d}T09:00:00+00:00")
         session = store.start_session(started_at)
         evidence_id = store.save_turn(
             session,

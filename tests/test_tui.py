@@ -48,9 +48,7 @@ def test_tui_loads_history_and_renders_streamed_markdown(tmp_path: Path) -> None
 
             assert len(app.query(".user")) == 2
             assert len(app.query(".tool")) == 2
-            assert app.query(".assistant").last(Markdown).source.endswith(
-                "**Streaming reply.**"
-            )
+            assert app.query(".assistant").last(Markdown).source.endswith("**Streaming reply.**")
             assert app.query(".notice").last(Static).content == "Context notice."
             assert not app.query_one("#input", Input).disabled
 

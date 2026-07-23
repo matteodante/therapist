@@ -238,9 +238,7 @@ class TherapistApp(App[None]):
         )
 
     def _scroll_end(self) -> None:
-        self.query_one("#conversation", VerticalScroll).scroll_end(
-            animate=False
-        )
+        self.query_one("#conversation", VerticalScroll).scroll_end(animate=False)
 
     def action_safe_quit(self) -> None:
         if self._busy:

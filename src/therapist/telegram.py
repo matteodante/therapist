@@ -16,7 +16,7 @@ from therapist.chat import ChatSession, TurnStreamEvent, TurnStreamKind
 from therapist.memory import MemoryStore
 
 API_ROOT = "https://api.telegram.org"
-CONSENT_VERSION = "alpha-1"
+CONSENT_VERSION = "alpha-2"
 MESSAGE_LIMIT = 4_000
 MEMORY_PAGE_SIZE = 10
 SESSION_PAGE_SIZE = 5
@@ -37,11 +37,7 @@ class TelegramError(RuntimeError):
         super().__init__(message)
         self.error_code = error_code
         self.retry_after = retry_after
-        self.fatal = (
-            error_code is not None
-            and 400 <= error_code < 500
-            and error_code != 429
-        )
+        self.fatal = error_code is not None and 400 <= error_code < 500 and error_code != 429
 
 
 class TelegramBot:
@@ -86,8 +82,8 @@ class TelegramBot:
         self._call(
             "setMyDescription",
             {
-                "description": "Private experimental AI with encrypted local memory. "
-                "Not therapy, diagnosis, human monitoring, or an emergency service."
+                "description": "Experimental AI for adult self-reflection with encrypted local "
+                "memory. Not therapy, diagnosis, medical advice, monitoring, or emergency care."
             },
         )
 
@@ -439,8 +435,7 @@ class TelegramChannel:
             lines.append(f"\n{label}")
             evidence = formulation.evidence.get(field, [])
             lines.extend(
-                f"• {value}"
-                + (f" [evidence: {evidence[index]}]" if index < len(evidence) else "")
+                f"• {value}" + (f" [evidence: {evidence[index]}]" if index < len(evidence) else "")
                 for index, value in enumerate(values)
             )
         if len(lines) == 1:
@@ -588,9 +583,13 @@ class TelegramChannel:
 
     def _consent_notice(self, consented: bool) -> str:
         notice = (
-            "I am an experimental AI, not a therapist or emergency service. "
+            "Thera is experimental AI for adults using it privately for self-reflection. "
+            "It is not therapy, diagnosis, medical advice, emergency care, or human monitoring, "
+            "and its output can be wrong. "
             "Telegram receives messages, replies, and data you choose to view here; "
-            "any remote provider receives messages and selected context. "
+            "any remote provider receives messages, successful session history, and selected "
+            "context. By continuing, you confirm that you are at least 18 and accept these data "
+            "flows. "
         )
         return notice + (
             "Consent is already recorded: you can message me."

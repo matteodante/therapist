@@ -1,16 +1,28 @@
 # Therapist
 
-Therapist is an experimental, self-hosted AI conversation agent focused on careful listening,
-longitudinal memory, collaborative case formulation, and appropriate therapeutic techniques.
-Agent conversation supports Italian and English through a terminal chat and a private Telegram bot;
-the application interface, consent notices, commands, and documentation are English.
+**An open-source AI agent for reflection, not code.**
+
+Local-first conversations and user-controlled memory for self-reflection and mental wellbeing.
+Therapist runs in a terminal or a private Telegram chat, supports Italian and English conversation,
+and keeps its archive and structured memory encrypted on your machine.
 
 > [!WARNING]
-> Therapist is an AI, not a psychologist, psychotherapist, medical device, or emergency service.
-> It does not diagnose, prescribe, or provide human monitoring. If you may be in immediate danger,
-> contact local emergency services.
+> Experimental and not clinically validated. Therapist is an AI, not therapy, diagnosis, medical
+> advice, emergency care, or human monitoring, and its output can be wrong. Your selected model
+> provider and, if enabled, Telegram receive the content needed to provide their services. If there
+> may be immediate danger, contact local emergency services.
 
-## Current alpha
+## Why this exists
+
+Most AI agents are built to complete tasks or work on code. Therapist explores a different question:
+can an agent sustain a careful conversation over months without inventing what you said, hiding what
+it remembers, or turning every exchange into advice?
+
+The project combines evidence-linked memory with a versioned behavioral protocol. Stored facts remain
+distinct from tentative hypotheses; both can be inspected, corrected, forgotten, exported, or
+deleted by the user.
+
+## What the alpha does
 
 - Natural, varied conversation guided by an internal protocol rather than a visible script, without
   mandatory questions, goals, or forms.
@@ -20,11 +32,13 @@ the application interface, consent notices, commands, and documentation are Engl
 - Visible, correctable facts, hypotheses, case formulation, sessions, and interventions.
 - Complete active-session history with warning and automatic rollover at the model context limit.
 - PydanticAI providers, local models, and experimental personal ChatGPT Codex OAuth.
-- Git-versioned experimental therapeutic skills and evidence references.
+- Git-versioned experimental conversation skills and evidence references.
 - Deterministic tests plus longitudinal and multilingual Pydantic Evals datasets.
 - Single-user CLI and allowlisted private Telegram transport with transparent memory views.
 
-The current protocol is experimental and has not undergone clinical validation. See
+The current protocol is experimental and has not undergone clinical review or validation. This
+repository is a research and engineering project, not evidence that autonomous AI therapy is safe or
+effective. See
 [AGENTS.md](AGENTS.md) for the complete scope, architecture, memory model, and behavioral contract.
 Its stable directory is `protocols/transdiagnostic/`; Git commits and tags track revisions, so the
 manifest and directory name do not carry a separate SemVer version.
@@ -165,7 +179,11 @@ other sensitive personal data in tests or issues. Test code and fixtures are wri
 unless a case explicitly verifies localized behavior or multilingual retrieval.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) before proposing changes. Report vulnerabilities privately
-according to [SECURITY.md](SECURITY.md).
+according to [SECURITY.md](SECURITY.md). For installation help, project support, and rules about
+sensitive information, see [SUPPORT.md](SUPPORT.md). Project decisions and maintainer responsibilities
+are described in [GOVERNANCE.md](GOVERNANCE.md). The release assumptions and public claim boundaries
+are versioned in [docs/claims-and-intended-purpose.md](docs/claims-and-intended-purpose.md); local and
+external data flows are documented in [PRIVACY.md](PRIVACY.md).
 
 ## License
 

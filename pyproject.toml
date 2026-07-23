@@ -1,12 +1,12 @@
 [project]
 name = "therapist-cli"
 version = "0.1.0"
-description = "Experimental self-hosted AI conversation agent with encrypted longitudinal memory"
+description = "Open-source AI agent for reflection with encrypted longitudinal memory"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
 requires-python = ">=3.12"
-keywords = ["ai", "mental-health", "pydantic-ai", "self-hosted", "telegram"]
+keywords = ["ai", "mental-wellbeing", "pydantic-ai", "self-hosted", "telegram"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",

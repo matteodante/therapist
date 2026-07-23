@@ -7,12 +7,15 @@ overview; keep it synchronized with this canonical guide when user-visible behav
 
 ## Project idea
 
-Therapist is an experimental, self-hosted AI conversation agent that reproduces the useful
-process qualities of a therapist: careful listening, longitudinal continuity, collaborative case
-formulation, pattern recognition, gentle challenge, and selection of an appropriate next step.
+Therapist is an experimental, self-hosted AI conversation agent for adult self-reflection and the
+organization of user-provided thoughts. It uses careful listening, longitudinal continuity,
+collaborative formulation, pattern recognition, gentle challenge, and selection of an appropriate
+next conversational step.
 
 It remains explicitly an AI. It must not claim to be a psychologist or psychotherapist, diagnose,
 prescribe, promise recovery, present itself as an emergency service, or imply human monitoring.
+It is not intended for diagnosis, prevention, monitoring, prediction, prognosis, treatment, or
+alleviation of any disease, disorder, injury, or disability.
 
 The long-term product may support both self-hosted and SaaS distribution. The current milestone is
 deliberately smaller: make the single-user conversation and long-term memory work well through the
@@ -23,7 +26,7 @@ third-party materials remain under their owners' terms and are not relicensed by
 
 ## Current scope
 
-Build a small bilingual, single-user agent that:
+Build a small bilingual, single-adult-user agent that:
 
 - holds a warm, active, natural conversation in Italian or English;
 - identifies user-stated difficulties and recurring patterns without requiring predefined goals;
@@ -71,10 +74,12 @@ The alpha retains baseline safeguards already present: transparent AI identity, 
 and contextual agent instructions for possible danger and emergency resources. These are not a
 validated clinical safety system.
 
-## Therapeutic behavior
+## Conversation behavior
 
-The agent uses an integrative, transdiagnostic approach informed by CBT formulation, ACT-style
-flexibility, behavioral activation, emotional awareness, and problem solving.
+The experimental behavior pack draws on transdiagnostic self-help and conversation principles
+informed by CBT formulation, ACT-style flexibility, behavioral activation, emotional awareness, and
+problem solving. These influences do not make the agent a treatment or clinically validated
+intervention.
 
 Its loop is:
 
@@ -351,7 +356,10 @@ messages sequentially. The runtime ignores groups, bots, and every sender except
 numeric user ID. Unsupported media receives a clear text-only notice without model invocation or
 storage. Telegram consent is separate from terminal consent and explains that Telegram receives
 messages, replies, and any local data the user requests to inspect there, while any remote model
-provider receives message content and selected context.
+provider receives message content, successful session history, and selected context. Both consent
+flows disclose the adult-only private-use scope, output fallibility, non-clinical and
+non-emergency boundary, lack of human monitoring, and relevant data flows before conversation input
+is accepted. Changing this notice increments its stored version and requires renewed consent.
 
 Telegram is a conversation and read-only transparency surface, not a remote administration surface.
 `/status`, `/case`, `/memory [page]`, `/sessions [page|id]`, `/interventions [page]`, and `/privacy`
@@ -477,6 +485,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - Work directly on `main` and push commits to `origin/main`. Do not create agent or feature branches
   or open pull requests unless the user explicitly requests that workflow.
 - Prefer the standard library, native platform behavior, and installed dependencies.
+- Keep `ruff check`, `ruff format --check`, the offline test suite, protocol validation, and package
+  build green in CI.
 - Do not add infrastructure or abstractions for deferred milestones.
 - Preserve input validation, encryption, error handling that prevents data loss, and contextual
   safety instructions.

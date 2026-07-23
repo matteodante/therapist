@@ -47,9 +47,7 @@ class ProtocolPack:
         try:
             raw = yaml.safe_load((root / "manifest.yaml").read_text(encoding="utf-8"))
             if isinstance(raw, dict) and "version" in raw:
-                raise ProtocolError(
-                    "Protocol revisions are tracked by Git, not manifest versions."
-                )
+                raise ProtocolError("Protocol revisions are tracked by Git, not manifest versions.")
             manifest = Manifest.model_validate(raw)
             root_instructions = (root / "SKILL.md").read_text(encoding="utf-8")
         except (OSError, ValidationError, yaml.YAMLError) as error:

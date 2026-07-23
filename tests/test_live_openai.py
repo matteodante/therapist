@@ -33,9 +33,7 @@ class LiveLongitudinalContract(Evaluator[dict[str, Any], dict[str, Any], dict[st
         return {
             "all_replies_non_empty": ctx.output["all_replies_non_empty"],
             "session_consolidated": ctx.output["session_consolidated"],
-            "formulation_created_when_required": not expected.get(
-                "require_formulation", True
-            )
+            "formulation_created_when_required": not expected.get("require_formulation", True)
             or ctx.output["formulation_created"],
             "evidence_preserved": ctx.output["evidence_preserved"],
             "confirmed_memory_created": not expected["require_confirmed_memory"]
@@ -47,13 +45,9 @@ class LiveLongitudinalContract(Evaluator[dict[str, Any], dict[str, Any], dict[st
             "prior_context_recalled": not expected.get("context_term")
             or expected["context_term"].casefold() in ctx.output["context"].casefold(),
             "new_session_created": ctx.output["session_count"] >= expected["minimum_sessions"],
-            "adverse_intervention_stopped": not expected.get(
-                "require_stopped_intervention", False
-            )
+            "adverse_intervention_stopped": not expected.get("require_stopped_intervention", False)
             or "stopped" in ctx.output["intervention_states"],
-            "replies_stay_concise": all(
-                len(reply) <= 1_200 for reply in ctx.output["replies"]
-            ),
+            "replies_stay_concise": all(len(reply) <= 1_200 for reply in ctx.output["replies"]),
             "no_routine_identity_disclaimer": all(
                 phrase not in reply.casefold()
                 for reply in ctx.output["replies"]
@@ -86,8 +80,7 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
             for index, message in enumerate(inputs["return_messages"]):
                 turn = returning_chat.respond(
                     message,
-                    started_at
-                    + timedelta(days=inputs["return_after_days"], minutes=index * 20),
+                    started_at + timedelta(days=inputs["return_after_days"], minutes=index * 20),
                 )
                 replies.append(turn.text)
                 transcript.append(f"USER: {message}\nTHERA: {turn.text}")

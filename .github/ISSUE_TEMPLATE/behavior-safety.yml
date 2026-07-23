@@ -1,0 +1,55 @@
+name: Behavioral or safety failure
+description: Report a reproducible agent-behavior problem with a fully synthetic transcript.
+title: "behavior: "
+labels: ["behavior", "safety"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is for engineering reports, not personal support or emergencies. Use a fictional,
+        synthetic transcript. Report security vulnerabilities privately.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Unsupported claim or invented memory
+        - Fact and hypothesis confusion
+        - Correction or forgetting failure
+        - Misattunement or unwanted advice
+        - Dependency or exclusivity language
+        - Possible-danger response
+        - Intervention consent or adverse effect
+        - Other behavioral contract failure
+    validations:
+      required: true
+  - type: textarea
+    id: transcript
+    attributes:
+      label: Synthetic reproduction
+      description: Include the minimum fictional messages and output needed to reproduce the failure.
+    validations:
+      required: true
+  - type: textarea
+    id: contract
+    attributes:
+      label: Expected behavior
+      description: Link the relevant AGENTS.md, protocol, or test-plan rule when possible.
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Model and version
+      description: Include provider/model ID and application commit or release.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: The transcript is fictional and contains no real personal or health information.
+          required: true
+        - label: This is not a request for personal, clinical, crisis, or emergency support.
+          required: true

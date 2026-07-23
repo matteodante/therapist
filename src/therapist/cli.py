@@ -244,9 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Authentication error: {error}")
             return 2
         model_context_window = (
-            state.default_context_window_tokens
-            if selected_model == state.default_model
-            else None
+            state.default_context_window_tokens if selected_model == state.default_model else None
         ) or _model_context_window(selected_model)
         context_window_tokens = min(
             args.context_window_tokens or model_context_window,
@@ -394,9 +392,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
             )
             return 2
         current_context_window = (
-            state.default_context_window_tokens
-            if model == state.default_model
-            else None
+            state.default_context_window_tokens if model == state.default_model else None
         )
         context_window_tokens = int(
             _ask(
@@ -414,9 +410,7 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
                     ),
                     validate=lambda value: (
                         value.strip().isdigit()
-                        and MIN_CONTEXT_WINDOW_TOKENS
-                        <= int(value.strip())
-                        <= model_context_window
+                        and MIN_CONTEXT_WINDOW_TOKENS <= int(value.strip()) <= model_context_window
                     ),
                 )
             ).strip()
@@ -996,16 +990,19 @@ def _uses_tui(args: argparse.Namespace) -> bool:
 def _ensure_chat_consent(store: MemoryStore) -> bool:
     state = store.load_app_state()
     consent = "I UNDERSTAND"
-    if state.consent_version != "alpha-1":
+    if state.consent_version != "alpha-2":
         notice = (
-            "I am an experimental AI, not a therapist or emergency service. "
-            "A remote model provider receives your messages when configured."
+            "Thera is experimental AI for adults using it privately for self-reflection. "
+            "It is not therapy, diagnosis, medical advice, emergency care, or human monitoring, "
+            "and its output can be wrong. A remote model provider receives your messages, "
+            "successful session history, and selected context when configured. "
+            "By continuing, you confirm that you are at least 18 and accept these data flows."
         )
         print(notice)
         if input(f"Type {consent} to continue: ").strip() != consent:
             print("Consent not recorded.")
             return False
-        state.consent_version = "alpha-1"
+        state.consent_version = "alpha-2"
         store.save_app_state(state)
     return True
 
@@ -1033,11 +1030,7 @@ def _chat_command(
                 output(_json([item.model_dump() for item in sessions]))
             else:
                 found = next((item for item in sessions if item.id == parts[1]), None)
-                output(
-                    "Session not found."
-                    if found is None
-                    else found.model_dump_json(indent=2)
-                )
+                output("Session not found." if found is None else found.model_dump_json(indent=2))
         elif name == "/interventions":
             output(_json([item.model_dump(mode="json") for item in store.list_interventions()]))
         elif name == "/confirm" and len(parts) >= 2:

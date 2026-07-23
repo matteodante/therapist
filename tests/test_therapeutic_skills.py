@@ -9,9 +9,7 @@ CASES_PATH = Path(__file__).parent / "cases" / "therapeutic_skills.yaml"
 
 
 def test_written_therapeutic_skill_contracts() -> None:
-    loaded = Dataset[dict[str, Any], dict[str, bool], dict[str, Any]].from_file(
-        CASES_PATH
-    )
+    loaded = Dataset[dict[str, Any], dict[str, bool], dict[str, Any]].from_file(CASES_PATH)
     dataset = Dataset(
         name=loaded.name,
         cases=loaded.cases,
@@ -29,8 +27,6 @@ def test_written_therapeutic_skill_contracts() -> None:
     report = dataset.evaluate_sync(audit_skill, progress=False)
 
     assert not report.failures, report.render(include_errors=True)
-    assert all(
-        result.value
-        for case in report.cases
-        for result in case.assertions.values()
-    ), report.render(include_input=True, include_output=True, include_reasons=True)
+    assert all(result.value for case in report.cases for result in case.assertions.values()), (
+        report.render(include_input=True, include_output=True, include_reasons=True)
+    )
