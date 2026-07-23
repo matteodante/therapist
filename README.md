@@ -10,6 +10,9 @@ and keeps its archive and structured memory encrypted on your machine.
 
 _Actual Textual interface captured with synthetic data._
 
+[![CI](https://github.com/matteodante/therapist/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/matteodante/therapist/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/matteodante/therapist/badge)](https://scorecard.dev/viewer/?uri=github.com/matteodante/therapist)
+
 > [!WARNING]
 > Experimental and not clinically validated. Therapist is an AI, not therapy, diagnosis, medical
 > advice, emergency care, or human monitoring, and its output can be wrong. Your selected model

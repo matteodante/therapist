@@ -120,6 +120,24 @@ uv tool install --force --python 3.12 dist/*.whl
 "$(uv tool dir --bin)/thera" doctor
 ```
 
+The manual `Release candidate` workflow repeats the offline gates from the exact selected `main`
+commit, builds the wheel and source distribution, exports a CycloneDX runtime SBOM from the locked
+dependencies, creates `SHA256SUMS`, generates GitHub/Sigstore provenance and SBOM attestations, and
+retains the bundle for 14 days. It does not create a tag, release, or PyPI publication:
+
+```bash
+gh workflow run release-candidate.yml --ref main
+gh run watch
+gh run download <run-id>
+gh attestation verify <artifact> \
+  --repo matteodante/therapist \
+  --signer-workflow matteodante/therapist/.github/workflows/release-candidate.yml
+```
+
+Treat the workflow artifact as the authoritative candidate bundle. The SBOM captures the locked
+runtime dependency set for the candidate; review it together with the wheel metadata, dependency
+audit, and third-party notices.
+
 ## Release notes
 
 Human-written notes must include:

@@ -85,6 +85,10 @@ validated clinical safety system.
 `docs/maintainer-ai-literacy.md` records the minimum AI-literacy baseline for maintainers and release
 decision-makers. Keep both synchronized with changes to release scope, providers, data flows,
 behavioral safeguards, evaluation strategy, or project roles.
+The manual `Release candidate` GitHub workflow repeats offline gates on `main`, builds the
+distributions, exports a CycloneDX SBOM from locked runtime dependencies and checksums, creates
+provenance and SBOM attestations, and uploads a temporary candidate bundle without publishing a tag
+or release.
 `docs/dpia-screening.md`, `docs/article-50-assessment.md`, and
 `docs/compliance-assessment-brief.md` record preliminary compliance facts and unresolved external
 decisions; they are not compliance claims or substitutes for qualified review.

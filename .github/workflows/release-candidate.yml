@@ -1,0 +1,78 @@
+name: Release candidate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and attest
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      artifact-metadata: write
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.11.31"
+          python-version: "3.12"
+          enable-cache: true
+          prune-cache: true
+      - name: Install dependencies
+        run: uv sync --locked --all-groups --extra dev
+      - name: Run release checks
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+          uv run pytest -m "not live" -q
+          uv run thera protocol validate
+          sh -n install.sh
+          pwsh -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw install.ps1))'
+          uv audit --locked
+      - name: Build distributions
+        run: |
+          uv build
+          uvx --from twine==6.2.0 twine check dist/*
+      - name: Generate runtime SBOM and checksums
+        id: package
+        run: |
+          version="$(python -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+          sbom="dist/therapist-${version}.cdx.json"
+          uv export --locked --no-dev --format cyclonedx1.5 --preview-features sbom-export \
+            --output-file "$sbom" >/dev/null
+          jq -e --arg version "$version" \
+            '.bomFormat == "CycloneDX" and .specVersion == "1.5" and
+             .metadata.component.name == "therapist-cli" and
+             .metadata.component.version == $version and
+             (.components | length > 0)' "$sbom" >/dev/null
+          (
+            cd dist
+            sha256sum ./*.whl ./*.tar.gz ./*.cdx.json > SHA256SUMS
+          )
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Generate build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: dist/*
+      - name: Generate SBOM attestation
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: |
+            dist/*.whl
+            dist/*.tar.gz
+          sbom-path: dist/therapist-${{ steps.package.outputs.version }}.cdx.json
+      - name: Upload candidate artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: therapist-release-candidate-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

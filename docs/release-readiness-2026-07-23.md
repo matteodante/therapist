@@ -56,8 +56,12 @@ provider's product terms.
 - Telegram consent identifies cloud, non-end-to-end-encrypted transport and separate deletion;
 - the bot description and setup instructions point to the versioned privacy notice;
 - every loaded protocol skill and reference, including the root skill, is hash-verified;
-- CI actions are pinned, CodeQL and GitHub security features are enabled, and OpenSSF Scorecard is
-  configured as a diagnostic;
+- CI actions are pinned, repository policy enforces full action SHAs and permits only GitHub-owned
+  Actions plus the named Astral and OpenSSF actions, CodeQL and GitHub security features are
+  enabled, and OpenSSF Scorecard is configured as a diagnostic;
+- pull requests receive GitHub dependency review, web commits require a DCO sign-off, releases are
+  immutable, and the manual candidate workflow produces checksums, a locked-runtime CycloneDX SBOM,
+  and signed provenance and SBOM attestations without publishing a release;
 - uv's release manifest, selected archive, and chosen MIT license text are independently verified;
   the license is preserved next to an installer-provided binary;
 - the repository has a Code of Conduct, constrained reporting routes, DCO, governance, security,
