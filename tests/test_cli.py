@@ -336,6 +336,31 @@ def test_context_override_cannot_exceed_saved_model_limit(
     assert captured["context_window_tokens"] == 32_000
 
 
+def test_tui_preloads_embedding_model_before_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.default_model = "test:model"
+    state.embedding_model = DEFAULT_EMBEDDING_MODEL
+    state.consent_version = "alpha-1"
+    store.save_app_state(state)
+    embedder = object()
+    verified: list[object] = []
+
+    monkeypatch.setattr("therapist.cli._uses_tui", lambda _: True)
+    monkeypatch.setattr("therapist.cli._default_embedder", lambda **_: embedder)
+    monkeypatch.setattr(
+        "therapist.cli._verify_embedding_inference",
+        lambda value: verified.append(value) or 1024,
+    )
+    monkeypatch.setattr("therapist.cli.ChatSession", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr("therapist.cli._chat_tui", lambda *_: 0)
+
+    assert main(["--data-dir", str(tmp_path), "chat"]) == 0
+    assert verified == [embedder]
+
+
 def test_telegram_service_install_uses_saved_configuration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: object
 ) -> None:

@@ -207,10 +207,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Semantic memory is not configured. Run `thera setup`.")
             return 2
         try:
+            embedder = _default_embedder(local_files_only=True)
+            if args.command == "chat" and _uses_tui(args):
+                _verify_embedding_inference(embedder)
             store = MemoryStore(
                 args.data_dir,
                 embedding_model=DEFAULT_EMBEDDING_MODEL,
-                embedder=_default_embedder(local_files_only=True),
+                embedder=embedder,
             )
         except Exception as error:
             print(
@@ -259,7 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"Context configuration error: {error}")
             return 2
         if args.command == "chat":
-            if args.plain or not (sys.stdin.isatty() and sys.stdout.isatty()):
+            if not _uses_tui(args):
                 return _chat(session, store)
             return _chat_tui(session, store)
         token_payload = store.load_secret(TELEGRAM_SECRET)
@@ -973,6 +976,10 @@ def _chat_tui(session: ChatSession, store: MemoryStore) -> int:
     )
     app.run()
     return 0
+
+
+def _uses_tui(args: argparse.Namespace) -> bool:
+    return not args.plain and sys.stdin.isatty() and sys.stdout.isatty()
 
 
 def _ensure_chat_consent(store: MemoryStore) -> bool:
