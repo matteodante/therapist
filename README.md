@@ -43,8 +43,9 @@ uv run thera chat
 ```
 
 Setup uses arrow-key menus, stores credentials encrypted outside the repository, and configures a
-model and locale. For Telegram, create a bot with `@BotFather`; setup configures it and asks whether
-to install and start its native background service. You can instead keep the listener in the
+model and locale. It displays the current conversation context limit in an editable field together
+with the allowed range. For Telegram, create a bot with `@BotFather`; setup configures it and asks
+whether to install and start its native background service. You can instead keep the listener in the
 foreground:
 
 ```bash

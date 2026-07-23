@@ -371,6 +371,41 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
                 default=state.default_locale or "en-US",
             )
         )
+        model_context_window = _model_context_window(model)
+        if model_context_window < MIN_CONTEXT_WINDOW_TOKENS:
+            print(
+                f"The selected model exposes only {model_context_window} context tokens; "
+                f"at least {MIN_CONTEXT_WINDOW_TOKENS} are required."
+            )
+            return 2
+        current_context_window = (
+            state.default_context_window_tokens
+            if model == state.default_model
+            else None
+        )
+        context_window_tokens = int(
+            _ask(
+                questionary.text(
+                    "Conversation context window (tokens)",
+                    default=str(
+                        min(
+                            current_context_window or model_context_window,
+                            model_context_window,
+                        )
+                    ),
+                    instruction=(
+                        f"Allowed range: {MIN_CONTEXT_WINDOW_TOKENS}-"
+                        f"{model_context_window} for {model}"
+                    ),
+                    validate=lambda value: (
+                        value.strip().isdigit()
+                        and MIN_CONTEXT_WINDOW_TOKENS
+                        <= int(value.strip())
+                        <= model_context_window
+                    ),
+                )
+            ).strip()
+        )
 
         has_telegram = _telegram_config(store)
         configure_telegram = _ask(
@@ -418,13 +453,6 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
         else:
             token_payload = None
 
-        context_window_tokens = _model_context_window(model)
-        if context_window_tokens < MIN_CONTEXT_WINDOW_TOKENS:
-            print(
-                f"The selected model exposes only {context_window_tokens} context tokens; "
-                f"at least {MIN_CONTEXT_WINDOW_TOKENS} are required."
-            )
-            return 2
         state.default_model = model
         state.default_context_window_tokens = context_window_tokens
         state.default_locale = locale

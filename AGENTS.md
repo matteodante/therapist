@@ -259,7 +259,9 @@ Setup stores a conservative context-window limit for the selected conversation m
 presets use their documented limit subject to the application-wide 128,000-token cap. Ollama models
 are inspected through `/api/show`; an unknown or custom model defaults to that cap and can be
 overridden downward per process with `--context-window-tokens`. An override can never exceed the
-detected model limit. Models below the 16,000-token supported minimum are rejected.
+detected model limit. During setup, a validated text prompt displays the current saved value and the
+available range and lets the user replace it. Models below the 16,000-token supported minimum are
+rejected.
 
 `thera setup` is the normal first-run path. Questionary arrow-key menus select a supported provider,
 current documented model preset, locale, Telegram, and confirmation choices. ChatGPT uses device-code
@@ -479,7 +481,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   out of process arguments and native definitions, and supports status, restart, and clean removal
   on macOS, Linux, and Windows.
 - Interactive setup persists defaults and secrets encrypted, does not echo the Telegram token, and
-  lets chat and Telegram start without environment configuration.
+  lets chat and Telegram start without environment configuration. It displays and permits replacing
+  the saved context limit without exceeding the selected model or application cap.
 
 ## Test strategy
 

@@ -357,6 +357,12 @@ def test_setup_saves_encrypted_defaults_used_by_telegram(
         lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: next(selections)})(),
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
+        "therapist.cli.questionary.text",
+        lambda *args, **kwargs: type(
+            "Prompt", (), {"ask": lambda _: kwargs["default"]}
+        )(),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.password",
         lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: "secret-bot-token"})(),
     )
@@ -425,6 +431,12 @@ def test_setup_can_install_telegram_background_service(
         lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: next(selections)})(),
     )
     monkeypatch.setattr(
+        "therapist.cli.questionary.text",
+        lambda *args, **kwargs: type(
+            "Prompt", (), {"ask": lambda _: kwargs["default"]}
+        )(),
+    )
+    monkeypatch.setattr(
         "therapist.cli.questionary.password",
         lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: "secret-bot-token"})(),
     )
@@ -479,6 +491,12 @@ def test_setup_stores_remote_provider_key_encrypted(tmp_path: Path, monkeypatch:
         lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: next(selections)})(),
     )
     monkeypatch.setattr(  # type: ignore[attr-defined]
+        "therapist.cli.questionary.text",
+        lambda *args, **kwargs: type(
+            "Prompt", (), {"ask": lambda _: kwargs["default"]}
+        )(),
+    )
+    monkeypatch.setattr(  # type: ignore[attr-defined]
         "therapist.cli.questionary.password",
         lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: "private-api-key"})(),
     )
@@ -490,6 +508,37 @@ def test_setup_stores_remote_provider_key_encrypted(tmp_path: Path, monkeypatch:
     assert store.load_app_state().embedding_model == DEFAULT_EMBEDDING_MODEL
     assert "private-api-key" not in json.dumps(store.export())
     assert b"private-api-key" not in store.database_path.read_bytes()
+
+
+def test_setup_displays_and_overwrites_saved_context_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store = MemoryStore(tmp_path)
+    state = store.load_app_state()
+    state.default_model = "test"
+    state.default_context_window_tokens = 32_000
+    state.default_locale = "en-US"
+    store.save_app_state(state)
+    selections = iter(["test", "en-US", False])
+    context_prompt: dict[str, object] = {}
+    monkeypatch.setattr("therapist.cli._prepare_semantic_memory", lambda: True)
+    monkeypatch.setattr(
+        "therapist.cli.questionary.select",
+        lambda *args, **kwargs: type("Prompt", (), {"ask": lambda _: next(selections)})(),
+    )
+
+    def text_prompt(*args: object, **kwargs: object) -> object:
+        context_prompt.update(kwargs)
+        return type("Prompt", (), {"ask": lambda _: "64000"})()
+
+    monkeypatch.setattr("therapist.cli.questionary.text", text_prompt)
+
+    assert main(["--data-dir", str(tmp_path), "setup"]) == 0
+
+    saved = MemoryStore(tmp_path).load_app_state()
+    assert context_prompt["default"] == "32000"
+    assert "16000-128000" in str(context_prompt["instruction"])
+    assert saved.default_context_window_tokens == 64_000
 
 
 def test_setup_does_not_persist_provider_secret_when_later_cancelled(
