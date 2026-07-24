@@ -57,13 +57,13 @@ def test_deterministic_process_contracts(tmp_path: Path) -> None:
             except AgentRunError:
                 return {
                     "completed": False,
-                    "memory_count": len(store.list_memory()),
+                    "memory_count": len(store.list_claims()),
                     "reply": "",
                     "tool_path": tool_path,
                 }
             return {
                 "completed": True,
-                "memory_count": len(store.list_memory()),
+                "memory_count": len(store.list_claims()),
                 "reply": turn.text,
                 "tool_path": tool_path,
             }

@@ -1,60 +1,76 @@
 name: deterministic_process_contracts
 cases:
-  - name: supported-fact
+  - name: exact-user-report
     inputs:
       locale: en-US
       user_text: I moved to Bologna last month.
       model_reply: How has Bologna felt so far?
       tool_calls:
-        - name: record_memory
+        - name: record_user_reports
           arguments:
-            observations:
+            reports:
               - kind: fact
-                content: The user moved to Bologna last month.
-                evidence_quote: moved to Bologna last month
-                aliases: [relocation, moved city]
+                content: I moved to Bologna last month.
+                evidence_quote: I moved to Bologna last month.
     expected_output:
       completed: true
       memory_count: 1
       reply: How has Bologna felt so far?
-      tool_path: [record_memory]
-
-  - name: unsupported-fact
+      tool_path: [record_user_reports]
+  - name: unsupported-user-report
     inputs:
       locale: en-US
       user_text: Work was difficult today.
       model_reply: What made today difficult?
       tool_calls:
-        - name: record_memory
+        - name: record_user_reports
           arguments:
-            observations:
+            reports:
               - kind: fact
-                content: The user has two children.
-                evidence_quote: two children
+                content: I have two children.
+                evidence_quote: I have two children.
     expected_output:
       completed: false
       memory_count: 0
       reply: ""
-      tool_path: [record_memory]
-
+      tool_path: [record_user_reports]
+  - name: process-preference
+    inputs:
+      locale: en-US
+      user_text: I want reflection before suggestions.
+      model_reply: I will stay with understanding first.
+      tool_calls:
+        - name: record_process_feedback
+          arguments:
+            feedback:
+              content: I want reflection before suggestions.
+              evidence_quote: I want reflection before suggestions.
+              reusable: true
+    expected_output:
+      completed: true
+      memory_count: 0
+      reply: I will stay with understanding first.
+      tool_path: [record_process_feedback]
+  - name: ordinary-presence
+    inputs:
+      locale: en-US
+      user_text: I just want to stay with how sad this feels.
+      model_reply: We can stay with it.
+    expected_output:
+      completed: true
+      memory_count: 0
+      reply: We can stay with it.
+      tool_path: []
   - name: repair
     inputs:
       locale: en-US
-      user_text: You are viewing me through a lens that is not mine.
-      model_reply: You are right. I imposed an interpretation that does not belong to you. What did I miss?
+      user_text: You misunderstood me; I wanted space to explain.
+      model_reply: I moved too quickly into advice. What did I miss?
+      tool_calls:
+        - name: load_therapeutic_skill
+          arguments: {skill_id: repair-misattunement}
     expected_output:
       completed: true
       memory_count: 0
-      reply: You are right. I imposed an interpretation that does not belong to you. What did I miss?
-      tool_path: []
-
-  - name: ordinary-presence-without-state-change
-    inputs:
-      locale: en-US
-      user_text: I do not know what I need yet. I just want to stay with how sad this feels.
-      model_reply: We can stay with it. What feels heaviest right now?
-    expected_output:
-      completed: true
-      memory_count: 0
-      reply: We can stay with it. What feels heaviest right now?
-      tool_path: []
+      reply: I moved too quickly into advice. What did I miss?
+      tool_path: [load_therapeutic_skill]

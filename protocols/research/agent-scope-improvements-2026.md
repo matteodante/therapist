@@ -4,6 +4,8 @@
 > progressive formulation, and behavioral-eval recommendations below have since been implemented
 > or superseded. Consult `AGENTS.md`, `README.md`, and `src/therapist/chat.py` for the current
 > contract.
+> In particular, the clean-break runtime now uses independent origin, fit, lifecycle, and exact
+> evidence; `user_confirmed` and `WorkingContext` below are historical terms.
 
 ## Scope and conclusion
 

@@ -15,7 +15,7 @@ from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 from therapist.auth import codex_model, load_credential
 from therapist.chat import ChatSession
 from therapist.cli import DEFAULT_EMBEDDING_MODEL, _default_embedder
-from therapist.memory import MemoryKind, MemoryStatus, MemoryStore
+from therapist.memory import ClaimFit, ClaimOrigin, MemoryKind, MemoryStore
 from therapist.protocol import ProtocolPack
 
 CASES_PATH = Path(__file__).parent / "cases" / "live_codex_memory.yaml"
@@ -36,7 +36,7 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
         reply = ctx.output["return_reply"].casefold()
         return {
             "all_replies_non_empty": all(
-                reply.strip() and len(reply) <= 1_200 for reply in ctx.output["initial_replies"]
+                reply.strip() and len(reply) <= 4_000 for reply in ctx.output["initial_replies"]
             ),
             "tool_io_visible": (
                 ctx.output["visible_tool_trace_count"] >= expected["minimum_tool_calls"]
@@ -53,8 +53,8 @@ class CodexMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, An
             "durable_memory_created": (
                 ctx.output["memory_count"] >= expected["minimum_memory_items"]
             ),
-            "confirmed_hypothesis_recorded": (
-                not expected["require_confirmed_hypothesis"]
+            "fitted_hypothesis_recorded": (
+                not expected["require_fitted_hypothesis"]
                 or ctx.output["confirmed_hypothesis_count"] > 0
             ),
             "evidence_provenance_preserved": ctx.output["evidence_preserved"],
@@ -108,7 +108,7 @@ def test_memory_contract_accepts_sparse_memory_and_semantic_paraphrase() -> None
     reason="Set THERA_RUN_CODEX_EVALS=1 after `thera auth login`.",
 )
 def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
-    credential_store = MemoryStore()
+    credential_store = MemoryStore(Path(os.getenv("THERA_DATA_DIR", Path.home() / ".therapist")))
     if load_credential(credential_store) is None:
         pytest.skip("Run `thera auth login` before the Codex memory eval.")
     model = codex_model(credential_store, "gpt-5.6-sol")
@@ -161,26 +161,26 @@ def test_configured_codex_longitudinal_memory(tmp_path: Path) -> None:
                 for exchange in exported_tool_exchanges
                 if exchange["direction"] == "output"
             ]
-            context = restarted.working_context(inputs["semantic_query"])
-            items = restarted.list_memory()
+            context = restarted.retrieve_case_context(inputs["semantic_query"])
+            items = restarted.list_claims()
             returned = ChatSession(model, pack, restarted, "en-US").respond(
                 inputs["return_message"],
                 started_at + timedelta(days=inputs["return_after_days"]),
             )
-            restarted.working_context(inputs["return_message"])
+            restarted.retrieve_case_context(inputs["return_message"])
             with sqlite3.connect(restarted.database_path) as database:
                 indexed = database.execute(
-                    "SELECT COUNT(*) FROM semantic_index WHERE entity_type = 'memory'"
+                    "SELECT COUNT(*) FROM semantic_index WHERE entity_type = 'claim'"
                 ).fetchone()[0]
             return {
                 "memory_count": len(items),
                 "confirmed_hypothesis_count": sum(
-                    item.status is MemoryStatus.USER_CONFIRMED
+                    item.origin is ClaimOrigin.AGENT_HYPOTHESIS
+                    and item.fit is ClaimFit.FITS
                     and item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
                     for item in items
                 ),
-                "evidence_preserved": bool(items)
-                and all(item.evidence_message_ids for item in items),
+                "evidence_preserved": bool(items) and all(item.evidence for item in items),
                 "session_consolidated": (
                     bool(closed.summary.strip())
                     and closed.consolidation_error is None

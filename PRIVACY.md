@@ -1,90 +1,89 @@
 # Privacy and data flow
 
-This notice describes the current self-hosted alpha. It is not a claim of GDPR or other regulatory
-compliance. Reassess it whenever providers, transports, telemetry, hosting, users, or business model
-change.
+This notice describes the self-hosted experimental alpha. It is not a claim of regulatory
+compliance.
 
-## Who operates the software
+## Identity, purpose, and operator
 
-Therapist is published by Matteo Dante as an individual. The alpha is free and non-commercial and
-has no hosted service, donation, sponsorship, paid support, advertising, or telemetry.
+Therapist is an AI for adults privately organizing and reflecting on user-provided thoughts. It is
+not a human, psychologist, psychotherapist, clinical service, emergency service, or human-monitored
+channel. It does not diagnose or prescribe, and its output can be wrong.
 
-The person who installs Therapist operates their own single-user instance and chooses the ChatGPT
-account and Telegram bot used by that instance. Publishing and downloading the repository does not
-create a hosted Therapist account or send application data to the repository maintainer. The
-maintainer does not receive conversations, memory, or credentials during normal use. Data reaches
-the maintainer only when a user deliberately submits it through a support, security, or contribution
-channel; those channels prohibit real conversations, health information, credentials, and other
-personal data.
+Matteo Dante publishes the free, non-commercial source code as an individual. The person installing
+it operates the single-user instance and chooses the provider and Telegram bot. Normal application
+use does not send conversations, memory, or credentials to the repository maintainer.
 
-The public alpha is intended for adults using it privately for self-reflection. It is not intended
-for organizations to deploy to patients, clients, employees, students, or other third parties.
+## Local storage
 
-## Local data
+By default `~/.therapist/thera.db` holds encrypted payloads for configuration, transcripts,
+successful model history, sessions, claims and evidence, case formulation, process preferences,
+interventions and unwanted effects, support choices, and the derived semantic index.
+`~/.therapist/memory.key` holds the Fernet key. Directory and key permissions are restricted where
+the operating system supports them.
 
-By default, application data is stored in `~/.therapist/`:
+The pinned multilingual embedding model is downloaded from Hugging Face and performs document and
+query inference locally. Vectors are encrypted and never establish truth, evidence, origin, fit, or
+lifecycle.
 
-- `thera.db` contains conversation messages, model history, sessions, structured memory, case
-  formulation, interventions, configuration, provider secrets, and the derived semantic index;
-- `memory.key` contains the Fernet key used to encrypt sensitive SQLite payloads.
+Fernet protects a copied database without its key. It does not protect against a compromised user
+account or operating system, malware, screen capture, terminal history, or a backup containing both
+database and key.
 
-The directory is set to filesystem mode `0700` and the key to `0600` on platforms that implement
-those permissions. Conversation content, memory content, summaries, configuration payloads, secrets,
-and embedding vectors are encrypted. SQLite still exposes structural metadata such as record IDs,
-roles, states, and timestamps.
+## Memory modes
 
-Keeping the database and key on the same account protects a copied database without its key and
-casual backups. It does not protect data from malware, a compromised operating-system account, a
-process running as the user, screen capture, terminal history, or a backup containing both files.
-Full-disk encryption and device security remain the user's responsibility.
+The current mode is shown by `thera privacy show`, Telegram `/status`, and Telegram `/privacy`.
 
-The pinned embedding model is downloaded from Hugging Face and then runs locally. The shared model
-cache is separate from the application database and contains model files, not conversation content.
+- `standard` (default): encrypted transcript/history, claims, formulation, preferences,
+  interventions, support choices, and semantic index.
+- `transcript-only`: encrypted transcript/history only; no new structured or semantic mutations.
+- `ephemeral`: in-process context only; no transcript, history, claims, formulation, intervention,
+  support choice, or semantic index item is persisted.
+
+Changing mode does not retroactively delete data.
 
 ## External recipients
 
-The selected configuration determines where content goes:
-
-| Mode | Content sent outside the device |
+| Configuration | Data sent outside the device |
 | --- | --- |
-| Local Ollama model + terminal | No conversation content is intentionally sent to a model provider or transport |
-| Remote PydanticAI model | Current messages, successful active-session model history, and bounded selected context are sent to the chosen provider |
-| Experimental personal Codex OAuth | The same model input is sent through the user's ChatGPT Codex account under that product's terms |
-| Telegram | Telegram receives incoming messages, outgoing replies, tool events, notices, and any local data the user asks to view; the selected model provider also receives model input |
+| Local Ollama + terminal | No conversation content is intentionally sent to a remote model or transport |
+| Remote PydanticAI model | Current message, successful active-session history, separate bounded case-data JSON, and a verified skill body only when dynamically loaded |
+| Experimental personal Codex OAuth | The same model input through the user's ChatGPT Codex account under that product's terms |
+| Telegram | Incoming messages, replies, visible tool events/notices, and local records explicitly viewed in Telegram; model input also reaches the chosen provider |
 
-The first public alpha supports only the experimental personal Codex OAuth configuration. Other
-PydanticAI model IDs remain unsupported technical overrides. Every external service has its own
-retention, abuse-monitoring, training, subprocessor, region, transfer, and deletion terms. Therapist
-does not control those terms and does not promise zero retention. Review the selected provider's
-current terms before sending sensitive content.
+Ordinary OpenAI Responses requests set `store=false`, but provider abuse-monitoring or other
+retention may still apply. Telegram bot chats are cloud chats and are not end-to-end encrypted.
+Every external provider controls its own retention, training, abuse-monitoring, subprocessors,
+transfer, and deletion rules.
 
-Telegram bot conversations are cloud chats and are not end-to-end encrypted. Deleting local data
-does not delete data already retained by Telegram, a model provider, terminal capture, exports, or
-backups. Delete the bot messages or chat separately in Telegram when removal from that transport is
-wanted.
+No provider receives the local encryption key, local semantic vectors, stored credentials, internal
+protocol instructions as an exposed view, or provider thinking. A dynamically loaded skill is part
+of model input for that turn. Provider thinking and repeated instructions are removed before model
+history is persisted.
 
-## Retention, access, export, and deletion
+## Retention, export, and deletion
 
-The local archive is retained until the user removes it. Structured claims can be inspected,
-confirmed, corrected, or forgotten. `thera export` produces a decrypted JSON export; an export written
-to disk is plaintext and must be protected by the user. `thera delete-data` removes application
-records from the active SQLite database but does not remove the encryption key, the empty database,
-the shared embedding-model cache, external-provider records, exports, or backups.
+Retention defaults to indefinite (`None`) for raw messages, session summaries, and stale
+hypotheses. `thera retention set`, `dry-run`, and `apply` configure or execute local retention;
+policy is also applied at conversation startup and before retrieval when configured. There is no
+background worker.
 
-There is no product telemetry, advertising, analytics, maintainer-controlled inference, or automatic
-upload of crash reports in the current alpha.
+`thera delete-session <id>`, `thera delete-before <date>`, claim forgetting, corrections, retention,
+and `thera delete-data` propagate to derived semantic entries, formulation links, summaries,
+excerpts, intervention content, and pending IDs where applicable. `thera export` returns decrypted
+JSON; a file export is plaintext and must be protected.
 
-## Support and security reports
+Local deletion cannot delete data already held by a model provider or Telegram, or copies in
+exports, backups, terminal capture, screenshots, or system-level logs. Delete Telegram messages or
+the chat separately. Provider deletion must be handled under that provider's controls.
 
-Do not submit conversations, databases, exports, health information, credentials, identifiers, or
-other personal data in a GitHub issue. Use synthetic reproductions. Report vulnerabilities through
+## Clean-break schema
+
+This revision does not migrate older stores and does not create plaintext backups. An incompatible
+database is rejected before use. Use a new data directory or deliberately delete the old local
+store after preserving any export you need.
+
+## Reporting
+
+Do not put conversations, databases, exports, health information, credentials, or identifiers in a
+GitHub issue. Use synthetic reproductions. Report vulnerabilities through
 [GitHub private vulnerability reporting](https://github.com/matteodante/therapist/security/advisories/new).
-See [SUPPORT.md](SUPPORT.md) for the complete reporting boundary.
-
-Questions about an external provider's data should be directed to that provider. Because the
-maintainer does not hold normal application data, local access, export, correction, and deletion are
-performed by the user through the application commands.
-
-Each person who enables Telegram operates their own bot. Setup and the README instruct that operator
-to configure this notice as the bot's privacy-policy URL in BotFather; the bot also exposes the same
-data-flow information through `/privacy`.

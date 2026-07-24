@@ -1,7 +1,7 @@
 # EU AI Act Article 50 assessment record
 
 **Status:** maintainer assessment recorded; monitor the applicable marking deadline
-**Date:** 2026-07-23  
+**Date:** 2026-07-24
 **Scope:** free, non-commercial, adult-only public alpha published by Matteo Dante
 
 This record applies the European Commission's final Article 50 guidance to the actual alpha. It is
@@ -24,6 +24,10 @@ The current product already tells a user clearly, before conversation, that:
 This disclosure appears in the README, guided setup, terminal consent, Telegram consent and status
 surfaces. It should remain clear, distinguishable, accessible, and present from the start of the
 first interaction.
+
+The revised notices also disclose the current memory mode, local retention, local embeddings,
+dynamic skill/model input, plaintext exports, and the limits of local deletion. These additions
+increase factual transparency; they are not a compliance determination.
 
 ## Role and obligation assessment
 

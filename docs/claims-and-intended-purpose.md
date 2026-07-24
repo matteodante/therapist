@@ -24,6 +24,19 @@ Therapist is intended to support adult self-reflection and organization of user-
 It is not intended for diagnosis, prevention, monitoring, prediction, prognosis, treatment, or
 alleviation of any disease, disorder, injury, or disability.
 
+## Verified implementation boundary — 2026-07-24
+
+The root protocol and dynamically loaded skills are separate from a bounded JSON case-data message.
+The agent may use no skill, does not use a keyword router, and exposes only observable skill/claim/
+intervention metadata—not reasoning. Direct reports and hypotheses have independent origin, fit, and
+lifecycle fields with exact evidence. Explicit process preferences, intervention outcomes and
+unwanted effects, support choices, conflicts, three memory modes, local retention, and selective
+deletion are implementation descriptions, not claims of therapeutic benefit.
+
+This revision is a clean-break data schema with no migration or legacy compatibility. Old stores are
+rejected without modification. The protocol manifest remains `experimental`, has no invented
+reviewers, and records source availability verification dated 2026-07-24.
+
 ## Initial release assumptions
 
 - the project name is Therapist and the publisher is Matteo Dante acting as an individual;

@@ -2,7 +2,7 @@ name: live_codex_longitudinal_memory
 cases:
   - name: CODEX-MEMORY-001
     metadata:
-      description: Codex captures, consolidates, semantically retrieves, and uses a confirmed pattern after four months.
+      description: Codex captures, consolidates, semantically retrieves, and uses a fitted hypothesis after four months.
       locale: en-US
     inputs:
       started_at: "2026-01-10T10:00:00+00:00"
@@ -23,4 +23,4 @@ cases:
         - [call, manager]
         - [judgment, scrutiny, mistake]
         - [relief, shame]
-      require_confirmed_hypothesis: true
+      require_fitted_hypothesis: true

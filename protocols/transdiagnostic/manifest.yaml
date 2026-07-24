@@ -1,56 +1,136 @@
 id: therapist.transdiagnostic
 status: experimental
 locales: [it-IT, en-US]
-root_sha256: f99c5e64424fb4c30c3b77b5b2471e708e7e329e486e635b7df758b65b826f19
 population: adults-18-plus
-reviewers: []
-next_review: null
+intended_use: Adult self-reflection and organization of user-provided thoughts; not diagnosis, treatment, monitoring, or emergency care.
+root_sha256: bbbd6b0a788e4c895fad58220256f7702d539d6df2b21584c8800d3f59e8ac70
 skills:
-  - path: skills/build-shared-formulation/SKILL.md
-    sha256: eeffc72e0fa8d41337dc556de5d315fb8dd50015b756688c051102080877bc32
-  - path: skills/increase-psychological-flexibility/SKILL.md
-    sha256: e9698788f37f9322780026fe10d1c1bd2a5b33f46ccd8600c773c782f0deb9bb
-  - path: skills/change-avoidance-behavior/SKILL.md
-    sha256: 0342ef156c0de822d41aedaf204a4bc1d4d347643e433c269ea13af312d6aec1
-  - path: skills/solve-practical-problems/SKILL.md
-    sha256: 07880d1fdbc37a1aa5d65ad6e42094702f442d69443a0066bc89a67ea82e9bf9
-  - path: skills/review-and-maintain-change/SKILL.md
-    sha256: 781e23466c56ed9f8638413e53f8306248137e21768c1f662e6f101e027b8002
-  - path: skills/repair-misattunement/SKILL.md
-    sha256: 38798fa56ea82aa17dc2f812f6d75e2a8347640bcf3973f62d0989208e10b700
+  - id: establish-contract-and-preferences
+    path: skills/establish-contract-and-preferences/SKILL.md
+    sha256: 694f6eec01d43eb43e8856bd88acdd54071b3bc699f23700794d367c4a92d11e
+    category: core
+    description: Clarify desired help and reusable conversational preferences without onboarding.
+    locales: [it-IT, en-US]
+  - id: build-shared-formulation
+    path: skills/build-shared-formulation/SKILL.md
+    sha256: 6c7683d03e48e1088ac7472bf67c947b65bc37397b18b6b2f89f6ff6d8c6bff2
+    category: core
+    description: Build a progressive, collaborative, evidence-linked understanding.
+    locales: [it-IT, en-US]
+  - id: agree-plan-and-review-criteria
+    path: skills/agree-plan-and-review-criteria/SKILL.md
+    sha256: 1d3bbd58dd81fe7d12aca36a32b51985f1ef077b4af04aa31d0df34c746d7f67
+    category: core
+    description: Agree a light plan and criteria for usefulness or poor fit.
+    locales: [it-IT, en-US]
+  - id: monitor-alliance-outcomes-and-harms
+    path: skills/monitor-alliance-outcomes-and-harms/SKILL.md
+    sha256: 7178453a7e1a3af7727c96b10fb643f4da2949c794f9b98b9d2318af8aa023e8
+    category: review
+    description: Review conversational fit, outcomes, functioning, and unwanted effects.
+    locales: [it-IT, en-US]
+  - id: repair-misattunement
+    path: skills/repair-misattunement/SKILL.md
+    sha256: 2f76ff72251aa13a7b83297d16f964ec7f2224888c2c942c4a7a209e1d0f13dc
+    category: repair
+    description: Repair a specific mismatch before further formulation or technique.
+    locales: [it-IT, en-US]
+  - id: increase-psychological-flexibility
+    path: skills/increase-psychological-flexibility/SKILL.md
+    sha256: be01467e43dd0345b4fc7568e1fc26e51a1030c98710da9b22dce7a45516311b
+    category: intervention
+    description: Use one consented awareness, defusion, acceptance, values, or kindness process.
+    locales: [it-IT, en-US]
+  - id: change-avoidance-behavior
+    path: skills/change-avoidance-behavior/SKILL.md
+    sha256: 9872bcab4e040f232b93002c627636f3949ade1843822f6c57f7c083815296cd
+    category: intervention
+    description: Design or review one small behavioral experiment below the avoidance threshold.
+    locales: [it-IT, en-US]
+  - id: solve-practical-problems
+    path: skills/solve-practical-problems/SKILL.md
+    sha256: 8ecc9d93da6fffc5e3497943d69f663f8f6d7407ceed4c27a3a84ef7905524cb
+    category: intervention
+    description: Support one bounded user-chosen response to a controllable external problem.
+    locales: [it-IT, en-US]
+  - id: review-and-maintain-change
+    path: skills/review-and-maintain-change/SKILL.md
+    sha256: 65767f3b7a82400edc1e53aedbb8e0b8b92f33f6fbe8fafb986a0e955585cdef
+    category: review
+    description: Compare actual use, prediction, outcomes, unwanted effects, and next decision.
+    locales: [it-IT, en-US]
+  - id: support-referral-and-closure
+    path: skills/support-referral-and-closure/SKILL.md
+    sha256: d74c1dc149cc79f8800cac286682baf484958c3789930ad9f0f5f3785e1d0e60
+    category: support
+    description: Discuss desired human support, barriers, different needs, and pressure-free closure.
+    locales: [it-IT, en-US]
 references:
   - path: references/sources.md
-    sha256: 78ee19c432853b9503eb8e7836fadf69934ae51032c8e9022e9a80442f504f46
-    url: https://www.who.int/publications/i/item/9789240120785
-    revision: "2026-07-22"
+    sha256: e40d08f448eb75b73db21bb98cb108de3074413f83221b47c8e6e7a8f1f68ce7
+    url: https://www.who.int/publications/i/item/9789240105935
+    revision: "2025-07-10"
+    verified_at: 2026-07-24
+    license: links-and-original-summary-only
+  - path: skills/establish-contract-and-preferences/references/basis.md
+    sha256: e68318b0727f2f4c0162446da60845dad4d5dd5cd0bc0ff887a18fe5a0529c3d
+    url: https://www.who.int/publications/i/item/9789240105935
+    revision: "2025-07-10"
+    verified_at: 2026-07-24
     license: links-and-original-summary-only
   - path: skills/build-shared-formulation/references/basis.md
     sha256: 149c747fa25e69bf3c37be9398f55d91ea1a5b375892755e5b0abfecaa003db2
     url: https://www.nice.org.uk/guidance/ng222/chapter/Recommendations
     revision: "2026-01-30"
+    verified_at: 2026-07-24
+    license: links-and-original-summary-only
+  - path: skills/agree-plan-and-review-criteria/references/basis.md
+    sha256: 28a8f7940a03cbe515b705b8d0f4ed8cf8b18a2393abd5824a1337c778aaf4ca
+    url: https://www.nice.org.uk/guidance/ng222/chapter/Recommendations
+    revision: "2026-01-30"
+    verified_at: 2026-07-24
+    license: links-and-original-summary-only
+  - path: skills/monitor-alliance-outcomes-and-harms/references/basis.md
+    sha256: e494919f71824929bdb62c2c58247c076387cddfe7c4007292f317c61dd3d8b0
+    url: https://www.who.int/publications/i/item/9789240121041
+    revision: "2026-05-20"
+    verified_at: 2026-07-24
     license: links-and-original-summary-only
   - path: skills/increase-psychological-flexibility/references/basis.md
     sha256: e9757ff57e5a915f8194e72e0191e05445d902c949c7a7b019dfe2b3e1251a53
     url: https://www.who.int/publications/i/item/9789240003927
-    revision: "2026-07-22"
+    revision: "2020-04-29"
+    verified_at: 2026-07-24
     license: links-and-original-summary-only
   - path: skills/change-avoidance-behavior/references/basis.md
     sha256: 0c5e10cb832e4c771da159d4526c999b925a61c98d26b5ab113ce6287b823c17
     url: https://www.who.int/publications/i/item/B09738
     revision: "2026-06-01"
+    verified_at: 2026-07-24
     license: links-and-original-summary-only
   - path: skills/solve-practical-problems/references/basis.md
     sha256: 1f1ef03411510fca4ad4bf4f303fc25c9e37062fb6ffd88a50e161d96c4d5435
     url: https://www.who.int/publications/b/78058
     revision: "2025-11-19"
+    verified_at: 2026-07-24
     license: links-and-original-summary-only
   - path: skills/review-and-maintain-change/references/basis.md
     sha256: 708f8ffb274780dfe2df165b6340fbdef538588867e81dd7df9e3910c6b2857c
     url: https://www.nice.org.uk/guidance/ng222/chapter/Recommendations
     revision: "2026-01-30"
+    verified_at: 2026-07-24
     license: links-and-original-summary-only
   - path: skills/repair-misattunement/references/basis.md
     sha256: 56c80edebdd0d8a535991fb99b2ae3c3ff2537d1bf87ed3d7df4563c71c3e7fd
-    url: https://www.who.int/publications/b/82490
-    revision: "2026-07-22"
+    url: https://www.who.int/publications/i/item/9789240105935
+    revision: "2025-07-10"
+    verified_at: 2026-07-24
     license: links-and-original-summary-only
+  - path: skills/support-referral-and-closure/references/basis.md
+    sha256: 417117efe6bcbb5cf25ece82bb5e61c136528512fb976765ab3671088919bc85
+    url: https://www.psy.it/lo_psicologo/codice_deontologico.html
+    revision: current-page
+    verified_at: 2026-07-24
+    license: links-and-original-summary-only
+reviewers: []
+next_review: null

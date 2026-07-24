@@ -38,7 +38,17 @@ from therapist.chat import (
     TurnStreamEvent,
     TurnStreamKind,
 )
-from therapist.memory import MemoryStore
+from therapist.memory import (
+    ClaimCorrection,
+    ClaimFit,
+    HypothesisReview,
+    MemoryMode,
+    MemoryStore,
+    RetentionPolicy,
+)
+from therapist.memory import (
+    MemoryError as MemoryStoreError,
+)
 from therapist.protocol import ProtocolError, ProtocolPack
 from therapist.telegram import TelegramBot, TelegramChannel, TelegramError
 
@@ -82,6 +92,7 @@ def build_parser() -> argparse.ArgumentParser:
     chat.add_argument("--model")
     chat.add_argument("--locale", choices=("it-IT", "en-US"))
     chat.add_argument("--context-window-tokens", type=_context_window_tokens)
+    chat.add_argument("--memory-mode", type=_memory_mode_arg, choices=tuple(MemoryMode))
     chat.add_argument(
         "--plain",
         action="store_true",
@@ -93,6 +104,7 @@ def build_parser() -> argparse.ArgumentParser:
     telegram.add_argument("--locale", choices=("it-IT", "en-US"))
     telegram.add_argument("--allowed-user-id", type=int)
     telegram.add_argument("--context-window-tokens", type=_context_window_tokens)
+    telegram.add_argument("--memory-mode", type=_memory_mode_arg, choices=tuple(MemoryMode))
 
     service = commands.add_parser(
         "telegram-service",
@@ -116,8 +128,18 @@ def build_parser() -> argparse.ArgumentParser:
     memory_commands.add_parser("case")
     memory_commands.add_parser("sessions")
     memory_commands.add_parser("interventions")
-    confirm = memory_commands.add_parser("confirm")
-    confirm.add_argument("id")
+    review = memory_commands.add_parser("review")
+    review.add_argument("id")
+    review.add_argument(
+        "fit",
+        choices=(
+            ClaimFit.FITS,
+            ClaimFit.PARTLY_FITS,
+            ClaimFit.DOES_NOT_FIT,
+            ClaimFit.UNSURE,
+        ),
+    )
+    review.add_argument("evidence")
     correct = memory_commands.add_parser("correct")
     correct.add_argument("id")
     correct.add_argument("text")
@@ -135,6 +157,24 @@ def build_parser() -> argparse.ArgumentParser:
     export.add_argument("--output", type=Path)
     delete = commands.add_parser("delete-data", help="Delete conversation and structured memory")
     delete.add_argument("--yes", action="store_true")
+    delete_session = commands.add_parser("delete-session", help="Delete one local session")
+    delete_session.add_argument("id")
+    delete_before = commands.add_parser("delete-before", help="Delete sessions before an ISO date")
+    delete_before.add_argument("date", type=datetime.fromisoformat)
+    privacy = commands.add_parser("privacy", help="Inspect or set the default memory mode")
+    privacy_commands = privacy.add_subparsers(dest="privacy_command", required=True)
+    privacy_commands.add_parser("show")
+    privacy_set = privacy_commands.add_parser("set-default")
+    privacy_set.add_argument("mode", type=_memory_mode_arg, choices=tuple(MemoryMode))
+    retention = commands.add_parser("retention", help="Manage local retention")
+    retention_commands = retention.add_subparsers(dest="retention_command", required=True)
+    retention_commands.add_parser("show")
+    retention_set = retention_commands.add_parser("set")
+    retention_set.add_argument("--raw-message-days", type=_optional_days)
+    retention_set.add_argument("--session-summary-days", type=_optional_days)
+    retention_set.add_argument("--stale-hypothesis-days", type=_optional_days)
+    retention_commands.add_parser("dry-run")
+    retention_commands.add_parser("apply")
     commands.add_parser("doctor", help="Check local configuration without contacting a model")
 
     protocol = commands.add_parser("protocol", help="Protocol-pack utilities")
@@ -145,6 +185,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        return _main(argv)
+    except MemoryStoreError as error:
+        print(f"Memory error: {error}")
+        return 2
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         pack = ProtocolPack.load(args.protocol)
@@ -159,7 +207,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         except ProtocolError as error:
             print(f"Protocol error: {error}")
             return 2
-        print(f"OK {validated.id} ({validated.status})")
+        categories: dict[str, int] = {}
+        for skill in validated.manifest.skills:
+            categories[skill.category] = categories.get(skill.category, 0) + 1
+        print(f"Protocol ID: {validated.id}")
+        print(f"Status: {validated.status}")
+        print(f"Population: {validated.manifest.population}")
+        print(f"Skills: {len(validated.skill_ids)}")
+        print(
+            "Categories: "
+            + ", ".join(f"{name}={count}" for name, count in sorted(categories.items()))
+        )
+        print(f"Reviewers: {len(validated.manifest.reviewers)}")
+        print(f"Next review: {validated.manifest.next_review or 'not scheduled'}")
+        print("Hash validation: OK")
         return 0
 
     if args.command == "memory" and args.memory_command == "model":
@@ -207,6 +268,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _setup(store, args)
     if args.command == "auth":
         return _auth(args, store)
+    if args.command == "privacy":
+        state = store.load_app_state()
+        if args.privacy_command == "show":
+            print(f"Default memory mode: {state.default_memory_mode.value}")
+            print("Changing mode does not delete previously stored data.")
+            return 0
+        state.default_memory_mode = MemoryMode(args.mode)
+        store.save_app_state(state)
+        print(f"Default memory mode set to {state.default_memory_mode.value}.")
+        return 0
+    if args.command == "retention":
+        return _retention(args, store)
+    if args.command == "delete-session":
+        if not store.delete_session(args.id):
+            print("Session not found.")
+            return 1
+        print(f"Session {args.id} deleted locally.")
+        return 0
+    if args.command == "delete-before":
+        result = store.delete_before(args.date)
+        print(f"Deleted {result['sessions']} session(s) before {args.date.isoformat()}.")
+        return 0
     if args.command in {"chat", "telegram"}:
         state = store.load_app_state()
         if state.embedding_model != DEFAULT_EMBEDDING_MODEL:
@@ -250,13 +333,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             model_context_window,
             MAX_CONTEXT_WINDOW_TOKENS,
         )
+        memory_mode = MemoryMode(args.memory_mode or state.default_memory_mode)
+        if memory_mode is not MemoryMode.EPHEMERAL:
+            store.apply_retention(state.retention_policy)
+        conversation_store = (
+            MemoryStore(
+                embedding_model=DEFAULT_EMBEDDING_MODEL,
+                embedder=embedder,
+                ephemeral=True,
+            )
+            if memory_mode is MemoryMode.EPHEMERAL
+            else store
+        )
         try:
             session = ChatSession(
                 model,
                 pack,
-                store,
+                conversation_store,
                 locale,
                 context_window_tokens=context_window_tokens,
+                memory_mode=memory_mode,
             )
         except ValueError as error:
             print(f"Context configuration error: {error}")
@@ -275,7 +371,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Telegram is not configured. Run `thera setup`.")
             return 2
         try:
-            TelegramChannel(TelegramBot(token), session, store, allowed_user_id).run()
+            TelegramChannel(
+                TelegramBot(token),
+                session,
+                conversation_store,
+                allowed_user_id,
+                configuration_store=store,
+            ).run()
         except TelegramError as error:
             print(f"Telegram startup error: {error}")
             return 2
@@ -831,19 +933,47 @@ def _memory_model(args: argparse.Namespace) -> int:
 def _memory(args: argparse.Namespace, store: MemoryStore) -> int:
     try:
         if args.memory_command == "show":
-            print(_json([item.model_dump(mode="json") for item in store.list_memory(True)]))
+            print(
+                _json(
+                    [
+                        item.model_dump(mode="json")
+                        for item in store.list_claims(include_inactive=True)
+                    ]
+                )
+            )
         elif args.memory_command == "case":
             print(store.load_formulation().model_dump_json(indent=2))
         elif args.memory_command == "sessions":
             print(_json([session.model_dump() for session in store.list_sessions()]))
         elif args.memory_command == "interventions":
             print(_json([item.model_dump(mode="json") for item in store.list_interventions()]))
-        elif args.memory_command == "confirm":
-            print(store.confirm_memory(args.id).model_dump_json(indent=2))
+        elif args.memory_command == "review":
+            reviewed, _ = store.review_hypotheses(
+                [
+                    HypothesisReview(
+                        memory_id=args.id,
+                        fit=ClaimFit(args.fit),
+                        evidence_quote=args.evidence,
+                    )
+                ],
+                0,
+                args.evidence,
+            )
+            print(reviewed[0].model_dump_json(indent=2))
         elif args.memory_command == "correct":
-            print(store.correct_memory(args.id, args.text).model_dump_json(indent=2))
+            print(
+                store.correct_claim(
+                    ClaimCorrection(
+                        memory_id=args.id,
+                        correction_quote=args.text,
+                        replacement_quote=args.text,
+                    ),
+                    0,
+                    args.text,
+                ).model_dump_json(indent=2)
+            )
         elif args.memory_command == "forget":
-            print(store.forget_memory(args.id).model_dump_json(indent=2))
+            print(store.forget_claim(args.id).model_dump_json(indent=2))
     except (KeyError, ValueError) as error:
         print(str(error))
         return 2
@@ -854,7 +984,7 @@ def _chat(session: ChatSession, store: MemoryStore) -> int:
     if not _ensure_chat_consent(store):
         return 1
 
-    print("Commands: /case, /memory, /sessions [id], /interventions, /confirm <id>,")
+    print("Commands: /case, /memory, /sessions [id], /interventions,")
     print("          /correct <id> <text>,")
     print("          /forget <id>, /end, /help, /quit")
     while True:
@@ -940,19 +1070,23 @@ def _uses_tui(args: argparse.Namespace) -> bool:
 def _ensure_chat_consent(store: MemoryStore) -> bool:
     state = store.load_app_state()
     consent = "I UNDERSTAND"
-    if state.consent_version != "alpha-2":
+    if state.consent_version != "alpha-3":
         notice = (
             "Therapist is experimental AI for adults using it privately for self-reflection. "
             "It is not therapy, diagnosis, medical advice, emergency care, or human monitoring, "
-            "and its output can be wrong. A remote model provider receives your messages, "
-            "successful session history, and selected context when configured. "
+            "and its output can be wrong. A remote model provider receives messages, successful "
+            "session history, a separate bounded case-data envelope, and any dynamically loaded "
+            "skill when configured. Embeddings run locally. The current memory mode is "
+            f"{state.default_memory_mode.value}; local retention is configurable and does not "
+            "control provider, Telegram, export, backup, or terminal copies. "
+            "Exports are plaintext. "
             "By continuing, you confirm that you are at least 18 and accept these data flows."
         )
         print(notice)
         if input(f"Type {consent} to continue: ").strip() != consent:
             print("Consent not recorded.")
             return False
-        state.consent_version = "alpha-2"
+        state.consent_version = "alpha-3"
         store.save_app_state(state)
     return True
 
@@ -968,12 +1102,19 @@ def _chat_command(
     name = parts[0]
     try:
         if name == "/help":
-            output("/case /memory /sessions [id] /confirm <id> /correct <id> <text>")
+            output("/case /memory /sessions [id] /correct <id> <text>")
             output("/interventions /forget <id> /end /quit")
         elif name == "/case":
             output(store.load_formulation().model_dump_json(indent=2))
         elif name == "/memory":
-            output(_json([item.model_dump(mode="json") for item in store.list_memory(True)]))
+            output(
+                _json(
+                    [
+                        item.model_dump(mode="json")
+                        for item in store.list_claims(include_inactive=True)
+                    ]
+                )
+            )
         elif name == "/sessions":
             sessions = store.list_sessions()
             if len(parts) == 1:
@@ -983,12 +1124,20 @@ def _chat_command(
                 output("Session not found." if found is None else found.model_dump_json(indent=2))
         elif name == "/interventions":
             output(_json([item.model_dump(mode="json") for item in store.list_interventions()]))
-        elif name == "/confirm" and len(parts) >= 2:
-            output(store.confirm_memory(parts[1]).model_dump_json(indent=2))
         elif name == "/correct" and len(parts) == 3:
-            output(store.correct_memory(parts[1], parts[2]).model_dump_json(indent=2))
+            output(
+                store.correct_claim(
+                    ClaimCorrection(
+                        memory_id=parts[1],
+                        correction_quote=parts[2],
+                        replacement_quote=parts[2],
+                    ),
+                    0,
+                    parts[2],
+                ).model_dump_json(indent=2)
+            )
         elif name == "/forget" and len(parts) >= 2:
-            output(store.forget_memory(parts[1]).model_dump_json(indent=2))
+            output(store.forget_claim(parts[1]).model_dump_json(indent=2))
         elif name == "/end":
             closed = session.end()
             message = (
@@ -1017,6 +1166,56 @@ def _context_window_tokens(value: str) -> int:
             f"and {MAX_CONTEXT_WINDOW_TOKENS} tokens."
         )
     return parsed
+
+
+def _memory_mode_arg(value: str) -> MemoryMode:
+    try:
+        return MemoryMode(value.replace("-", "_"))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "Memory mode must be standard, transcript-only, or ephemeral."
+        ) from error
+
+
+def _optional_days(value: str) -> int | None:
+    if value.casefold() in {"none", "off"}:
+        return None
+    try:
+        parsed = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(
+            "Retention days must be a positive integer or 'none'."
+        ) from error
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("Retention days must be positive.")
+    return parsed
+
+
+def _retention(args: argparse.Namespace, store: MemoryStore) -> int:
+    state = store.load_app_state()
+    if args.retention_command == "show":
+        print(state.retention_policy.model_dump_json(indent=2))
+        return 0
+    if args.retention_command == "set":
+        state.retention_policy = RetentionPolicy(
+            raw_message_days=args.raw_message_days,
+            session_summary_days=args.session_summary_days,
+            stale_hypothesis_days=args.stale_hypothesis_days,
+        )
+        store.save_app_state(state)
+        print(state.retention_policy.model_dump_json(indent=2))
+        return 0
+    result = store.apply_retention(
+        state.retention_policy,
+        dry_run=args.retention_command == "dry-run",
+    )
+    label = "Would remove" if args.retention_command == "dry-run" else "Removed"
+    print(
+        f"{label}: {result['messages']} messages, "
+        f"{result['session_summaries']} session summaries, "
+        f"{result['stale_hypotheses']} stale hypotheses."
+    )
+    return 0
 
 
 if __name__ == "__main__":

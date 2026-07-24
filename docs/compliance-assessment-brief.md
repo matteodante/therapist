@@ -1,6 +1,6 @@
 # Optional external compliance assessment brief
 
-**Prepared:** 2026-07-23  
+**Prepared:** 2026-07-24
 **Project:** Therapist  
 **Publisher:** Matteo Dante, acting as an individual  
 **Use when:** the project materially expands beyond the current private self-hosted alpha, or the
@@ -32,10 +32,16 @@ AI Act or medical-device obligations; that conclusion is part of the requested r
 - One adult uses one private local instance through a terminal or allowlisted Telegram bot.
 - A generative model holds a natural conversation in Italian or English.
 - The system creates an evidence-linked, correctable longitudinal formulation from user text.
-- It stores complete messages, session summaries, facts, tentative hypotheses, focus, and
-  intervention lifecycle locally in encrypted SQLite.
+- In standard mode it stores complete messages, session summaries, evidence-linked user reports and
+  agent hypotheses, explicit conflicts, formulation, conversational preferences, intervention
+  lifecycle/outcomes/unwanted effects, and support choices in encrypted SQLite.
+- Transcript-only stores encrypted transcript/history without new structured state; ephemeral mode
+  writes nothing to disk. Local retention is optional and has no background worker.
+- Root protocol instructions, successful history, and a separately labelled bounded JSON case-data
+  envelope remain distinct. One verified skill may be loaded dynamically; no skill is valid.
 - It performs local semantic retrieval with a pinned Hugging Face embedding model.
-- The user can inspect, confirm, correct, forget, export, and delete local state.
+- The user can inspect, review, correct, forget, export, selectively delete, and fully delete local
+  state. This revision has no legacy migration path and rejects old stores without modification.
 - It gives contextual possible-danger language and resource guidance but does not perform a clinical
   risk assessment, diagnosis, score, alert, human escalation, or emergency monitoring.
 - The first alpha support claim uses a personal ChatGPT Plus/Pro account through experimental

@@ -16,7 +16,7 @@ from therapist.chat import ChatSession, TurnStreamEvent, TurnStreamKind
 from therapist.memory import MemoryStore
 
 API_ROOT = "https://api.telegram.org"
-CONSENT_VERSION = "alpha-3"
+CONSENT_VERSION = "alpha-4"
 MESSAGE_LIMIT = 4_000
 MEMORY_PAGE_SIZE = 10
 SESSION_PAGE_SIZE = 5
@@ -180,6 +180,11 @@ class TelegramChannel:
     session: ChatSession
     store: MemoryStore
     allowed_user_id: int
+    configuration_store: MemoryStore | None = None
+
+    @property
+    def config_store(self) -> MemoryStore:
+        return self.configuration_store or self.store
 
     def run(self) -> None:
         identity = self.bot.get_me()
@@ -187,7 +192,7 @@ class TelegramChannel:
         self.bot.configure_interface(self.allowed_user_id)
         username = identity.get("username", "unknown")
         print(f"Telegram bot @{username} is listening. Press Ctrl-C to stop.")
-        offset = self.store.load_app_state().telegram_update_offset
+        offset = self.config_store.load_app_state().telegram_update_offset
         while True:
             try:
                 updates = self.bot.get_updates(offset)
@@ -212,9 +217,9 @@ class TelegramChannel:
                     time.sleep(error.retry_after or 3)
                     break
                 offset = update_id + 1
-                state = self.store.load_app_state()
+                state = self.config_store.load_app_state()
                 state.telegram_update_offset = offset
-                self.store.save_app_state(state)
+                self.config_store.save_app_state(state)
 
     def process_update(self, update: dict[str, Any]) -> bool:
         message = update.get("message")
@@ -241,7 +246,7 @@ class TelegramChannel:
             self.bot.send_message(chat_id, self._message_too_long())
             return True
         command = _command_name(text)
-        state = self.store.load_app_state()
+        state = self.config_store.load_app_state()
         if command == "/start":
             self.bot.send_message(
                 chat_id,
@@ -253,7 +258,7 @@ class TelegramChannel:
         if state.telegram_consent_version != CONSENT_VERSION:
             if text == f"/consent {consent}":
                 state.telegram_consent_version = CONSENT_VERSION
-                self.store.save_app_state(state)
+                self.config_store.save_app_state(state)
                 self.bot.send_message(chat_id, self._consent_recorded())
             else:
                 self.bot.send_message(chat_id, self._consent_notice(False))
@@ -375,9 +380,9 @@ class TelegramChannel:
         return None
 
     def _status(self) -> str:
-        state = self.store.load_app_state()
+        state = self.config_store.load_app_state()
         session = self.store.active_session()
-        memories = self.store.list_memory()
+        memories = self.store.list_claims()
         sessions = self.store.list_sessions()
         completed_sessions = sum(item.ended_at is not None for item in sessions)
         interventions = self.store.list_interventions()
@@ -402,7 +407,8 @@ class TelegramChannel:
             f"Active memory: {len(memories)} items\n"
             f"Sessions: {len(sessions)} ({completed_sessions} closed)\n"
             f"Recorded interventions: {len(interventions)}\n"
-            f"Current focus: {formulation.current_focus or 'not set'}\n"
+            f"Current focus: {formulation.accepted_focus or 'not set'}\n"
+            f"Memory mode: {self.session.memory_mode.value}\n"
             "Semantic memory: "
             f"{'local and encrypted' if state.embedding_model else 'not configured'}"
         )
@@ -411,22 +417,30 @@ class TelegramChannel:
         formulation = self.store.load_formulation()
         labels = {
             "presenting_concerns": "Concerns",
-            "emotions_and_triggers": "Emotions and triggers",
-            "thoughts_and_behaviors": "Thoughts and behaviors",
-            "coping_strategies": "Coping",
+            "situations_and_triggers": "Situations and triggers",
+            "emotions_and_body": "Emotions and body",
+            "meanings_and_thoughts": "Meanings and thoughts",
+            "actions_and_coping": "Actions and coping",
+            "short_term_consequences": "Short-term consequences",
+            "longer_term_consequences": "Longer-term consequences",
             "relationship_patterns": "Relationships",
             "maintaining_factors": "Maintaining factors",
             "strengths_and_protective_factors": "Strengths",
+            "exceptions": "Exceptions",
             "course_and_duration": "Course",
             "functioning_impact": "Impact",
             "user_explanation": "User explanation",
+            "social_and_cultural_context": "Social and cultural context",
             "prior_helpful_or_harmful_support": "Helpful or harmful support",
             "preferred_help": "Preferences",
+            "process_preferences": "Conversation preferences",
             "open_hypotheses": "Open hypotheses",
+            "shared_hypotheses": "Shared hypotheses",
+            "open_questions": "Open questions",
         }
         lines = ["SHARED FORMULATION"]
-        if formulation.current_focus:
-            lines.append(f"Focus: {formulation.current_focus}")
+        if formulation.accepted_focus:
+            lines.append(f"Focus: {formulation.accepted_focus}")
         if formulation.proposed_focus:
             lines.append(f"Proposed focus: {formulation.proposed_focus}")
         for field, label in labels.items():
@@ -445,20 +459,23 @@ class TelegramChannel:
         return "\n".join(lines)
 
     def _memory(self, argument: str | None) -> str:
-        items = self.store.list_memory()
+        items = self.store.list_claims()
         page, selected, pages = _page(items, argument, MEMORY_PAGE_SIZE)
         title = f"ACTIVE MEMORY · page {page}/{pages}"
         if not selected:
             return title + "\nNo active items."
         lines = [title]
         for item in selected:
-            evidence = ", ".join(str(value) for value in item.evidence_message_ids)
+            evidence = ", ".join(
+                f"{reference.message_id}: {reference.quote or '[no exact quote]'}"
+                for reference in item.evidence
+            )
             lines.append(
                 f"\n{item.id} · {_memory_label(item.kind.value)} · "
-                f"{_status_label(item.status.value)}\n{item.content}\n"
-                + f"Evidence: messages {evidence} · updated {_date(item.last_seen_at)}"
+                f"{item.origin.value} · {item.fit.value} · {item.lifecycle.value}\n"
+                f"{item.content}\nEvidence: {evidence} · updated {_date(item.last_seen_at)}"
             )
-        lines.append("\nForgotten items are excluded. Use /memory N to change page.")
+        lines.append("\nArchived and superseded items are excluded. Use /memory N to change page.")
         return "\n".join(lines)
 
     def _sessions(self, argument: str | None) -> str:
@@ -482,7 +499,19 @@ class TelegramChannel:
     def _session_detail(self, session: Any) -> str:
         if session is None:
             return "Session not found."
-        labels = ("Summary", "Themes", "Interventions", "Response", "Open questions")
+        labels = (
+            "Summary",
+            "Themes",
+            "User-defined concerns",
+            "Meaningful changes",
+            "Interventions discussed",
+            "What was tried",
+            "Outcomes",
+            "Unwanted effects",
+            "Process feedback",
+            "Support choices",
+            "Open questions",
+        )
         lines = [
             f"SESSION {session.id}",
             f"{_date(session.started_at)} → "
@@ -491,8 +520,14 @@ class TelegramChannel:
         values = (
             session.summary,
             session.themes,
-            session.interventions,
-            session.user_response,
+            session.user_defined_concerns,
+            session.meaningful_changes,
+            session.interventions_discussed,
+            session.tried,
+            session.outcomes,
+            session.unwanted_effects,
+            session.process_feedback,
+            session.support_choices,
             session.open_questions,
         )
         for label, value in zip(labels, values, strict=True):
@@ -526,21 +561,32 @@ class TelegramChannel:
                 details.append(f"Outcome: {item.outcome}")
             if item.user_appraisal:
                 details.append(f"Appraisal: {item.user_appraisal}")
-            if item.linked_memory_ids:
-                details.append("Linked memory: " + ", ".join(item.linked_memory_ids))
-            if item.follow_up_at:
-                details.append(f"Follow-up: {item.follow_up_at}")
+            if item.unwanted_effects:
+                details.append(f"Unwanted effects: {item.unwanted_effects}")
+            details.append(f"Decision: {item.decision.value}")
+            if item.linked_claim_ids:
+                details.append("Linked claims: " + ", ".join(item.linked_claim_ids))
+            if item.follow_up_information:
+                details.append(f"Follow-up: {item.follow_up_information}")
             lines.extend(details)
         lines.append("\nUse /interventions N to change page.")
         return "\n".join(lines)
 
     def _privacy(self) -> str:
+        state = self.config_store.load_app_state()
+        policy = state.retention_policy
         return (
             "PRIVACY AND TRANSPARENCY\n"
             "• Telegram receives messages, replies, and data you ask to view here.\n"
             "• Telegram cloud chats are not end-to-end encrypted.\n"
             "• The model provider receives the message and only selected context.\n"
-            "• Archive, structured memory, and semantic index stay encrypted on the host.\n"
+            f"• Current memory mode: {self.session.memory_mode.value}.\n"
+            "• In standard mode, archive, structured memory, and semantic index are encrypted "
+            "on the host; transcript-only writes no structured state; ephemeral writes nothing "
+            "to disk.\n"
+            f"• Local retention: raw messages={policy.raw_message_days or 'indefinite'}, "
+            f"session summaries={policy.session_summary_days or 'indefinite'}, "
+            f"stale hypotheses={policy.stale_hypothesis_days or 'indefinite'} days.\n"
             "• Semantic retrieval uses a local model; it does not establish facts or evidence.\n"
             "• No person reads or monitors the chat.\n"
             "• The bot cannot contact help, locate you, or act outside the chat.\n"
@@ -548,13 +594,13 @@ class TelegramChannel:
             "• Any durable changes are disclosed after each reply.\n"
             "• Internal prompts, tokens, and private reasoning are not shown.\n\n"
             "Use the local CLI for export, correction, forgetting, and local deletion. "
-            "Deleting local data does not delete Telegram messages; delete the bot chat or "
-            "messages separately in Telegram."
+            "Changing mode does not erase existing data. Local deletion cannot remove provider, "
+            "Telegram, plaintext export, backup, or terminal-capture copies."
         )
 
     def _durable_snapshot(self) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         return (
-            {item.id: item for item in self.store.list_memory()},
+            {item.id: item for item in self.store.list_claims()},
             {item.id: item for item in self.store.list_interventions()},
             self.store.load_formulation().model_dump(),
         )
@@ -564,12 +610,12 @@ class TelegramChannel:
     ) -> str | None:
         old_memory, old_interventions, old_formulation = before
         changes: list[str] = []
-        for item in self.store.list_memory():
+        for item in self.store.list_claims():
             old = old_memory.get(item.id)
             if old is None:
                 label = _memory_label(item.kind.value)
                 changes.append(f"Saved {label}: {item.content} [{item.id}]")
-            elif old.content != item.content or old.status != item.status:
+            elif old.model_dump() != item.model_dump():
                 changes.append(f"Memory updated: {item.content} [{item.id}]")
         for item in self.store.list_interventions():
             old = old_interventions.get(item.id)
@@ -577,9 +623,9 @@ class TelegramChannel:
                 status = _status_label(item.state.value)
                 changes.append(f"Intervention {status}: {item.description} [{item.id}]")
         formulation = self.store.load_formulation().model_dump()
-        for field in ("current_focus", "proposed_focus"):
+        for field in ("accepted_focus", "proposed_focus"):
             if old_formulation.get(field) != formulation.get(field) and formulation.get(field):
-                label = "Accepted focus" if field == "current_focus" else "Proposed focus"
+                label = "Accepted focus" if field == "accepted_focus" else "Proposed focus"
                 changes.append(f"{label}: {formulation[field]}")
         if not changes:
             return None
@@ -592,9 +638,12 @@ class TelegramChannel:
             "and its output can be wrong. "
             "Telegram receives messages, replies, and data you choose to view here; "
             "its cloud chats are not end-to-end encrypted. "
-            "Any remote provider receives messages, successful session history, and selected "
-            "context. By continuing, you confirm that you are at least 18 and accept these data "
-            "flows. "
+            "Any remote provider receives messages, successful session history, a separate "
+            "bounded case-data envelope, and a dynamically loaded skill when used. Embeddings run "
+            f"locally. Current memory mode: {self.session.memory_mode.value}. Local retention does "
+            "not govern provider, Telegram, export, backup, or terminal copies. Plaintext exports "
+            "must be protected. By continuing, you confirm that you are at least 18 and accept "
+            "these data flows. "
         )
         return notice + (
             "Consent is already recorded: you can message me."
@@ -679,9 +728,6 @@ def _memory_label(value: str) -> str:
 
 def _status_label(value: str) -> str:
     labels = {
-        "user_confirmed": "confirmed",
-        "agent_hypothesis": "unconfirmed",
-        "user_corrected": "corrected",
         "offered": "offered",
         "agreed": "agreed",
         "tried": "tried",

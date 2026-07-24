@@ -1,4 +1,4 @@
-"""Encrypted longitudinal memory backed by standard-library SQLite."""
+"""Encrypted longitudinal case memory backed by standard-library SQLite."""
 
 from __future__ import annotations
 
@@ -20,11 +20,14 @@ from typing import Any
 from uuid import uuid4
 
 from cryptography.fernet import Fernet, InvalidToken
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import Embedder, ModelMessage, ModelMessagesTypeAdapter
 
 SESSION_GAP = timedelta(hours=8)
 LOCAL_OLLAMA_EMBEDDINGS_URL = "http://localhost:11434/v1"
+SCHEMA_VERSION = b"3"
+DEFAULT_STALE_HYPOTHESIS_DAYS = 180
+MIN_SEMANTIC_RELEVANCE = 0.2
 
 
 def _now() -> datetime:
@@ -35,7 +38,17 @@ def _iso(value: datetime | None = None) -> str:
     return (value or _now()).isoformat()
 
 
+def _normalized(value: str) -> str:
+    return " ".join(value.split()).strip()
+
+
+class StrictModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
 class MemoryKind(StrEnum):
+    """Claim kind. ``fact`` means a factual statement reported by the user."""
+
     FACT = "fact"
     PREFERENCE = "preference"
     EVENT = "event"
@@ -43,11 +56,41 @@ class MemoryKind(StrEnum):
     HYPOTHESIS = "hypothesis"
 
 
-class MemoryStatus(StrEnum):
-    USER_CONFIRMED = "user_confirmed"
+class ClaimOrigin(StrEnum):
+    USER_STATEMENT = "user_statement"
     AGENT_HYPOTHESIS = "agent_hypothesis"
-    USER_CORRECTED = "user_corrected"
+
+
+class ClaimFit(StrEnum):
+    NOT_APPLICABLE = "not_applicable"
+    NOT_REVIEWED = "not_reviewed"
+    FITS = "fits"
+    PARTLY_FITS = "partly_fits"
+    DOES_NOT_FIT = "does_not_fit"
+    UNSURE = "unsure"
+
+
+class ClaimLifecycle(StrEnum):
+    ACTIVE = "active"
+    SUPERSEDED = "superseded"
     ARCHIVED = "archived"
+
+
+class EvidenceRelation(StrEnum):
+    SUPPORTS = "supports"
+    CORRECTS = "corrects"
+    REVIEWS = "reviews"
+    CONTRADICTS = "contradicts"
+
+
+class EvidenceQuality(StrEnum):
+    EXACT_QUOTE = "exact_quote"
+
+
+class MemoryMode(StrEnum):
+    STANDARD = "standard"
+    TRANSCRIPT_ONLY = "transcript_only"
+    EPHEMERAL = "ephemeral"
 
 
 class InterventionState(StrEnum):
@@ -56,6 +99,15 @@ class InterventionState(StrEnum):
     TRIED = "tried"
     NOT_TRIED = "not_tried"
     STOPPED = "stopped"
+
+
+class InterventionDecision(StrEnum):
+    CONTINUE = "continue"
+    SIMPLIFY = "simplify"
+    ADAPT = "adapt"
+    STOP = "stop"
+    DIFFERENT_SUPPORT = "different_support"
+    UNDECIDED = "undecided"
 
 
 class SessionEndReason(StrEnum):
@@ -69,6 +121,7 @@ def valid_intervention_transition(current: InterventionState, target: Interventi
         InterventionState.OFFERED: {
             InterventionState.OFFERED,
             InterventionState.AGREED,
+            InterventionState.NOT_TRIED,
             InterventionState.STOPPED,
         },
         InterventionState.AGREED: {
@@ -91,81 +144,88 @@ def valid_intervention_transition(current: InterventionState, target: Interventi
     return target in allowed.get(current, set())
 
 
-class AppState(BaseModel):
+class RetentionPolicy(StrictModel):
+    raw_message_days: int | None = Field(default=None, ge=1)
+    session_summary_days: int | None = Field(default=None, ge=1)
+    stale_hypothesis_days: int | None = Field(default=None, ge=1)
+
+
+class AppState(StrictModel):
     consent_version: str | None = None
     telegram_consent_version: str | None = None
     telegram_update_offset: int | None = Field(default=None, ge=0)
     default_model: str | None = None
     default_context_window_tokens: int | None = Field(default=None, ge=16_000, le=128_000)
     default_locale: str | None = None
+    default_memory_mode: MemoryMode = MemoryMode.STANDARD
+    retention_policy: RetentionPolicy = Field(default_factory=RetentionPolicy)
     embedding_model: str | None = None
     telegram_allowed_user_id: int | None = Field(default=None, gt=0)
     pending_hypothesis_id: str | None = None
     pending_intervention_id: str | None = None
 
 
-class CaseFormulation(BaseModel):
-    presenting_concerns: list[str] = Field(default_factory=list)
-    emotions_and_triggers: list[str] = Field(default_factory=list)
-    thoughts_and_behaviors: list[str] = Field(default_factory=list)
-    coping_strategies: list[str] = Field(default_factory=list)
-    relationship_patterns: list[str] = Field(default_factory=list)
-    maintaining_factors: list[str] = Field(default_factory=list)
-    strengths_and_protective_factors: list[str] = Field(default_factory=list)
-    course_and_duration: list[str] = Field(default_factory=list)
-    functioning_impact: list[str] = Field(default_factory=list)
-    user_explanation: list[str] = Field(default_factory=list)
-    prior_helpful_or_harmful_support: list[str] = Field(default_factory=list)
-    preferred_help: list[str] = Field(default_factory=list)
-    open_hypotheses: list[str] = Field(default_factory=list)
-    current_focus: str | None = None
-    proposed_focus: str | None = None
-    evidence: dict[str, list[str]] = Field(default_factory=dict)
-    last_reviewed_at: str | None = None
+class EvidenceRef(StrictModel):
+    message_id: int
+    quote: str | None = Field(default=None, max_length=500)
+    relation: EvidenceRelation
+    quality: EvidenceQuality
+    recorded_at: str
 
 
-class MemoryObservation(BaseModel):
+class UserReport(StrictModel):
     kind: MemoryKind
     content: str = Field(min_length=1, max_length=500)
-    evidence_quote: str | None = Field(default=None, max_length=500)
-    confirmed_by_user: bool = Field(
-        default=False,
-        description=(
-            "True only when content and evidence_quote are the same exact words from the current "
-            "user message; never for an agent inference."
-        ),
-    )
+    evidence_quote: str = Field(min_length=1, max_length=500)
     aliases: list[str] = Field(default_factory=list, max_length=5)
     merge_into_id: str | None = None
 
 
-class MemoryCorrection(BaseModel):
+class ClaimCorrection(StrictModel):
     memory_id: str
-    replacement: str = Field(min_length=1, max_length=500)
+    correction_quote: str = Field(min_length=1, max_length=500)
+    replacement_quote: str | None = Field(default=None, min_length=1, max_length=500)
+
+
+class HypothesisReview(StrictModel):
+    memory_id: str
+    fit: ClaimFit
     evidence_quote: str = Field(min_length=1, max_length=500)
+    accepted_wording_quote: str | None = Field(default=None, min_length=1, max_length=500)
 
 
-class MemoryItem(BaseModel):
+class MemoryItem(StrictModel):
     id: str
     kind: MemoryKind
     content: str
-    status: MemoryStatus
-    evidence_message_ids: list[int] = Field(default_factory=list)
+    origin: ClaimOrigin
+    fit: ClaimFit
+    lifecycle: ClaimLifecycle
+    evidence: list[EvidenceRef] = Field(default_factory=list)
     aliases: list[str] = Field(default_factory=list, max_length=5)
     superseded_content: list[str] = Field(default_factory=list)
+    conflict_ids: list[str] = Field(default_factory=list)
+    linked_claim_ids: list[str] = Field(default_factory=list, max_length=10)
     first_seen_at: str
     last_seen_at: str
+    last_reviewed_at: str | None = None
 
 
-class SessionRecord(BaseModel):
+class SessionRecord(StrictModel):
     id: str
     started_at: str
     last_activity_at: str
     ended_at: str | None = None
     summary: str = ""
     themes: list[str] = Field(default_factory=list)
-    interventions: list[str] = Field(default_factory=list)
-    user_response: str = ""
+    user_defined_concerns: list[str] = Field(default_factory=list)
+    meaningful_changes: list[str] = Field(default_factory=list)
+    interventions_discussed: list[str] = Field(default_factory=list)
+    tried: list[str] = Field(default_factory=list)
+    outcomes: list[str] = Field(default_factory=list)
+    unwanted_effects: list[str] = Field(default_factory=list)
+    process_feedback: list[str] = Field(default_factory=list)
+    support_choices: list[str] = Field(default_factory=list)
     open_questions: list[str] = Field(default_factory=list)
     consolidation_error: str | None = None
     end_reason: SessionEndReason | None = None
@@ -173,44 +233,187 @@ class SessionRecord(BaseModel):
     last_context_tokens: int = Field(default=0, ge=0)
 
 
-class InterventionRecord(BaseModel):
+class InterventionRecord(StrictModel):
     id: str
     skill: str
     description: str = Field(min_length=1, max_length=500)
-    prediction: str | None = Field(default=None, max_length=500)
+    linked_claim_ids: list[str] = Field(default_factory=list, max_length=5)
     state: InterventionState
-    linked_memory_ids: list[str] = Field(default_factory=list, max_length=5)
+    offered_at: str
+    consent_evidence: EvidenceRef | None = None
     evidence_message_ids: list[int] = Field(default_factory=list)
+    prediction: str | None = Field(default=None, max_length=500)
+    context: str | None = Field(default=None, max_length=500)
     outcome: str | None = Field(default=None, max_length=500)
     user_appraisal: str | None = Field(default=None, max_length=500)
-    follow_up_at: str | None = None
+    unwanted_effects: str | None = Field(default=None, max_length=500)
+    decision: InterventionDecision = InterventionDecision.UNDECIDED
+    follow_up_information: str | None = Field(default=None, max_length=500)
+    updated_at: str
+
+
+class ProcessPreference(StrictModel):
+    id: str
+    content: str
+    evidence: EvidenceRef
     created_at: str
     updated_at: str
 
 
-class ContextMemoryItem(BaseModel):
+class SupportChoice(StrictModel):
+    id: str
+    content: str
+    evidence: EvidenceRef
+    barrier: str | None = Field(default=None, max_length=500)
+    preference: str | None = Field(default=None, max_length=500)
+    created_at: str
+    updated_at: str
+
+
+FORMULATION_LIST_FIELDS = (
+    "presenting_concerns",
+    "situations_and_triggers",
+    "emotions_and_body",
+    "meanings_and_thoughts",
+    "actions_and_coping",
+    "short_term_consequences",
+    "longer_term_consequences",
+    "relationship_patterns",
+    "maintaining_factors",
+    "strengths_and_protective_factors",
+    "exceptions",
+    "course_and_duration",
+    "functioning_impact",
+    "user_explanation",
+    "social_and_cultural_context",
+    "prior_helpful_or_harmful_support",
+    "preferred_help",
+    "process_preferences",
+    "open_hypotheses",
+    "shared_hypotheses",
+    "open_questions",
+)
+
+
+class CaseFormulation(StrictModel):
+    presenting_concerns: list[str] = Field(default_factory=list)
+    situations_and_triggers: list[str] = Field(default_factory=list)
+    emotions_and_body: list[str] = Field(default_factory=list)
+    meanings_and_thoughts: list[str] = Field(default_factory=list)
+    actions_and_coping: list[str] = Field(default_factory=list)
+    short_term_consequences: list[str] = Field(default_factory=list)
+    longer_term_consequences: list[str] = Field(default_factory=list)
+    relationship_patterns: list[str] = Field(default_factory=list)
+    maintaining_factors: list[str] = Field(default_factory=list)
+    strengths_and_protective_factors: list[str] = Field(default_factory=list)
+    exceptions: list[str] = Field(default_factory=list)
+    course_and_duration: list[str] = Field(default_factory=list)
+    functioning_impact: list[str] = Field(default_factory=list)
+    user_explanation: list[str] = Field(default_factory=list)
+    social_and_cultural_context: list[str] = Field(default_factory=list)
+    prior_helpful_or_harmful_support: list[str] = Field(default_factory=list)
+    preferred_help: list[str] = Field(default_factory=list)
+    process_preferences: list[str] = Field(default_factory=list)
+    open_hypotheses: list[str] = Field(default_factory=list)
+    shared_hypotheses: list[str] = Field(default_factory=list)
+    open_questions: list[str] = Field(default_factory=list)
+    accepted_focus: str | None = None
+    proposed_focus: str | None = None
+    evidence: dict[str, list[str]] = Field(default_factory=dict)
+    last_reviewed_at: str | None = None
+
+
+FORMULATION_FIELDS = FORMULATION_LIST_FIELDS
+
+
+class ContextClaim(StrictModel):
     id: str
     kind: MemoryKind
     content: str
-    status: MemoryStatus
+    origin: ClaimOrigin
+    fit: ClaimFit
+    lifecycle: ClaimLifecycle
+    evidence: list[EvidenceRef]
+    first_seen_at: str
     last_seen_at: str
+    last_reviewed_at: str | None
+    conflict_ids: list[str]
+    semantic_relevance: float | None = None
+    lexical_relevance: float = 0.0
+    recency_rank: int = 0
+    stale: bool = False
 
 
-class WorkingContext(BaseModel):
-    formulation: CaseFormulation
-    confirmed_memory: list[ContextMemoryItem]
-    hypotheses: list[ContextMemoryItem]
-    recent_sessions: list[SessionRecord]
-    active_interventions: list[InterventionRecord]
-    relevant_excerpts: list[str]
+class ClaimConflict(StrictModel):
+    claim_ids: list[str] = Field(min_length=2, max_length=2)
+    claims: list[ContextClaim] = Field(min_length=2, max_length=2)
 
 
-FORMULATION_FIELDS = tuple(
-    name
-    for name, field in CaseFormulation.model_fields.items()
-    if name not in {"current_focus", "proposed_focus", "evidence", "last_reviewed_at"}
-    and field.annotation == list[str]
-)
+class ContextSession(StrictModel):
+    id: str
+    ended_at: str | None
+    summary: str
+    themes: list[str]
+    outcomes: list[str]
+    unwanted_effects: list[str]
+    process_feedback: list[str]
+    support_choices: list[str]
+    semantic_relevance: float | None = None
+
+
+class ContextIntervention(StrictModel):
+    id: str
+    skill: str
+    description: str
+    state: InterventionState
+    prediction: str | None
+    outcome: str | None
+    user_appraisal: str | None
+    unwanted_effects: str | None
+    decision: InterventionDecision
+    follow_up_information: str | None
+    updated_at: str
+    semantic_relevance: float | None = None
+
+
+class ContextPreference(StrictModel):
+    id: str
+    content: str
+    evidence: EvidenceRef
+
+
+class ContextSupportChoice(StrictModel):
+    id: str
+    content: str
+    evidence: EvidenceRef
+    barrier: str | None
+    preference: str | None
+
+
+class ContextExcerpt(StrictModel):
+    message_id: int
+    quote: str
+    created_at: str
+    semantic_relevance: float | None = None
+    lexical_relevance: float = 0.0
+
+
+class CaseContextEnvelope(StrictModel):
+    schema_version: int = 1
+    accepted_focus: str | None = None
+    proposed_focus: str | None = None
+    user_reports: list[ContextClaim] = Field(default_factory=list)
+    hypotheses: list[ContextClaim] = Field(default_factory=list)
+    conflicts: list[ClaimConflict] = Field(default_factory=list)
+    relevant_sessions: list[ContextSession] = Field(default_factory=list)
+    active_interventions: list[ContextIntervention] = Field(default_factory=list)
+    process_preferences: list[ContextPreference] = Field(default_factory=list)
+    support_choices: list[ContextSupportChoice] = Field(default_factory=list)
+    relevant_excerpts: list[ContextExcerpt] = Field(default_factory=list)
+
+
+class CaseContextResult(CaseContextEnvelope):
+    pass
 
 
 class MemoryError(RuntimeError):
@@ -224,6 +427,7 @@ class MemoryStore:
         *,
         embedding_model: str | None = None,
         embedder: Embedder | None = None,
+        ephemeral: bool = False,
     ) -> None:
         if (
             embedding_model
@@ -233,16 +437,28 @@ class MemoryStore:
             raise ValueError("Semantic memory requires a local embedding model.")
         if embedding_model and embedding_model.startswith("ollama:"):
             os.environ["OLLAMA_BASE_URL"] = LOCAL_OLLAMA_EMBEDDINGS_URL
-        self.directory = directory or Path.home() / ".therapist"
-        self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-        os.chmod(self.directory, 0o700)
-        self.database_path = self.directory / "thera.db"
-        encryption_key = self._load_or_create_key()
-        self._cipher = Fernet(encryption_key)
-        self._hash_key = encryption_key
+        self._ephemeral = ephemeral
+        self._ephemeral_database: sqlite3.Connection | None = None
         self._transaction: sqlite3.Connection | None = None
         self._embedding_model = embedding_model or ("injected" if embedder else None)
         self._embedder = embedder or (Embedder(embedding_model) if embedding_model else None)
+        if ephemeral:
+            self.directory = Path(":memory:")
+            self.database_path = Path(":memory:")
+            encryption_key = Fernet.generate_key()
+            self._ephemeral_database = sqlite3.connect(":memory:", autocommit=False)
+            self._ephemeral_database.execute("PRAGMA foreign_keys = ON")
+        else:
+            self.directory = directory or Path.home() / ".therapist"
+            self.directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            os.chmod(self.directory, 0o700)
+            self.database_path = self.directory / "thera.db"
+            encryption_key = self._load_or_create_key()
+        self._cipher = Fernet(encryption_key)
+        self._hash_key = encryption_key
+        self._initialize_schema()
+
+    def _initialize_schema(self) -> None:
         with self._connect() as database:
             database.executescript(
                 """
@@ -257,10 +473,11 @@ class MemoryStore:
                 CREATE TABLE IF NOT EXISTS messages (
                     id INTEGER PRIMARY KEY AUTOINCREMENT, session_id TEXT NOT NULL,
                     role TEXT NOT NULL, created_at TEXT NOT NULL, payload BLOB NOT NULL,
-                    FOREIGN KEY(session_id) REFERENCES sessions(id)
+                    FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
                 );
                 CREATE TABLE IF NOT EXISTS memory_items (
-                    id TEXT PRIMARY KEY, kind TEXT NOT NULL, status TEXT NOT NULL,
+                    id TEXT PRIMARY KEY, kind TEXT NOT NULL, origin TEXT NOT NULL,
+                    fit TEXT NOT NULL, lifecycle TEXT NOT NULL,
                     first_seen_at TEXT NOT NULL, last_seen_at TEXT NOT NULL,
                     payload BLOB NOT NULL
                 );
@@ -268,28 +485,47 @@ class MemoryStore:
                     id TEXT PRIMARY KEY, state TEXT NOT NULL,
                     updated_at TEXT NOT NULL, payload BLOB NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS process_preferences (
+                    id TEXT PRIMARY KEY, updated_at TEXT NOT NULL, payload BLOB NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS support_choices (
+                    id TEXT PRIMARY KEY, updated_at TEXT NOT NULL, payload BLOB NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS semantic_index (
                     entity_type TEXT NOT NULL, entity_id TEXT NOT NULL,
-                    model TEXT NOT NULL,
-                    content_hash TEXT NOT NULL, dimensions INTEGER NOT NULL,
-                    payload BLOB NOT NULL,
+                    model TEXT NOT NULL, content_hash TEXT NOT NULL,
+                    dimensions INTEGER NOT NULL, payload BLOB NOT NULL,
                     PRIMARY KEY(entity_type, entity_id)
                 );
                 """
             )
-            semantic_columns = {
-                row[1] for row in database.execute("PRAGMA table_info(semantic_index)")
-            }
-            if "entity_type" not in semantic_columns:
-                database.execute("DROP TABLE semantic_index")
-                database.execute(
-                    "CREATE TABLE semantic_index ("
-                    "entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, "
-                    "model TEXT NOT NULL, content_hash TEXT NOT NULL, "
-                    "dimensions INTEGER NOT NULL, payload BLOB NOT NULL, "
-                    "PRIMARY KEY(entity_type, entity_id))"
+        version = self._read_state("schema_version")
+        if version is None:
+            if self._database_has_user_data():
+                raise MemoryError(
+                    "This data store predates the current clean-break schema. "
+                    "Use a new data directory or delete the old store; migration is not supported."
                 )
-        self._migrate_legacy_state()
+            self._write_state("schema_version", SCHEMA_VERSION)
+        elif version != SCHEMA_VERSION:
+            raise MemoryError(
+                "This data store uses an incompatible schema. Use a new data directory or delete "
+                "the old store; migration is not supported."
+            )
+
+    def _database_has_user_data(self) -> bool:
+        with self._connect() as database:
+            return any(
+                database.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() is not None
+                for table in (
+                    "sessions",
+                    "messages",
+                    "memory_items",
+                    "interventions",
+                    "process_preferences",
+                    "support_choices",
+                )
+            )
 
     def load_app_state(self) -> AppState:
         payload = self._read_state("app")
@@ -300,9 +536,9 @@ class MemoryStore:
 
     def load_formulation(self) -> CaseFormulation:
         payload = self._read_state("formulation")
-        if payload is None:
-            return CaseFormulation()
-        return CaseFormulation.model_validate_json(payload)
+        return (
+            CaseFormulation() if payload is None else CaseFormulation.model_validate_json(payload)
+        )
 
     def save_formulation(self, formulation: CaseFormulation, now: datetime | None = None) -> None:
         formulation.last_reviewed_at = _iso(now)
@@ -313,14 +549,14 @@ class MemoryStore:
         links: dict[str, list[str]],
         *,
         proposed_focus: str | None = None,
-        current_focus: str | None = None,
+        accepted_focus: str | None = None,
         merge_existing: bool = False,
         remove_links: dict[str, list[str]] | None = None,
         now: datetime | None = None,
     ) -> CaseFormulation:
-        active = {item.id: item for item in self.list_memory()}
+        active = {item.id: item for item in self.list_claims()}
+        existing = self.load_formulation()
         if merge_existing:
-            existing_links = self.load_formulation().evidence
             remove_links = remove_links or {}
             links = {
                 field_name: list(
@@ -328,7 +564,7 @@ class MemoryStore:
                         [
                             *(
                                 item_id
-                                for item_id in existing_links.get(field_name, [])
+                                for item_id in existing.evidence.get(field_name, [])
                                 if item_id not in remove_links.get(field_name, [])
                             ),
                             *links.get(field_name, []),
@@ -338,20 +574,16 @@ class MemoryStore:
                 for field_name in FORMULATION_FIELDS
             }
         formulation = CaseFormulation(
-            current_focus=current_focus,
+            accepted_focus=accepted_focus,
             proposed_focus=proposed_focus,
         )
         for field_name in FORMULATION_FIELDS:
-            expected_statuses = (
-                {MemoryStatus.AGENT_HYPOTHESIS}
-                if field_name == "open_hypotheses"
-                else {MemoryStatus.USER_CONFIRMED, MemoryStatus.USER_CORRECTED}
-            )
-            ids = [
-                item_id
-                for item_id in links.get(field_name, [])
-                if item_id in active and active[item_id].status in expected_statuses
-            ]
+            ids = []
+            for item_id in links.get(field_name, [])[:5]:
+                item = active.get(item_id)
+                if item is None or not _claim_allowed_in_formulation(item, field_name):
+                    continue
+                ids.append(item_id)
             if ids:
                 setattr(formulation, field_name, [active[item_id].content for item_id in ids])
                 formulation.evidence[field_name] = ids
@@ -400,8 +632,14 @@ class MemoryStore:
         *,
         summary: str = "",
         themes: list[str] | None = None,
-        interventions: list[str] | None = None,
-        user_response: str = "",
+        user_defined_concerns: list[str] | None = None,
+        meaningful_changes: list[str] | None = None,
+        interventions_discussed: list[str] | None = None,
+        tried: list[str] | None = None,
+        outcomes: list[str] | None = None,
+        unwanted_effects: list[str] | None = None,
+        process_feedback: list[str] | None = None,
+        support_choices: list[str] | None = None,
         open_questions: list[str] | None = None,
         consolidation_error: str | None = None,
         end_reason: SessionEndReason | None = None,
@@ -411,8 +649,14 @@ class MemoryStore:
         session.last_activity_at = session.ended_at
         session.summary = summary
         session.themes = themes or []
-        session.interventions = interventions or []
-        session.user_response = user_response
+        session.user_defined_concerns = user_defined_concerns or []
+        session.meaningful_changes = meaningful_changes or []
+        session.interventions_discussed = interventions_discussed or []
+        session.tried = tried or []
+        session.outcomes = outcomes or []
+        session.unwanted_effects = unwanted_effects or []
+        session.process_feedback = process_feedback or []
+        session.support_choices = support_choices or []
         session.open_questions = open_questions or []
         session.consolidation_error = consolidation_error
         session.end_reason = end_reason
@@ -436,21 +680,22 @@ class MemoryStore:
         assistant_text: str,
         model_messages: list[ModelMessage],
         now: datetime | None = None,
+        *,
+        turn_metadata: dict[str, object] | None = None,
     ) -> int:
         timestamp = _iso(now)
         session.last_activity_at = timestamp
-        user_payload = self._encrypt_json({"content": user_text})
-        assistant_payload = self._encrypt_json(
-            {
-                "content": assistant_text,
-                "model_messages": json.loads(ModelMessagesTypeAdapter.dump_json(model_messages)),
-            }
-        )
+        assistant_payload: dict[str, object] = {
+            "content": assistant_text,
+            "model_messages": json.loads(ModelMessagesTypeAdapter.dump_json(model_messages)),
+        }
+        if turn_metadata:
+            assistant_payload["turn_metadata"] = turn_metadata
         with self._connect() as database:
             cursor = database.execute(
                 "INSERT INTO messages(session_id, role, created_at, payload) "
                 "VALUES (?, 'user', ?, ?)",
-                (session.id, timestamp, user_payload),
+                (session.id, timestamp, self._encrypt_json({"content": user_text})),
             )
             if cursor.lastrowid is None:
                 raise RuntimeError("SQLite did not return an ID for the inserted user message.")
@@ -458,7 +703,7 @@ class MemoryStore:
             database.execute(
                 "INSERT INTO messages(session_id, role, created_at, payload) "
                 "VALUES (?, 'assistant', ?, ?)",
-                (session.id, timestamp, assistant_payload),
+                (session.id, timestamp, self._encrypt_json(assistant_payload)),
             )
             database.execute(
                 "UPDATE sessions SET last_activity_at = ?, payload = ? WHERE id = ?",
@@ -477,12 +722,12 @@ class MemoryStore:
             parameters = (session_id, limit)
         with self._connect() as database:
             rows = database.execute(sql, parameters).fetchall()
-        groups: list[list[ModelMessage]] = []
-        for row in reversed(rows):
-            payload = self._decrypt_json(row[0])
-            groups.append(
-                ModelMessagesTypeAdapter.validate_python(payload.get("model_messages", []))
+        groups = [
+            ModelMessagesTypeAdapter.validate_python(
+                self._decrypt_json(row[0]).get("model_messages", [])
             )
+            for row in reversed(rows)
+        ]
         if limit is None:
             return [message for group in groups for message in group]
         selected: list[list[ModelMessage]] = []
@@ -490,10 +735,9 @@ class MemoryStore:
         for group in reversed(groups):
             if selected and used + len(group) > limit:
                 break
-            if len(group) > limit:
-                continue
-            selected.append(group)
-            used += len(group)
+            if len(group) <= limit:
+                selected.append(group)
+                used += len(group)
         return [message for group in reversed(selected) for message in group]
 
     def session_messages(self, session_id: str, turn_limit: int = 50) -> list[tuple[str, str]]:
@@ -526,186 +770,464 @@ class MemoryStore:
         for turn in reversed(turns):
             if selected and used + len(turn) + 1 > limit_chars:
                 break
-            if len(turn) > limit_chars:
-                continue
-            selected.append(turn)
-            used += len(turn) + 1
+            if len(turn) <= limit_chars:
+                selected.append(turn)
+                used += len(turn) + 1
         return "\n".join(reversed(selected))
 
-    def add_observations(
+    def add_user_reports(
         self,
-        observations: list[MemoryObservation],
+        reports: list[UserReport],
         evidence_message_id: int,
+        evidence_text: str,
         now: datetime | None = None,
-        *,
-        evidence_text: str | None = None,
     ) -> list[MemoryItem]:
+        if len(reports) > 2:
+            raise ValueError("At most two user reports may be recorded per turn.")
         saved: list[MemoryItem] = []
-        existing = self.list_memory(include_archived=True)
-        for observation in observations:
-            content = " ".join(observation.content.split()).strip()
-            if not content:
-                continue
-            if (
-                evidence_text is not None
-                and observation.kind in {MemoryKind.FACT, MemoryKind.PREFERENCE, MemoryKind.EVENT}
-                and not _supported_quote(observation.evidence_quote, evidence_text)
+        existing = self.list_claims(include_inactive=True)
+        for report in reports:
+            if report.merge_into_id and not any(
+                item.id == report.merge_into_id
+                and item.lifecycle is ClaimLifecycle.ACTIVE
+                and item.origin is ClaimOrigin.USER_STATEMENT
+                and item.kind is report.kind
+                for item in existing
             ):
-                continue
+                raise ValueError("A merge target must be an active compatible user report.")
+            quote = _normalized(report.evidence_quote)
+            if not _supported_quote(quote, evidence_text):
+                raise ValueError("A user report requires an exact quote from the current message.")
+            if _normalized(report.content).casefold() != quote.casefold():
+                raise ValueError("User-report content must be the exact evidence quote.")
             duplicate = next(
                 (
                     item
                     for item in existing
-                    if item.id == observation.merge_into_id
-                    and item.kind == observation.kind
-                    and item.status is not MemoryStatus.ARCHIVED
-                ),
-                None,
-            ) or next(
-                (
-                    item
-                    for item in existing
-                    if item.kind == observation.kind
-                    and item.status is not MemoryStatus.ARCHIVED
+                    if item.lifecycle is ClaimLifecycle.ACTIVE
+                    and item.origin is ClaimOrigin.USER_STATEMENT
+                    and item.kind is report.kind
                     and (
-                        item.content.casefold() == content.casefold()
-                        or _near_duplicate(item.content, content)
+                        item.id == report.merge_into_id
+                        or item.content.casefold() == quote.casefold()
+                        or _near_duplicate(item.content, quote)
                     )
                 ),
                 None,
             )
+            timestamp = _iso(now)
+            evidence = EvidenceRef(
+                message_id=evidence_message_id,
+                quote=quote,
+                relation=EvidenceRelation.SUPPORTS,
+                quality=EvidenceQuality.EXACT_QUOTE,
+                recorded_at=timestamp,
+            )
             if duplicate:
-                duplicate.last_seen_at = _iso(now)
-                if evidence_message_id not in duplicate.evidence_message_ids:
-                    duplicate.evidence_message_ids.append(evidence_message_id)
-                if observation.confirmed_by_user:
-                    duplicate.status = MemoryStatus.USER_CONFIRMED
-                duplicate.aliases = list(dict.fromkeys([*duplicate.aliases, *observation.aliases]))[
-                    :5
-                ]
-                self._save_memory_item(duplicate)
+                duplicate.last_seen_at = timestamp
+                if evidence_message_id not in {item.message_id for item in duplicate.evidence}:
+                    duplicate.evidence.append(evidence)
+                duplicate.aliases = list(dict.fromkeys([*duplicate.aliases, *report.aliases]))[:5]
+                self._save_claim(duplicate)
                 saved.append(duplicate)
                 continue
-            status = (
-                MemoryStatus.USER_CONFIRMED
-                if (
-                    observation.confirmed_by_user
-                    or observation.kind not in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
-                )
-                else MemoryStatus.AGENT_HYPOTHESIS
-            )
-            timestamp = _iso(now)
             item = MemoryItem(
                 id=uuid4().hex[:12],
-                kind=observation.kind,
-                content=content,
-                status=status,
-                evidence_message_ids=[evidence_message_id],
-                aliases=observation.aliases,
+                kind=report.kind,
+                content=quote,
+                origin=ClaimOrigin.USER_STATEMENT,
+                fit=ClaimFit.NOT_APPLICABLE,
+                lifecycle=ClaimLifecycle.ACTIVE,
+                evidence=[evidence],
+                aliases=report.aliases,
                 first_seen_at=timestamp,
                 last_seen_at=timestamp,
             )
-            self._save_memory_item(item)
+            for other in existing:
+                if (
+                    other.lifecycle is ClaimLifecycle.ACTIVE
+                    and other.kind is item.kind
+                    and _claims_conflict(other.content, item.content)
+                ):
+                    item.conflict_ids.append(other.id)
+                    other.conflict_ids = list(dict.fromkeys([*other.conflict_ids, item.id]))
+                    self._save_claim(other)
+            self._save_claim(item)
             existing.append(item)
             saved.append(item)
         return saved
 
-    def list_memory(self, include_archived: bool = False) -> list[MemoryItem]:
+    def add_hypothesis(
+        self,
+        content: str,
+        *,
+        linked_claim_ids: list[str],
+        evidence_message_ids: list[int],
+        aliases: list[str] | None = None,
+        evidence_message_id: int | None = None,
+        evidence_quote: str | None = None,
+        evidence_text: str | None = None,
+        now: datetime | None = None,
+    ) -> MemoryItem:
+        content = _normalized(content)
+        if not content:
+            raise ValueError("Hypothesis cannot be empty.")
+        active = {item.id: item for item in self.list_claims()}
+        if set(linked_claim_ids) - set(active):
+            raise ValueError("Hypothesis links must reference available active claims.")
+        timestamp = _iso(now)
+        evidence = [
+            reference.model_copy(update={"relation": EvidenceRelation.SUPPORTS})
+            for item_id in linked_claim_ids
+            for reference in active[item_id].evidence
+            if reference.message_id in evidence_message_ids
+        ]
+        if (
+            evidence_message_id is not None
+            and evidence_quote
+            and evidence_text
+            and _supported_quote(evidence_quote, evidence_text)
+        ):
+            evidence.append(
+                EvidenceRef(
+                    message_id=evidence_message_id,
+                    quote=_normalized(evidence_quote),
+                    relation=EvidenceRelation.SUPPORTS,
+                    quality=EvidenceQuality.EXACT_QUOTE,
+                    recorded_at=timestamp,
+                )
+            )
+        if not evidence:
+            raise ValueError(
+                "Hypothesis evidence must resolve to linked claims or an exact current quote."
+            )
+        duplicate = next(
+            (
+                item
+                for item in active.values()
+                if item.origin is ClaimOrigin.AGENT_HYPOTHESIS
+                and item.lifecycle is ClaimLifecycle.ACTIVE
+                and _near_duplicate(item.content, content)
+            ),
+            None,
+        )
+        if duplicate:
+            duplicate.last_seen_at = timestamp
+            duplicate.linked_claim_ids = list(
+                dict.fromkeys([*duplicate.linked_claim_ids, *linked_claim_ids])
+            )[:10]
+            self._save_claim(duplicate)
+            return duplicate
+        item = MemoryItem(
+            id=uuid4().hex[:12],
+            kind=MemoryKind.HYPOTHESIS,
+            content=content,
+            origin=ClaimOrigin.AGENT_HYPOTHESIS,
+            fit=ClaimFit.NOT_REVIEWED,
+            lifecycle=ClaimLifecycle.ACTIVE,
+            evidence=evidence,
+            aliases=aliases or [],
+            linked_claim_ids=linked_claim_ids,
+            first_seen_at=timestamp,
+            last_seen_at=timestamp,
+        )
+        self._save_claim(item)
+        return item
+
+    def correct_claim(
+        self,
+        correction: ClaimCorrection,
+        evidence_message_id: int,
+        evidence_text: str,
+        now: datetime | None = None,
+    ) -> MemoryItem:
+        with self.transaction():
+            item = self._get_claim(correction.memory_id)
+            if item.lifecycle is not ClaimLifecycle.ACTIVE:
+                raise ValueError("Only an active claim can be corrected.")
+            if not _supported_quote(correction.correction_quote, evidence_text):
+                raise ValueError("A correction requires an exact current-message quote.")
+            if correction.replacement_quote and not _supported_quote(
+                correction.replacement_quote, evidence_text
+            ):
+                raise ValueError("A replacement requires an exact current-message quote.")
+            timestamp = _iso(now)
+            old = item.content
+            relation = (
+                EvidenceRelation.CORRECTS
+                if correction.replacement_quote
+                else EvidenceRelation.CONTRADICTS
+            )
+            item.evidence.append(
+                EvidenceRef(
+                    message_id=evidence_message_id,
+                    quote=_normalized(correction.correction_quote),
+                    relation=relation,
+                    quality=EvidenceQuality.EXACT_QUOTE,
+                    recorded_at=timestamp,
+                )
+            )
+            if correction.replacement_quote:
+                item.evidence.append(
+                    EvidenceRef(
+                        message_id=evidence_message_id,
+                        quote=_normalized(correction.replacement_quote),
+                        relation=EvidenceRelation.CORRECTS,
+                        quality=EvidenceQuality.EXACT_QUOTE,
+                        recorded_at=timestamp,
+                    )
+                )
+            item.superseded_content.append(old)
+            item.aliases = []
+            item.last_seen_at = timestamp
+            item.last_reviewed_at = timestamp
+            if correction.replacement_quote:
+                item.content = _normalized(correction.replacement_quote)
+                item.origin = ClaimOrigin.USER_STATEMENT
+                item.fit = ClaimFit.NOT_APPLICABLE
+            else:
+                item.lifecycle = ClaimLifecycle.SUPERSEDED
+                item.conflict_ids = []
+            self._save_claim(item)
+            self._delete_semantic_entities("claim", [item.id])
+            self._delete_semantic_entities(
+                "message", [str(reference.message_id) for reference in item.evidence]
+            )
+            self._rebuild_claim_conflicts()
+            self._refresh_formulation_links()
+            self._invalidate_derived_text(old, item.content if correction.replacement_quote else "")
+            self._clear_pending_hypothesis(item.id)
+            return item
+
+    def review_hypotheses(
+        self,
+        reviews: list[HypothesisReview],
+        evidence_message_id: int,
+        evidence_text: str,
+        now: datetime | None = None,
+    ) -> tuple[list[MemoryItem], list[MemoryItem]]:
+        ids = [review.memory_id for review in reviews]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Each hypothesis needs a separate review.")
+        reviewed: list[MemoryItem] = []
+        accepted_reports: list[MemoryItem] = []
+        for review in reviews:
+            if review.fit in {ClaimFit.NOT_APPLICABLE, ClaimFit.NOT_REVIEWED}:
+                raise ValueError("A hypothesis review requires an explicit fit result.")
+            if not _supported_quote(review.evidence_quote, evidence_text):
+                raise ValueError("Each hypothesis review requires its own exact evidence quote.")
+            if review.accepted_wording_quote and not _supported_quote(
+                review.accepted_wording_quote, evidence_text
+            ):
+                raise ValueError("Accepted wording must be an exact current-message quote.")
+            item = self._get_claim(review.memory_id)
+            if (
+                item.origin is not ClaimOrigin.AGENT_HYPOTHESIS
+                or item.lifecycle is not ClaimLifecycle.ACTIVE
+            ):
+                raise ValueError("Only an active agent hypothesis can be reviewed.")
+            timestamp = _iso(now)
+            item.fit = review.fit
+            item.last_reviewed_at = timestamp
+            item.last_seen_at = timestamp
+            item.evidence.append(
+                EvidenceRef(
+                    message_id=evidence_message_id,
+                    quote=_normalized(review.evidence_quote),
+                    relation=EvidenceRelation.REVIEWS,
+                    quality=EvidenceQuality.EXACT_QUOTE,
+                    recorded_at=timestamp,
+                )
+            )
+            self._save_claim(item)
+            reviewed.append(item)
+            if review.fit is ClaimFit.PARTLY_FITS and review.accepted_wording_quote:
+                accepted_reports.extend(
+                    self.add_user_reports(
+                        [
+                            UserReport(
+                                kind=MemoryKind.PATTERN,
+                                content=review.accepted_wording_quote,
+                                evidence_quote=review.accepted_wording_quote,
+                            )
+                        ],
+                        evidence_message_id,
+                        evidence_text,
+                        now,
+                    )
+                )
+            self._clear_pending_hypothesis(item.id)
+        self._refresh_formulation_links()
+        return reviewed, accepted_reports
+
+    def forget_claim(self, item_id: str, now: datetime | None = None) -> MemoryItem:
+        with self.transaction():
+            item = self._get_claim(item_id)
+            item.lifecycle = ClaimLifecycle.ARCHIVED
+            item.conflict_ids = []
+            item.last_seen_at = _iso(now)
+            self._save_claim(item)
+            self._delete_semantic_entities("claim", [item.id])
+            self._delete_semantic_entities(
+                "message", [str(reference.message_id) for reference in item.evidence]
+            )
+            self._rebuild_claim_conflicts()
+            self._refresh_formulation_links()
+            self._invalidate_derived_text(item.content, "", forgotten_id=item.id)
+            self._clear_pending_hypothesis(item.id)
+            return item
+
+    def list_claims(self, include_inactive: bool = False) -> list[MemoryItem]:
         sql = "SELECT payload FROM memory_items"
         parameters: tuple[str, ...] = ()
-        if not include_archived:
-            sql += " WHERE status != ?"
-            parameters = (MemoryStatus.ARCHIVED.value,)
+        if not include_inactive:
+            sql += " WHERE lifecycle = ?"
+            parameters = (ClaimLifecycle.ACTIVE.value,)
         sql += " ORDER BY last_seen_at DESC"
         with self._connect() as database:
             rows = database.execute(sql, parameters).fetchall()
         return [self._decrypt_model(row[0], MemoryItem) for row in rows]
 
-    def confirm_memory(self, item_id: str, now: datetime | None = None) -> MemoryItem:
-        with self.transaction():
-            item = self._get_memory(item_id)
-            item.status = MemoryStatus.USER_CONFIRMED
-            item.last_seen_at = _iso(now)
-            self._save_memory_item(item)
-            self._delete_semantic_entities(
-                "message", [str(value) for value in item.evidence_message_ids]
-            )
-            self._refresh_formulation_links()
-            self._clear_pending_hypothesis(item.id)
-            return item
-
-    def correct_memory(
+    def record_process_preference(
         self,
-        item_id: str,
         content: str,
-        evidence_message_id: int | None = None,
+        evidence_quote: str,
+        evidence_message_id: int,
+        evidence_text: str,
         now: datetime | None = None,
-    ) -> MemoryItem:
-        with self.transaction():
-            content = " ".join(content.split()).strip()
-            if not content:
-                raise ValueError("Correction cannot be empty.")
-            item = self._get_memory(item_id)
-            old = item.content
-            item.superseded_content.append(old)
-            item.content = content
-            item.status = MemoryStatus.USER_CORRECTED
-            item.aliases = []
-            if (
-                evidence_message_id is not None
-                and evidence_message_id not in item.evidence_message_ids
-            ):
-                item.evidence_message_ids.append(evidence_message_id)
-            item.last_seen_at = _iso(now)
-            self._save_memory_item(item)
-            self._refresh_formulation_links()
-            self._replace_derived_text(old, content)
-            self._clear_pending_hypothesis(item.id)
-            return item
+    ) -> ProcessPreference:
+        if not _supported_quote(evidence_quote, evidence_text):
+            raise ValueError("Process feedback requires an exact evidence quote.")
+        if _normalized(content).casefold() != _normalized(evidence_quote).casefold():
+            raise ValueError("Reusable process preference must use the user's exact wording.")
+        timestamp = _iso(now)
+        existing = next(
+            (
+                item
+                for item in self.list_process_preferences()
+                if _near_duplicate(item.content, content)
+            ),
+            None,
+        )
+        if existing:
+            existing.updated_at = timestamp
+            self._save_process_preference(existing)
+            return existing
+        item = ProcessPreference(
+            id=uuid4().hex[:12],
+            content=_normalized(content),
+            evidence=EvidenceRef(
+                message_id=evidence_message_id,
+                quote=_normalized(evidence_quote),
+                relation=EvidenceRelation.SUPPORTS,
+                quality=EvidenceQuality.EXACT_QUOTE,
+                recorded_at=timestamp,
+            ),
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self._save_process_preference(item)
+        return item
 
-    def forget_memory(self, item_id: str) -> MemoryItem:
-        with self.transaction():
-            item = self._get_memory(item_id)
-            item.status = MemoryStatus.ARCHIVED
-            item.last_seen_at = _iso()
-            self._save_memory_item(item)
-            self._delete_semantic_entities("memory", [item.id])
-            self._delete_semantic_entities(
-                "message", [str(value) for value in item.evidence_message_ids]
-            )
-            self._refresh_formulation_links()
-            self._replace_derived_text(item.content, "", forgotten_id=item.id)
-            self._clear_pending_hypothesis(item.id)
-            return item
+    def list_process_preferences(self) -> list[ProcessPreference]:
+        with self._connect() as database:
+            rows = database.execute(
+                "SELECT payload FROM process_preferences ORDER BY updated_at DESC"
+            ).fetchall()
+        return [self._decrypt_model(row[0], ProcessPreference) for row in rows]
+
+    def record_support_choice(
+        self,
+        content: str,
+        evidence_quote: str,
+        evidence_message_id: int,
+        evidence_text: str,
+        *,
+        barrier: str | None = None,
+        preference: str | None = None,
+        now: datetime | None = None,
+    ) -> SupportChoice:
+        if not _supported_quote(evidence_quote, evidence_text):
+            raise ValueError("A support choice requires exact evidence.")
+        if _normalized(content).casefold() != _normalized(evidence_quote).casefold():
+            raise ValueError("A support choice must use the user's exact wording.")
+        if barrier and not _supported_quote(barrier, evidence_text):
+            raise ValueError("A support barrier requires exact evidence.")
+        if preference and not _supported_quote(preference, evidence_text):
+            raise ValueError("A support preference requires exact evidence.")
+        timestamp = _iso(now)
+        item = SupportChoice(
+            id=uuid4().hex[:12],
+            content=_normalized(content),
+            evidence=EvidenceRef(
+                message_id=evidence_message_id,
+                quote=_normalized(evidence_quote),
+                relation=EvidenceRelation.SUPPORTS,
+                quality=EvidenceQuality.EXACT_QUOTE,
+                recorded_at=timestamp,
+            ),
+            barrier=_normalized(barrier) if barrier else None,
+            preference=_normalized(preference) if preference else None,
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        self._save_support_choice(item)
+        return item
+
+    def list_support_choices(self) -> list[SupportChoice]:
+        with self._connect() as database:
+            rows = database.execute(
+                "SELECT payload FROM support_choices ORDER BY updated_at DESC"
+            ).fetchall()
+        return [self._decrypt_model(row[0], SupportChoice) for row in rows]
 
     def create_intervention(
         self,
         *,
         skill: str,
         description: str,
-        prediction: str | None,
         state: InterventionState,
-        linked_memory_ids: list[str],
+        linked_claim_ids: list[str],
         evidence_message_id: int,
-        follow_up_at: str | None = None,
+        consent_quote: str | None = None,
+        prediction: str | None = None,
+        context: str | None = None,
+        follow_up_information: str | None = None,
         now: datetime | None = None,
     ) -> InterventionRecord:
         if state not in {InterventionState.OFFERED, InterventionState.AGREED}:
             raise ValueError("A new intervention must be offered or agreed.")
+        if any(
+            item.skill == skill and _near_duplicate(item.description, description)
+            for item in self.list_interventions(active_only=True)
+        ):
+            raise ValueError("Update the existing similar intervention instead of duplicating it.")
         timestamp = _iso(now)
-        active_memory_ids = {item.id for item in self.list_memory()}
+        active_ids = {item.id for item in self.list_claims()}
         record = InterventionRecord(
             id=uuid4().hex[:12],
             skill=skill,
-            description=" ".join(description.split()),
-            prediction=" ".join(prediction.split()) if prediction else None,
+            description=_normalized(description),
+            linked_claim_ids=[item for item in linked_claim_ids if item in active_ids][:5],
             state=state,
-            linked_memory_ids=[
-                item_id for item_id in linked_memory_ids if item_id in active_memory_ids
-            ][:5],
+            offered_at=timestamp,
+            consent_evidence=(
+                EvidenceRef(
+                    message_id=evidence_message_id,
+                    quote=_normalized(consent_quote),
+                    relation=EvidenceRelation.SUPPORTS,
+                    quality=EvidenceQuality.EXACT_QUOTE,
+                    recorded_at=timestamp,
+                )
+                if consent_quote
+                else None
+            ),
             evidence_message_ids=[evidence_message_id],
-            follow_up_at=follow_up_at,
-            created_at=timestamp,
+            prediction=_normalized(prediction) if prediction else None,
+            context=_normalized(context) if context else None,
+            follow_up_information=(
+                _normalized(follow_up_information) if follow_up_information else None
+            ),
             updated_at=timestamp,
         )
         self._save_intervention(record)
@@ -718,29 +1240,45 @@ class MemoryStore:
         state: InterventionState,
         evidence_message_id: int,
         description: str | None = None,
+        linked_claim_ids: list[str] | None = None,
+        consent_quote: str | None = None,
         prediction: str | None = None,
-        linked_memory_ids: list[str] | None = None,
+        context: str | None = None,
         outcome: str | None = None,
         user_appraisal: str | None = None,
-        follow_up_at: str | None = None,
+        unwanted_effects: str | None = None,
+        decision: InterventionDecision | None = None,
+        follow_up_information: str | None = None,
         now: datetime | None = None,
     ) -> InterventionRecord:
         record = self._get_intervention(record_id)
         if not valid_intervention_transition(record.state, state):
             raise ValueError(f"Invalid intervention transition: {record.state} -> {state}")
         record.state = state
-        record.description = " ".join(description.split()) if description else record.description
-        record.prediction = " ".join(prediction.split()) if prediction else record.prediction
-        if linked_memory_ids is not None:
-            active_memory_ids = {item.id for item in self.list_memory()}
-            record.linked_memory_ids = [
-                item_id for item_id in linked_memory_ids if item_id in active_memory_ids
-            ][:5]
-        record.outcome = " ".join(outcome.split()) if outcome else record.outcome
-        record.user_appraisal = (
-            " ".join(user_appraisal.split()) if user_appraisal else record.user_appraisal
-        )
-        record.follow_up_at = follow_up_at or record.follow_up_at
+        for field_name, value in (
+            ("description", description),
+            ("prediction", prediction),
+            ("context", context),
+            ("outcome", outcome),
+            ("user_appraisal", user_appraisal),
+            ("unwanted_effects", unwanted_effects),
+            ("follow_up_information", follow_up_information),
+        ):
+            if value:
+                setattr(record, field_name, _normalized(value))
+        if linked_claim_ids is not None:
+            active_ids = {item.id for item in self.list_claims()}
+            record.linked_claim_ids = [item for item in linked_claim_ids if item in active_ids][:5]
+        if consent_quote:
+            record.consent_evidence = EvidenceRef(
+                message_id=evidence_message_id,
+                quote=_normalized(consent_quote),
+                relation=EvidenceRelation.REVIEWS,
+                quality=EvidenceQuality.EXACT_QUOTE,
+                recorded_at=_iso(now),
+            )
+        if decision:
+            record.decision = decision
         if evidence_message_id not in record.evidence_message_ids:
             record.evidence_message_ids.append(evidence_message_id)
         record.updated_at = _iso(now)
@@ -763,113 +1301,385 @@ class MemoryStore:
             rows = database.execute(sql, parameters).fetchall()
         return [self._decrypt_model(row[0], InterventionRecord) for row in rows]
 
-    def working_context(self, query: str) -> WorkingContext:
-        memories = self.list_memory()
-        semantic_scores = self._semantic_scores(query, memories)
+    def retrieve_case_context(
+        self, query: str, *, allow_index_write: bool = True
+    ) -> CaseContextResult:
+        if not self._ephemeral:
+            policy = self.load_app_state().retention_policy
+            if policy != RetentionPolicy():
+                self.apply_retention(policy)
+        claims = self.list_claims()
+        semantic_scores = self._semantic_scores(query, claims, allow_index_write=allow_index_write)
         app_state = self.load_app_state()
-        pending_ids = {app_state.pending_hypothesis_id}
-        memories.sort(
+        pending_hypothesis_id = app_state.pending_hypothesis_id
+        ranked: list[ContextClaim] = []
+        for index, item in enumerate(claims):
+            semantic = semantic_scores.get(item.id)
+            lexical = min(_lexical_score(query, " ".join([item.content, *item.aliases])), 3) / 3
+            stale = _is_stale_hypothesis(item)
+            pinned = item.id == pending_hypothesis_id or bool(item.conflict_ids)
+            relevant = (
+                pinned
+                or lexical > 0
+                or (semantic is not None and semantic >= MIN_SEMANTIC_RELEVANCE)
+            )
+            if not relevant:
+                continue
+            if item.origin is ClaimOrigin.AGENT_HYPOTHESIS and item.fit is ClaimFit.DOES_NOT_FIT:
+                continue
+            ranked.append(
+                ContextClaim(
+                    id=item.id,
+                    kind=item.kind,
+                    content=item.content,
+                    origin=item.origin,
+                    fit=item.fit,
+                    lifecycle=item.lifecycle,
+                    evidence=[
+                        reference
+                        for reference in item.evidence
+                        if reference.quote not in item.superseded_content
+                    ],
+                    first_seen_at=item.first_seen_at,
+                    last_seen_at=item.last_seen_at,
+                    last_reviewed_at=item.last_reviewed_at,
+                    conflict_ids=item.conflict_ids,
+                    semantic_relevance=semantic,
+                    lexical_relevance=lexical,
+                    recency_rank=index,
+                    stale=stale,
+                )
+            )
+        ranked.sort(
             key=lambda item: (
-                item.id in pending_ids,
-                _hybrid_score(query, item, semantic_scores.get(item.id)),
+                item.id == pending_hypothesis_id,
+                bool(item.conflict_ids),
+                _context_claim_score(item),
                 item.last_seen_at,
             ),
             reverse=True,
         )
-        confirmed = [
-            ContextMemoryItem.model_validate(item, from_attributes=True)
-            for item in memories
-            if item.status in {MemoryStatus.USER_CONFIRMED, MemoryStatus.USER_CORRECTED}
-        ][:30]
+        user_reports = [item for item in ranked if item.origin is ClaimOrigin.USER_STATEMENT][:15]
         hypotheses = [
-            ContextMemoryItem.model_validate(item, from_attributes=True)
-            for item in memories
-            if item.status is MemoryStatus.AGENT_HYPOTHESIS
-        ][:10]
-        recent_sessions = [session for session in self.list_sessions() if session.ended_at][:3]
-        interventions = self.list_interventions(active_only=True)
-        intervention_scores = self._semantic_text_scores(
-            query,
-            "intervention",
-            {
-                item.id: " ".join(
-                    value
-                    for value in (
-                        item.description,
-                        item.prediction,
-                        item.outcome,
-                        item.user_appraisal,
+            item
+            for item in ranked
+            if item.origin is ClaimOrigin.AGENT_HYPOTHESIS
+            and (
+                not item.stale
+                or item.id == pending_hypothesis_id
+                or _context_claim_score(item) >= 0.5
+            )
+        ][:8]
+        visible = {item.id: item for item in [*user_reports, *hypotheses]}
+        for item in list(visible.values()):
+            for conflict_id in item.conflict_ids:
+                if conflict_id in visible:
+                    continue
+                conflict = next((value for value in ranked if value.id == conflict_id), None)
+                if conflict:
+                    visible[conflict_id] = conflict
+                    (
+                        user_reports
+                        if conflict.origin is ClaimOrigin.USER_STATEMENT
+                        else hypotheses
+                    ).append(conflict)
+        conflicts = []
+        seen_pairs: set[tuple[str, str]] = set()
+        for item in visible.values():
+            for other_id in item.conflict_ids:
+                pair = (min(item.id, other_id), max(item.id, other_id))
+                if pair in seen_pairs or other_id not in visible:
+                    continue
+                seen_pairs.add(pair)
+                conflicts.append(
+                    ClaimConflict(
+                        claim_ids=list(pair),
+                        claims=[visible[pair[0]], visible[pair[1]]],
                     )
-                    if value
                 )
-                for item in interventions
-            },
+        interventions = self._relevant_interventions(
+            query,
+            app_state.pending_intervention_id,
+            allow_index_write=allow_index_write,
         )
-        interventions.sort(
+        sessions = self._relevant_sessions(query, allow_index_write=allow_index_write)
+        excerpts = self._relevant_excerpts(query, allow_index_write=allow_index_write)
+        support_choices = self._relevant_support_choices(query, allow_index_write=allow_index_write)
+        formulation = self.load_formulation()
+        return CaseContextResult(
+            accepted_focus=formulation.accepted_focus,
+            proposed_focus=formulation.proposed_focus,
+            user_reports=user_reports[:20],
+            hypotheses=hypotheses[:10],
+            conflicts=conflicts[:5],
+            relevant_sessions=sessions[:3],
+            active_interventions=interventions[:5],
+            process_preferences=[
+                ContextPreference(id=item.id, content=item.content, evidence=item.evidence)
+                for item in self.list_process_preferences()[:10]
+            ],
+            support_choices=support_choices[:10],
+            relevant_excerpts=excerpts[:5],
+        )
+
+    def _relevant_support_choices(
+        self, query: str, *, allow_index_write: bool
+    ) -> list[ContextSupportChoice]:
+        items = self.list_support_choices()
+        texts = {
+            item.id: " ".join(
+                value for value in (item.content, item.barrier, item.preference) if value
+            )
+            for item in items
+        }
+        scores = self._semantic_text_scores(
+            query, "support", texts, allow_index_write=allow_index_write
+        )
+        ranked = sorted(
+            items,
             key=lambda item: (
-                item.id == app_state.pending_intervention_id,
-                _hybrid_text_score(
-                    query,
-                    " ".join(
-                        value
-                        for value in (
-                            item.description,
-                            item.prediction,
-                            item.outcome,
-                            item.user_appraisal,
-                        )
-                        if value
-                    ),
-                    intervention_scores.get(item.id),
-                ),
+                _hybrid_text_score(query, texts[item.id], scores.get(item.id)),
                 item.updated_at,
             ),
             reverse=True,
         )
-        all_memory = self.list_memory(include_archived=True)
-        excluded = {
-            text.casefold()
-            for item in all_memory
-            for text in (
-                ([item.content] if item.status is MemoryStatus.ARCHIVED else [])
-                + item.superseded_content
+        return [
+            ContextSupportChoice.model_validate(item, from_attributes=True)
+            for item in ranked
+            if _lexical_score(query, texts[item.id]) > 0
+            or scores.get(item.id, 0.0) >= MIN_SEMANTIC_RELEVANCE
+        ]
+
+    def _relevant_interventions(
+        self,
+        query: str,
+        pending_id: str | None,
+        *,
+        allow_index_write: bool,
+    ) -> list[ContextIntervention]:
+        items = self.list_interventions(active_only=True)
+        text = {
+            item.id: " ".join(
+                value
+                for value in (
+                    item.description,
+                    item.prediction,
+                    item.context,
+                    item.outcome,
+                    item.user_appraisal,
+                    item.unwanted_effects,
+                    item.follow_up_information,
+                )
+                if value
             )
-            if text
+            for item in items
         }
+        scores = self._semantic_text_scores(
+            query, "intervention", text, allow_index_write=allow_index_write
+        )
+        items.sort(
+            key=lambda item: (
+                item.id == pending_id,
+                _hybrid_text_score(query, text[item.id], scores.get(item.id)),
+                item.updated_at,
+            ),
+            reverse=True,
+        )
+        return [
+            ContextIntervention(
+                id=item.id,
+                skill=item.skill,
+                description=item.description,
+                state=item.state,
+                prediction=item.prediction,
+                outcome=item.outcome,
+                user_appraisal=item.user_appraisal,
+                unwanted_effects=item.unwanted_effects,
+                decision=item.decision,
+                follow_up_information=item.follow_up_information,
+                updated_at=item.updated_at,
+                semantic_relevance=scores.get(item.id),
+            )
+            for item in items
+            if item.id == pending_id
+            or _lexical_score(query, text[item.id]) > 0
+            or scores.get(item.id, 0.0) >= MIN_SEMANTIC_RELEVANCE
+            or item.unwanted_effects is not None
+        ]
+
+    def _relevant_sessions(self, query: str, *, allow_index_write: bool) -> list[ContextSession]:
+        sessions = [item for item in self.list_sessions() if item.ended_at]
+        texts = {
+            item.id: " ".join(
+                [
+                    item.summary,
+                    *item.themes,
+                    *item.user_defined_concerns,
+                    *item.meaningful_changes,
+                    *item.outcomes,
+                    *item.unwanted_effects,
+                    *item.process_feedback,
+                    *item.support_choices,
+                    *item.open_questions,
+                ]
+            )
+            for item in sessions
+        }
+        scores = self._semantic_text_scores(
+            query, "session", texts, allow_index_write=allow_index_write
+        )
+        sessions.sort(
+            key=lambda item: (
+                _hybrid_text_score(query, texts[item.id], scores.get(item.id)),
+                item.ended_at or "",
+            ),
+            reverse=True,
+        )
+        selected = [
+            item
+            for item in sessions
+            if _lexical_score(query, texts[item.id]) > 0
+            or scores.get(item.id, 0.0) >= MIN_SEMANTIC_RELEVANCE
+        ]
+        if sessions and sessions[0] not in selected:
+            selected.append(sessions[0])
+        return [
+            ContextSession(
+                id=item.id,
+                ended_at=item.ended_at,
+                summary=item.summary,
+                themes=item.themes,
+                outcomes=item.outcomes,
+                unwanted_effects=item.unwanted_effects,
+                process_feedback=item.process_feedback,
+                support_choices=item.support_choices,
+                semantic_relevance=scores.get(item.id),
+            )
+            for item in selected
+        ]
+
+    def _relevant_excerpts(self, query: str, *, allow_index_write: bool) -> list[ContextExcerpt]:
         excluded_message_ids = {
-            message_id
-            for item in all_memory
-            if item.status in {MemoryStatus.USER_CORRECTED, MemoryStatus.ARCHIVED}
-            for message_id in item.evidence_message_ids
+            reference.message_id
+            for item in self.list_claims(include_inactive=True)
+            if item.lifecycle is not ClaimLifecycle.ACTIVE or item.superseded_content
+            for reference in item.evidence
         }
         candidates = self._archive_candidates(excluded_message_ids)
-        candidate_text = dict(candidates)
-        excerpt_scores = self._semantic_text_scores(query, "message", candidate_text)
-        excerpts = [
-            text
-            for _, _, message_id, text in sorted(
-                (
-                    (
-                        _hybrid_text_score(query, text, excerpt_scores.get(message_id)),
-                        -position,
-                        message_id,
-                        text,
-                    )
-                    for position, (message_id, text) in enumerate(candidates)
-                ),
-                reverse=True,
-            )
-            if (_lexical_score(query, text) > 0 or excerpt_scores.get(message_id, 0.0) >= 0.3)
-            and not any(old in text.casefold() for old in excluded)
-        ][:5]
-        return WorkingContext(
-            formulation=self.load_formulation(),
-            confirmed_memory=confirmed,
-            hypotheses=hypotheses,
-            recent_sessions=recent_sessions,
-            active_interventions=interventions[:5],
-            relevant_excerpts=excerpts,
+        scores = self._semantic_text_scores(
+            query,
+            "message",
+            {str(item[0]): item[2] for item in candidates},
+            allow_index_write=allow_index_write,
         )
+        ranked = sorted(
+            candidates,
+            key=lambda item: (
+                _hybrid_text_score(query, item[2], scores.get(str(item[0]))),
+                item[0],
+            ),
+            reverse=True,
+        )
+        return [
+            ContextExcerpt(
+                message_id=message_id,
+                quote=text,
+                created_at=created_at,
+                semantic_relevance=scores.get(str(message_id)),
+                lexical_relevance=min(_lexical_score(query, text), 3) / 3,
+            )
+            for message_id, created_at, text in ranked
+            if _lexical_score(query, text) > 0
+            or scores.get(str(message_id), 0.0) >= MIN_SEMANTIC_RELEVANCE
+        ]
+
+    def apply_retention(
+        self,
+        policy: RetentionPolicy | None = None,
+        *,
+        dry_run: bool = False,
+        now: datetime | None = None,
+    ) -> dict[str, int]:
+        policy = policy or self.load_app_state().retention_policy
+        current = now or _now()
+        message_ids: list[int] = []
+        summaries: list[SessionRecord] = []
+        hypotheses: list[MemoryItem] = []
+        with self._connect() as database:
+            if policy.raw_message_days:
+                cutoff = _iso(current - timedelta(days=policy.raw_message_days))
+                message_ids = [
+                    row[0]
+                    for row in database.execute(
+                        "SELECT id FROM messages WHERE created_at < ?", (cutoff,)
+                    ).fetchall()
+                ]
+        if policy.session_summary_days:
+            cutoff = current - timedelta(days=policy.session_summary_days)
+            summaries = [
+                item
+                for item in self.list_sessions()
+                if item.ended_at and datetime.fromisoformat(item.ended_at) < cutoff
+            ]
+        if policy.stale_hypothesis_days:
+            cutoff = current - timedelta(days=policy.stale_hypothesis_days)
+            hypotheses = [
+                item
+                for item in self.list_claims()
+                if item.origin is ClaimOrigin.AGENT_HYPOTHESIS
+                and item.fit in {ClaimFit.NOT_REVIEWED, ClaimFit.UNSURE}
+                and datetime.fromisoformat(item.last_reviewed_at or item.last_seen_at) < cutoff
+            ]
+        result = {
+            "messages": len(message_ids),
+            "session_summaries": len(summaries),
+            "stale_hypotheses": len(hypotheses),
+        }
+        if dry_run:
+            return result
+        with self.transaction():
+            self._delete_message_ids(message_ids)
+            for session in summaries:
+                _clear_session_reflection(session)
+                self.save_session(session)
+                self._delete_semantic_entities("session", [session.id])
+            for item in hypotheses:
+                item.lifecycle = ClaimLifecycle.ARCHIVED
+                self._save_claim(item)
+                self._delete_semantic_entities("claim", [item.id])
+            self._refresh_formulation_links()
+            self._clean_pending_ids()
+        return result
+
+    def delete_session(self, session_id: str) -> bool:
+        with self.transaction():
+            with self._connect() as database:
+                rows = database.execute(
+                    "SELECT id FROM messages WHERE session_id = ?", (session_id,)
+                ).fetchall()
+                exists = database.execute(
+                    "SELECT 1 FROM sessions WHERE id = ?", (session_id,)
+                ).fetchone()
+            if exists is None:
+                return False
+            self._delete_message_ids([row[0] for row in rows])
+            with self._connect() as database:
+                database.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+            self._delete_semantic_entities("session", [session_id])
+            self._refresh_formulation_links()
+            self._clean_pending_ids()
+            return True
+
+    def delete_before(self, before: datetime) -> dict[str, int]:
+        if before.tzinfo is None:
+            before = before.replace(tzinfo=UTC)
+        sessions = [
+            item
+            for item in self.list_sessions()
+            if datetime.fromisoformat(item.ended_at or item.last_activity_at) < before
+        ]
+        deleted = sum(self.delete_session(item.id) for item in sessions)
+        return {"sessions": deleted}
 
     def export(self) -> dict[str, Any]:
         with self._connect() as database:
@@ -879,13 +1689,15 @@ class MemoryStore:
         messages = []
         for row in rows:
             payload = self._decrypt_json(row[4])
-            message = {
+            message: dict[str, Any] = {
                 "id": row[0],
                 "session_id": row[1],
                 "role": row[2],
                 "created_at": row[3],
                 "content": payload.get("content", ""),
             }
+            if payload.get("turn_metadata"):
+                message["turn_metadata"] = payload["turn_metadata"]
             tool_exchanges = []
             for model_message in payload.get("model_messages", []):
                 for part in model_message.get("parts", []):
@@ -910,11 +1722,20 @@ class MemoryStore:
                 message["tool_exchanges"] = tool_exchanges
             messages.append(message)
         return {
-            "app": self.load_app_state().model_dump(),
-            "case_formulation": self.load_formulation().model_dump(),
-            "memory": [item.model_dump(mode="json") for item in self.list_memory(True)],
+            "schema_version": SCHEMA_VERSION.decode(),
+            "app": self.load_app_state().model_dump(mode="json"),
+            "case_formulation": self.load_formulation().model_dump(mode="json"),
+            "claims": [
+                item.model_dump(mode="json") for item in self.list_claims(include_inactive=True)
+            ],
+            "process_preferences": [
+                item.model_dump(mode="json") for item in self.list_process_preferences()
+            ],
+            "support_choices": [
+                item.model_dump(mode="json") for item in self.list_support_choices()
+            ],
             "interventions": [item.model_dump(mode="json") for item in self.list_interventions()],
-            "sessions": [session.model_dump() for session in self.list_sessions()],
+            "sessions": [session.model_dump(mode="json") for session in self.list_sessions()],
             "messages": messages,
         }
 
@@ -930,24 +1751,33 @@ class MemoryStore:
 
     def delete_all(self) -> None:
         with self._connect() as database:
-            database.execute("DELETE FROM semantic_index")
-            database.execute("DELETE FROM messages")
-            database.execute("DELETE FROM sessions")
-            database.execute("DELETE FROM memory_items")
-            database.execute("DELETE FROM interventions")
-            database.execute("DELETE FROM state")
+            for table in (
+                "semantic_index",
+                "messages",
+                "sessions",
+                "memory_items",
+                "interventions",
+                "process_preferences",
+                "support_choices",
+                "state",
+            ):
+                database.execute(f"DELETE FROM {table}")
+        self._write_state("schema_version", SCHEMA_VERSION)
 
-    def _save_memory_item(self, item: MemoryItem) -> None:
+    def _save_claim(self, item: MemoryItem) -> None:
         with self._connect() as database:
             database.execute(
-                "INSERT INTO memory_items(id, kind, status, first_seen_at, last_seen_at, payload) "
-                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET "
-                "kind = excluded.kind, status = excluded.status, "
+                "INSERT INTO memory_items(id, kind, origin, fit, lifecycle, first_seen_at, "
+                "last_seen_at, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET kind = excluded.kind, origin = excluded.origin, "
+                "fit = excluded.fit, lifecycle = excluded.lifecycle, "
                 "last_seen_at = excluded.last_seen_at, payload = excluded.payload",
                 (
                     item.id,
                     item.kind.value,
-                    item.status.value,
+                    item.origin.value,
+                    item.fit.value,
+                    item.lifecycle.value,
                     item.first_seen_at,
                     item.last_seen_at,
                     self._encrypt_model(item),
@@ -963,6 +1793,33 @@ class MemoryStore:
                 (item.id, item.state.value, item.updated_at, self._encrypt_model(item)),
             )
 
+    def _save_process_preference(self, item: ProcessPreference) -> None:
+        with self._connect() as database:
+            database.execute(
+                "INSERT INTO process_preferences(id, updated_at, payload) VALUES (?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, "
+                "payload = excluded.payload",
+                (item.id, item.updated_at, self._encrypt_model(item)),
+            )
+
+    def _save_support_choice(self, item: SupportChoice) -> None:
+        with self._connect() as database:
+            database.execute(
+                "INSERT INTO support_choices(id, updated_at, payload) VALUES (?, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, "
+                "payload = excluded.payload",
+                (item.id, item.updated_at, self._encrypt_model(item)),
+            )
+
+    def _get_claim(self, item_id: str) -> MemoryItem:
+        with self._connect() as database:
+            row = database.execute(
+                "SELECT payload FROM memory_items WHERE id = ?", (item_id,)
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Unknown claim: {item_id}")
+        return self._decrypt_model(row[0], MemoryItem)
+
     def _get_intervention(self, record_id: str) -> InterventionRecord:
         with self._connect() as database:
             row = database.execute(
@@ -972,35 +1829,39 @@ class MemoryStore:
             raise KeyError(f"Unknown intervention: {record_id}")
         return self._decrypt_model(row[0], InterventionRecord)
 
-    def _get_memory(self, item_id: str) -> MemoryItem:
-        with self._connect() as database:
-            row = database.execute(
-                "SELECT payload FROM memory_items WHERE id = ?", (item_id,)
-            ).fetchone()
-        if row is None:
-            raise KeyError(f"Unknown memory: {item_id}")
-        return self._decrypt_model(row[0], MemoryItem)
-
-    def _archive_candidates(self, excluded_message_ids: set[int]) -> list[tuple[str, str]]:
+    def _archive_candidates(self, excluded_message_ids: set[int]) -> list[tuple[int, str, str]]:
         with self._connect() as database:
             rows = database.execute(
-                "SELECT id, payload FROM messages WHERE role = 'user' ORDER BY id DESC LIMIT 1000"
+                "SELECT id, created_at, payload FROM messages "
+                "WHERE role = 'user' ORDER BY id DESC LIMIT 1000"
             ).fetchall()
         return [
-            (str(message_id), self._decrypt_json(payload).get("content", ""))
-            for message_id, payload in rows
+            (message_id, created_at, self._decrypt_json(payload).get("content", ""))
+            for message_id, created_at, payload in rows
             if message_id not in excluded_message_ids
         ]
 
-    def _semantic_scores(self, query: str, memories: list[MemoryItem]) -> dict[str, float]:
+    def _semantic_scores(
+        self,
+        query: str,
+        claims: list[MemoryItem],
+        *,
+        allow_index_write: bool,
+    ) -> dict[str, float]:
         return self._semantic_text_scores(
             query,
-            "memory",
-            {item.id: " ".join([item.content, *item.aliases]) for item in memories},
+            "claim",
+            {item.id: " ".join([item.content, *item.aliases]) for item in claims},
+            allow_index_write=allow_index_write,
         )
 
     def _semantic_text_scores(
-        self, query: str, entity_type: str, texts: dict[str, str]
+        self,
+        query: str,
+        entity_type: str,
+        texts: dict[str, str],
+        *,
+        allow_index_write: bool,
     ) -> dict[str, float]:
         if not self._embedder or not self._embedding_model or not query.strip() or not texts:
             return {}
@@ -1008,8 +1869,8 @@ class MemoryStore:
             expected = {entity_id: self._content_hash(text) for entity_id, text in texts.items()}
             with self._connect() as database:
                 rows = database.execute(
-                    "SELECT entity_id, content_hash, dimensions, payload "
-                    "FROM semantic_index WHERE model = ? AND entity_type = ?",
+                    "SELECT entity_id, content_hash, dimensions, payload FROM semantic_index "
+                    "WHERE model = ? AND entity_type = ?",
                     (self._embedding_model, entity_type),
                 ).fetchall()
             vectors: dict[str, list[float]] = {}
@@ -1022,26 +1883,27 @@ class MemoryStore:
             }
             if missing:
                 result = self._embedder.embed_documents_sync(list(missing.values()))
-                with self._connect() as database:
-                    for entity_id, vector in zip(missing, result.embeddings, strict=True):
-                        stored = list(vector)
-                        vectors[entity_id] = stored
-                        database.execute(
-                            "INSERT INTO semantic_index(entity_type, entity_id, model, "
-                            "content_hash, dimensions, payload) VALUES (?, ?, ?, ?, ?, ?) "
-                            "ON CONFLICT(entity_type, entity_id) DO UPDATE SET "
-                            "model = excluded.model, "
-                            "content_hash = excluded.content_hash, "
-                            "dimensions = excluded.dimensions, payload = excluded.payload",
-                            (
-                                entity_type,
-                                entity_id,
-                                self._embedding_model,
-                                expected[entity_id],
-                                len(stored),
-                                self._encrypt_json({"vector": stored}),
-                            ),
-                        )
+                for entity_id, vector in zip(missing, result.embeddings, strict=True):
+                    vectors[entity_id] = list(vector)
+                if allow_index_write:
+                    with self._connect() as database:
+                        for entity_id in missing:
+                            stored = vectors[entity_id]
+                            database.execute(
+                                "INSERT INTO semantic_index(entity_type, entity_id, model, "
+                                "content_hash, dimensions, payload) VALUES (?, ?, ?, ?, ?, ?) "
+                                "ON CONFLICT(entity_type, entity_id) DO UPDATE SET "
+                                "model = excluded.model, content_hash = excluded.content_hash, "
+                                "dimensions = excluded.dimensions, payload = excluded.payload",
+                                (
+                                    entity_type,
+                                    entity_id,
+                                    self._embedding_model,
+                                    expected[entity_id],
+                                    len(stored),
+                                    self._encrypt_json({"vector": stored}),
+                                ),
+                            )
             query_vector = list(self._embedder.embed_query_sync(query).embeddings[0])
             return {
                 item_id: similarity
@@ -1062,73 +1924,65 @@ class MemoryStore:
                 ((entity_type, entity_id) for entity_id in entity_ids),
             )
 
+    def _delete_message_ids(self, message_ids: list[int]) -> None:
+        if not message_ids:
+            return
+        message_set = set(message_ids)
+        with self._connect() as database:
+            session_ids = {
+                row[0]
+                for row in database.execute(
+                    f"SELECT DISTINCT session_id FROM messages WHERE id IN "
+                    f"({','.join('?' for _ in message_ids)})",
+                    message_ids,
+                ).fetchall()
+            }
+            database.executemany(
+                "DELETE FROM messages WHERE id = ?", ((item,) for item in message_ids)
+            )
+        self._delete_semantic_entities("message", [str(item) for item in message_ids])
+        for claim in self.list_claims(include_inactive=True):
+            claim.evidence = [
+                reference for reference in claim.evidence if reference.message_id not in message_set
+            ]
+            if claim.evidence:
+                self._save_claim(claim)
+            else:
+                with self._connect() as database:
+                    database.execute("DELETE FROM memory_items WHERE id = ?", (claim.id,))
+                self._delete_semantic_entities("claim", [claim.id])
+        for record in self.list_interventions():
+            record.evidence_message_ids = [
+                item for item in record.evidence_message_ids if item not in message_set
+            ]
+            if record.consent_evidence and record.consent_evidence.message_id in message_set:
+                record.consent_evidence = None
+            if not record.evidence_message_ids:
+                record.description = "Content removed by retention or selective deletion."
+                record.prediction = None
+                record.context = None
+                record.outcome = None
+                record.user_appraisal = None
+                record.unwanted_effects = None
+                record.follow_up_information = None
+                record.state = InterventionState.STOPPED
+            self._save_intervention(record)
+        for item in self.list_process_preferences():
+            if item.evidence.message_id in message_set:
+                with self._connect() as database:
+                    database.execute("DELETE FROM process_preferences WHERE id = ?", (item.id,))
+        for item in self.list_support_choices():
+            if item.evidence.message_id in message_set:
+                with self._connect() as database:
+                    database.execute("DELETE FROM support_choices WHERE id = ?", (item.id,))
+        for session in self.list_sessions():
+            if session.id in session_ids:
+                _clear_session_reflection(session)
+                self.save_session(session)
+                self._delete_semantic_entities("session", [session.id])
+
     def _content_hash(self, content: str) -> str:
         return hmac.new(self._hash_key, content.encode(), hashlib.sha256).hexdigest()
-
-    def _replace_derived_text(self, old: str, new: str, *, forgotten_id: str | None = None) -> None:
-        formulation = self.load_formulation()
-        changed = False
-        if not formulation.evidence:
-            for field_name, value in formulation:
-                if isinstance(value, list):
-                    replaced = [_replace_derived(value_item, old, new) for value_item in value]
-                    replaced = [value_item for value_item in replaced if value_item]
-                    if replaced != value:
-                        setattr(formulation, field_name, replaced)
-                        changed = True
-        for field_name in ("current_focus", "proposed_focus"):
-            value = getattr(formulation, field_name)
-            if value:
-                replaced = _replace_derived(value, old, new)
-                if replaced != value:
-                    setattr(formulation, field_name, replaced or None)
-                    changed = True
-        if changed:
-            self.save_formulation(formulation)
-        stopped_interventions: set[str] = set()
-        for intervention in self.list_interventions():
-            before = intervention.model_dump()
-            if forgotten_id:
-                intervention.linked_memory_ids = [
-                    item_id for item_id in intervention.linked_memory_ids if item_id != forgotten_id
-                ]
-            intervention.description = _replace_derived(intervention.description, old, new)
-            for field_name in ("prediction", "outcome", "user_appraisal"):
-                value = getattr(intervention, field_name)
-                if value:
-                    setattr(intervention, field_name, _replace_derived(value, old, new) or None)
-            if not intervention.description:
-                intervention.description = "Content removed by user request."
-                intervention.state = InterventionState.STOPPED
-                intervention.updated_at = _iso()
-                self._save_intervention(intervention)
-                stopped_interventions.add(intervention.id)
-            elif intervention.model_dump() != before:
-                self._save_intervention(intervention)
-        if stopped_interventions:
-            app_state = self.load_app_state()
-            if app_state.pending_intervention_id in stopped_interventions:
-                app_state.pending_intervention_id = None
-                self.save_app_state(app_state)
-        for session in self.list_sessions():
-            before = session.model_dump()
-            session.summary = _replace_derived(session.summary, old, new)
-            session.themes = [
-                text for value in session.themes if (text := _replace_derived(value, old, new))
-            ]
-            session.interventions = [
-                text
-                for value in session.interventions
-                if (text := _replace_derived(value, old, new))
-            ]
-            session.user_response = _replace_derived(session.user_response, old, new)
-            session.open_questions = [
-                text
-                for value in session.open_questions
-                if (text := _replace_derived(value, old, new))
-            ]
-            if session.model_dump() != before:
-                self.save_session(session)
 
     def _refresh_formulation_links(self) -> None:
         formulation = self.load_formulation()
@@ -1137,44 +1991,102 @@ class MemoryStore:
         self.save_formulation_links(
             formulation.evidence,
             proposed_focus=formulation.proposed_focus,
-            current_focus=formulation.current_focus,
+            accepted_focus=formulation.accepted_focus,
         )
 
-    def _clear_pending_hypothesis(self, item_id: str) -> None:
-        app_state = self.load_app_state()
-        if app_state.pending_hypothesis_id == item_id:
-            app_state.pending_hypothesis_id = None
-            self.save_app_state(app_state)
+    def _rebuild_claim_conflicts(self) -> None:
+        claims = self.list_claims()
+        for claim in claims:
+            claim.conflict_ids = []
+        for index, left in enumerate(claims):
+            for right in claims[index + 1 :]:
+                if left.kind is right.kind and _claims_conflict(left.content, right.content):
+                    left.conflict_ids.append(right.id)
+                    right.conflict_ids.append(left.id)
+        for claim in claims:
+            self._save_claim(claim)
 
-    def _migrate_legacy_state(self) -> None:
-        if self._read_state("schema_version") is not None:
-            return
-        profile_payload = self._read_state("profile")
-        if profile_payload:
-            legacy = json.loads(profile_payload)
-            state = AppState(consent_version=legacy.get("consent_version"))
-            self.save_app_state(state)
-            observations = [
-                MemoryObservation(kind=MemoryKind.EVENT, content=value)
-                for value in legacy.get("goals", []) + legacy.get("exercises", [])
-            ]
-            observations += [
-                MemoryObservation(kind=MemoryKind.PREFERENCE, content=f"{key}: {value}")
-                for key, value in legacy.get("preferences", {}).items()
-            ]
-            if legacy.get("summary"):
-                observations.append(
-                    MemoryObservation(kind=MemoryKind.EVENT, content=legacy["summary"])
+    def _invalidate_derived_text(
+        self, old: str, new: str, *, forgotten_id: str | None = None
+    ) -> None:
+        formulation = self.load_formulation()
+        for field_name in ("accepted_focus", "proposed_focus"):
+            value = getattr(formulation, field_name)
+            if value:
+                setattr(formulation, field_name, _replace_derived(value, old, new) or None)
+        self.save_formulation(formulation)
+        stopped: set[str] = set()
+        for intervention in self.list_interventions():
+            if forgotten_id:
+                intervention.linked_claim_ids = [
+                    item for item in intervention.linked_claim_ids if item != forgotten_id
+                ]
+            for field_name in (
+                "description",
+                "prediction",
+                "context",
+                "outcome",
+                "user_appraisal",
+                "unwanted_effects",
+                "follow_up_information",
+            ):
+                value = getattr(intervention, field_name)
+                if value:
+                    setattr(intervention, field_name, _replace_derived(value, old, new) or None)
+            if not intervention.description:
+                intervention.description = "Content removed by user request."
+                intervention.state = InterventionState.STOPPED
+                stopped.add(intervention.id)
+            self._save_intervention(intervention)
+        for session in self.list_sessions():
+            session.summary = _replace_derived(session.summary, old, new)
+            for field_name in (
+                "themes",
+                "user_defined_concerns",
+                "meaningful_changes",
+                "interventions_discussed",
+                "tried",
+                "outcomes",
+                "unwanted_effects",
+                "process_feedback",
+                "support_choices",
+                "open_questions",
+            ):
+                setattr(
+                    session,
+                    field_name,
+                    [
+                        updated
+                        for value in getattr(session, field_name)
+                        if (updated := _replace_derived(value, old, new))
+                    ],
                 )
-            if observations:
-                self.add_observations(observations, 0)
-        history_payload = self._read_state("history")
-        if history_payload:
-            session = self.start_session()
-            history = ModelMessagesTypeAdapter.validate_json(history_payload)
-            self.save_turn(session, "Imported legacy conversation", "", history)
-            self.close_session(session, summary="Imported legacy conversation")
-        self._write_state("schema_version", b"2")
+            self.save_session(session)
+        if stopped:
+            app = self.load_app_state()
+            if app.pending_intervention_id in stopped:
+                app.pending_intervention_id = None
+                self.save_app_state(app)
+
+    def _clear_pending_hypothesis(self, item_id: str) -> None:
+        app = self.load_app_state()
+        if app.pending_hypothesis_id == item_id:
+            app.pending_hypothesis_id = None
+            self.save_app_state(app)
+
+    def _clean_pending_ids(self) -> None:
+        app = self.load_app_state()
+        claim_ids = {item.id for item in self.list_claims()}
+        intervention_ids = {item.id for item in self.list_interventions(active_only=True)}
+        changed = False
+        if app.pending_hypothesis_id not in claim_ids:
+            app.pending_hypothesis_id = None
+            changed = True
+        if app.pending_intervention_id not in intervention_ids:
+            app.pending_intervention_id = None
+            changed = True
+        if changed:
+            self.save_app_state(app)
 
     def _load_or_create_key(self) -> bytes:
         path = self.directory / "memory.key"
@@ -1193,26 +2105,28 @@ class MemoryStore:
         if self._transaction is not None:
             yield
             return
-        database = self._open_connection()
+        database = self._ephemeral_database or self._open_connection()
         self._transaction = database
         try:
             with database:
                 yield
         finally:
             self._transaction = None
-            database.close()
+            if not self._ephemeral:
+                database.close()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
         if self._transaction is not None:
             yield self._transaction
             return
-        database = self._open_connection()
+        database = self._ephemeral_database or self._open_connection()
         try:
             with database:
                 yield database
         finally:
-            database.close()
+            if not self._ephemeral:
+                database.close()
 
     def _open_connection(self) -> sqlite3.Connection:
         database = sqlite3.connect(self.database_path, autocommit=False)
@@ -1252,6 +2166,35 @@ class MemoryStore:
         return model.model_validate_json(self._decrypt(payload))
 
 
+def _claim_allowed_in_formulation(item: MemoryItem, field_name: str) -> bool:
+    if item.lifecycle is not ClaimLifecycle.ACTIVE or _is_stale_hypothesis(item):
+        return False
+    if item.origin is ClaimOrigin.USER_STATEMENT:
+        return field_name not in {"open_hypotheses", "shared_hypotheses"}
+    if item.fit is ClaimFit.DOES_NOT_FIT:
+        return False
+    if field_name == "open_hypotheses":
+        return item.fit in {ClaimFit.NOT_REVIEWED, ClaimFit.UNSURE, ClaimFit.PARTLY_FITS}
+    if field_name == "shared_hypotheses":
+        return item.fit in {ClaimFit.FITS, ClaimFit.PARTLY_FITS}
+    return False
+
+
+def _is_stale_hypothesis(item: MemoryItem, now: datetime | None = None) -> bool:
+    if item.origin is not ClaimOrigin.AGENT_HYPOTHESIS or item.fit not in {
+        ClaimFit.NOT_REVIEWED,
+        ClaimFit.UNSURE,
+    }:
+        return False
+    reviewed = datetime.fromisoformat(item.last_reviewed_at or item.last_seen_at)
+    return (now or _now()) - reviewed >= timedelta(days=DEFAULT_STALE_HYPOTHESIS_DAYS)
+
+
+def _context_claim_score(item: ContextClaim) -> float:
+    semantic = max(0.0, item.semantic_relevance or 0.0)
+    return 0.7 * semantic + 0.3 * item.lexical_relevance
+
+
 def _tokens(text: str) -> set[str]:
     normalized = text.casefold()
     tokens = {token for token in re.findall(r"\w+", normalized) if len(token) >= 4}
@@ -1274,10 +2217,6 @@ def _lexical_score(query: str, text: str) -> int:
     return len(_tokens(query) & _tokens(text))
 
 
-def _hybrid_score(query: str, item: MemoryItem, semantic_score: float | None) -> float:
-    return _hybrid_text_score(query, " ".join([item.content, *item.aliases]), semantic_score)
-
-
 def _hybrid_text_score(query: str, text: str, semantic_score: float | None) -> float:
     lexical = min(_lexical_score(query, text), 3) / 3
     if semantic_score is None:
@@ -1296,36 +2235,82 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float | None:
 
 
 def _near_duplicate(left: str, right: str) -> bool:
-    # ponytail: a linear fuzzy scan is enough for one local user; add an index only if measured.
     if set(re.findall(r"\d+", left)) != set(re.findall(r"\d+", right)):
         return False
-    negation = re.compile(r"\b(non|not|never|cannot|can't|isn't|doesn't|didn't|no)\b")
-    if bool(negation.search(left.casefold())) != bool(negation.search(right.casefold())):
+    if _has_negation(left) != _has_negation(right):
+        return False
+    if _named_tokens(left) != _named_tokens(right):
         return False
     normalized_left = " ".join(re.findall(r"\w+", left.casefold()))
     normalized_right = " ".join(re.findall(r"\w+", right.casefold()))
     return SequenceMatcher(None, normalized_left, normalized_right).ratio() >= 0.9
 
 
+def _claims_conflict(left: str, right: str) -> bool:
+    overlap = _lexical_score(left, right)
+    if overlap == 0:
+        return False
+    different_numbers = set(re.findall(r"\d+", left)) != set(re.findall(r"\d+", right))
+    opposite_negation = _has_negation(left) != _has_negation(right)
+    distinct_names = _named_tokens(left) != _named_tokens(right)
+    return different_numbers or opposite_negation or distinct_names
+
+
+def _named_tokens(value: str) -> set[str]:
+    ignored = {
+        "I",
+        "The",
+        "A",
+        "An",
+        "My",
+        "Il",
+        "Lo",
+        "La",
+        "Un",
+        "Una",
+        "Io",
+        "Mi",
+    }
+    return {
+        token.casefold()
+        for token in re.findall(r"\b[A-ZÀ-ÖØ-Þ][A-Za-zÀ-ÖØ-öø-ÿ'-]+\b", value)
+        if token not in ignored
+    }
+
+
+def _has_negation(value: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(non|not|never|cannot|can't|isn't|doesn't|didn't|no)\b",
+            value.casefold(),
+        )
+    )
+
+
 def _supported_quote(quote: str | None, evidence: str) -> bool:
     if not quote:
         return False
-    normalized_quote = " ".join(quote.split()).casefold()
-    normalized_evidence = " ".join(evidence.split()).casefold()
-    return bool(normalized_quote) and normalized_quote in normalized_evidence
-
-
-def _replace(value: str, old: str, new: str) -> str:
-    return re.sub(re.escape(old), new, value, flags=re.IGNORECASE).strip()
+    return _normalized(quote).casefold() in _normalized(evidence).casefold()
 
 
 def _replace_derived(value: str, old: str, new: str) -> str:
-    replaced = _replace(value, old, new)
+    replaced = re.sub(re.escape(old), new, value, flags=re.IGNORECASE).strip()
     if replaced != value:
         return replaced
-    # A generated summary may paraphrase its evidence. Without field-level provenance, retaining a
-    # strongly overlapping paraphrase could resurrect corrected or forgotten memory. Invalidating
-    # that derived field is conservative and preferable to presenting stale personal information.
     if _lexical_score(old, value) >= 2:
         return ""
     return value
+
+
+def _clear_session_reflection(session: SessionRecord) -> None:
+    session.summary = ""
+    session.themes = []
+    session.user_defined_concerns = []
+    session.meaningful_changes = []
+    session.interventions_discussed = []
+    session.tried = []
+    session.outcomes = []
+    session.unwanted_effects = []
+    session.process_feedback = []
+    session.support_choices = []
+    session.open_questions = []

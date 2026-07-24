@@ -48,6 +48,31 @@ def test_device_login_saves_encrypted_tokens(tmp_path: Path, monkeypatch: object
     assert access.encode() not in database
 
 
+def test_device_login_accepts_string_poll_interval(tmp_path: Path, monkeypatch: object) -> None:
+    access = _token("account-123")
+
+    def fake_request(url: str, payload: dict[str, object], *, form: bool = False):
+        if url == auth.DEVICE_USER_CODE_URL:
+            return {"device_auth_id": "device", "user_code": "ABCD", "interval": " 5 "}
+        if url == auth.DEVICE_TOKEN_URL:
+            return {"authorization_code": "code", "code_verifier": "verifier"}
+        assert form
+        return {"access_token": access, "refresh_token": "refresh", "expires_in": 3600}
+
+    monkeypatch.setattr(auth, "_request_json", fake_request)  # type: ignore[attr-defined]
+    sleeps: list[float] = []
+
+    auth.login_codex(
+        MemoryStore(tmp_path),
+        notify=lambda _message: None,
+        open_browser=lambda _url: None,
+        sleep=sleeps.append,
+        monotonic=lambda: 0,
+    )
+
+    assert sleeps == [5.0]
+
+
 def test_device_login_rejects_invalid_poll_interval(tmp_path: Path, monkeypatch: object) -> None:
     monkeypatch.setattr(
         auth,

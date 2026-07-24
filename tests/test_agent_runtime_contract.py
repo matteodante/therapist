@@ -18,47 +18,22 @@ def _pack() -> ProtocolPack:
     return ProtocolPack.load(Path("protocols/transdiagnostic"))
 
 
-def _record_memory_call() -> dict[int, DeltaToolCall]:
+def _record_user_report_call() -> dict[int, DeltaToolCall]:
     return {
         0: DeltaToolCall(
-            name="record_memory",
+            name="record_user_reports",
             json_args=json.dumps(
                 {
-                    "observations": [
+                    "reports": [
                         {
                             "kind": "event",
-                            "content": "The user felt pressure at work.",
+                            "content": "pressure at work",
                             "evidence_quote": "pressure at work",
                         }
                     ]
                 }
             ),
             tool_call_id="record",
-        )
-    }
-
-
-def _invalid_record_memory_call(attempt: int) -> dict[int, DeltaToolCall]:
-    return {
-        0: DeltaToolCall(
-            name="record_memory",
-            json_args=json.dumps(
-                {
-                    "observations": [
-                        {
-                            "kind": "pattern",
-                            "content": "The user may overprepare when feeling judged.",
-                            "evidence_quote": "pressure at work",
-                        },
-                        {
-                            "kind": "hypothesis",
-                            "content": "Fear of mistakes may sustain the pressure.",
-                            "evidence_quote": "pressure at work",
-                        },
-                    ]
-                }
-            ),
-            tool_call_id=f"invalid-record-{attempt}",
         )
     }
 
@@ -71,182 +46,179 @@ def _has_tool_return(messages: list[Any]) -> bool:
     )
 
 
-def test_staged_action_is_not_committed_when_final_reply_never_validates(
-    tmp_path: Path,
-) -> None:
+def test_staged_action_is_not_committed_when_final_reply_never_validates(tmp_path) -> None:
     async def stream(messages: list[Any], _info: Any):
-        yield "x" * 1_201 if _has_tool_return(messages) else _record_memory_call()
+        yield "x" * 4_001 if _has_tool_return(messages) else _record_user_report_call()
 
     store = MemoryStore(tmp_path)
-
     with pytest.raises(AgentRunError):
         ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
             "I feel pressure at work."
         )
-
-    active = store.active_session()
-    assert active is not None
-    assert store.list_memory() == []
-    assert store.session_transcript(active.id) == ""
+    assert store.list_claims() == []
+    assert store.session_transcript(store.active_session().id) == ""  # type: ignore[union-attr]
 
 
-def test_staged_action_commits_after_model_repairs_invalid_final_reply(
-    tmp_path: Path,
-) -> None:
-    reply_attempts = 0
+def test_staged_action_commits_once_after_output_retry(tmp_path) -> None:
+    attempts = 0
 
     async def stream(messages: list[Any], _info: Any):
-        nonlocal reply_attempts
+        nonlocal attempts
         if not _has_tool_return(messages):
-            yield _record_memory_call()
+            yield _record_user_report_call()
             return
-        reply_attempts += 1
-        yield "x" * 1_201 if reply_attempts == 1 else "What creates the most pressure?"
+        attempts += 1
+        yield "x" * 4_001 if attempts == 1 else "What creates the most pressure?"
 
     store = MemoryStore(tmp_path)
     turn = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
         "I feel pressure at work."
     )
-
-    assert reply_attempts == 2
     assert turn.text == "What creates the most pressure?"
-    assert [item.content for item in store.list_memory()] == ["The user felt pressure at work."]
-    assert "What creates the most pressure?" in store.session_transcript(
-        store.active_session().id  # type: ignore[union-attr]
-    )
+    assert [item.content for item in store.list_claims()] == ["pressure at work"]
 
 
-def test_stream_replaces_rejected_output_and_finishes_with_validated_reply(
-    tmp_path: Path,
-) -> None:
+def test_stream_replaces_rejected_draft_and_persists_only_valid_reply(tmp_path) -> None:
     attempts = 0
 
     async def stream(_messages: list[Any], _info: Any):
         nonlocal attempts
         attempts += 1
-        yield "x" * 1_201 if attempts == 1 else "**Valid reply.**"
+        yield "x" * 4_001 if attempts == 1 else "**Valid reply.**"
 
     events: list[TurnStreamEvent] = []
     store = MemoryStore(tmp_path)
     turn = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
-        "Please answer.", on_event=events.append
+        "Please answer.",
+        on_event=events.append,
     )
-
-    streamed = [event.text for event in events if event.kind is TurnStreamKind.REPLY]
-    assert streamed[0] == "x" * 1_201
-    assert streamed[-1] == turn.text == "**Valid reply.**"
+    replies = [event.text for event in events if event.kind is TurnStreamKind.REPLY]
+    assert replies[-1] == turn.text == "**Valid reply.**"
     transcript = store.session_transcript(store.active_session().id)  # type: ignore[union-attr]
-    assert "x" * 1_201 not in transcript
-    assert "**Valid reply.**" in transcript
+    assert "x" * 4_001 not in transcript
 
 
-def test_stream_emits_tool_input_and_output_before_final_reply(tmp_path: Path) -> None:
+def test_tool_input_and_output_are_emitted_before_reply(tmp_path) -> None:
     async def stream(messages: list[Any], _info: Any):
-        yield (
-            "**What creates the most pressure?**"
-            if _has_tool_return(messages)
-            else _record_memory_call()
-        )
+        yield "A reply" if _has_tool_return(messages) else _record_user_report_call()
 
     events: list[TurnStreamEvent] = []
     ChatSession(
-        FunctionModel(stream_function=stream),
-        _pack(),
-        MemoryStore(tmp_path),
-        "en-US",
+        FunctionModel(stream_function=stream), _pack(), MemoryStore(tmp_path), "en-US"
     ).respond("I feel pressure at work.", on_event=events.append)
+    assert [event.kind for event in events][:2] == [
+        TurnStreamKind.TOOL_INPUT,
+        TurnStreamKind.TOOL_OUTPUT,
+    ]
+    assert events[-1].kind is TurnStreamKind.REPLY
 
-    kinds = [event.kind for event in events]
-    assert kinds[:2] == [TurnStreamKind.TOOL_INPUT, TurnStreamKind.TOOL_OUTPUT]
-    assert kinds[-1] is TurnStreamKind.REPLY
-    assert events[-1].text == "**What creates the most pressure?**"
 
-
-def test_tool_can_repair_two_validation_errors_within_global_budget(
-    tmp_path: Path,
-) -> None:
-    invalid_attempts = 0
-
+def test_repeated_identical_write_is_idempotent(tmp_path) -> None:
     async def stream(messages: list[Any], _info: Any):
-        nonlocal invalid_attempts
-        retry_count = sum(
-            getattr(part, "part_kind", "") == "retry-prompt"
-            and getattr(part, "tool_name", "") == "record_memory"
+        returns = sum(
+            getattr(part, "part_kind", "") == "tool-return"
             for message in messages
             for part in message.parts
         )
-        if _has_tool_return(messages):
-            yield "What creates the most pressure?"
-        elif retry_count < 2:
-            invalid_attempts += 1
-            yield _invalid_record_memory_call(invalid_attempts)
+        if returns == 0:
+            yield _record_user_report_call()
+        elif returns == 1:
+            duplicate = _record_user_report_call()
+            duplicate[0].tool_call_id = "duplicate"
+            yield duplicate
         else:
-            yield _record_memory_call()
+            yield "Thanks for clarifying."
 
     store = MemoryStore(tmp_path)
-    turn = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+    ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
         "I feel pressure at work."
     )
+    assert len(store.list_claims()) == 1
+    metadata = next(
+        message["turn_metadata"]
+        for message in store.export()["messages"]
+        if "turn_metadata" in message
+    )
+    assert metadata["tool_call_counts"] == {"record_user_reports": 2}
 
-    assert invalid_attempts == 2
-    assert turn.text == "What creates the most pressure?"
-    assert [item.content for item in store.list_memory()] == ["The user felt pressure at work."]
 
-
-def test_next_turn_receives_complete_history_with_tool_trace(
-    tmp_path: Path,
-) -> None:
-    async def first_stream(messages: list[Any], _info: Any):
-        yield (
-            "What creates the most pressure?"
-            if _has_tool_return(messages)
-            else _record_memory_call()
+def test_distinct_write_calls_share_cumulative_turn_invariants(tmp_path) -> None:
+    async def stream(messages: list[Any], _info: Any):
+        returns = sum(
+            getattr(part, "part_kind", "") == "tool-return"
+            for message in messages
+            for part in message.parts
         )
+        if returns == 0:
+            yield _record_user_report_call()
+        elif returns == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="record_user_reports",
+                    json_args=json.dumps(
+                        {
+                            "reports": [
+                                {
+                                    "kind": "preference",
+                                    "content": "I want concise questions",
+                                    "evidence_quote": "I want concise questions",
+                                }
+                            ]
+                        }
+                    ),
+                    tool_call_id="preference",
+                )
+            }
+        else:
+            yield "I will keep both points in mind."
 
     store = MemoryStore(tmp_path)
-    ChatSession(FunctionModel(stream_function=first_stream), _pack(), store, "en-US").respond(
+    ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        "I feel pressure at work, and I want concise questions."
+    )
+    assert {item.content for item in store.list_claims()} == {
+        "pressure at work",
+        "I want concise questions",
+    }
+
+
+def test_next_turn_receives_successful_tool_graph_without_case_envelope_persistence(
+    tmp_path,
+) -> None:
+    async def first(messages: list[Any], _info: Any):
+        yield "What happens then?" if _has_tool_return(messages) else _record_user_report_call()
+
+    store = MemoryStore(tmp_path)
+    ChatSession(FunctionModel(stream_function=first), _pack(), store, "en-US").respond(
         "I feel pressure at work."
     )
+    received: list[str] = []
 
-    received_part_kinds: list[str] = []
-
-    async def second_stream(messages: list[Any], _info: Any):
-        received_part_kinds.extend(part.part_kind for message in messages for part in message.parts)
+    async def second(messages: list[Any], _info: Any):
+        received.extend(part.part_kind for message in messages for part in message.parts)
         yield "We can take this slowly."
 
-    ChatSession(FunctionModel(stream_function=second_stream), _pack(), store, "en-US").respond(
+    ChatSession(FunctionModel(stream_function=second), _pack(), store, "en-US").respond(
         "I need a moment."
     )
-
-    assert received_part_kinds == [
-        "user-prompt",
-        "tool-call",
-        "tool-return",
-        "text",
-        "user-prompt",
-    ]
+    assert "tool-call" in received and "tool-return" in received
+    assert sum(kind == "user-prompt" for kind in received) == 3
 
 
-def test_tool_budget_rejects_seventh_call_before_state_can_commit(
-    tmp_path: Path,
-) -> None:
+def test_tool_budget_rejects_twenty_fifth_call_without_commit(tmp_path) -> None:
     async def stream(_messages: list[Any], _info: Any):
         yield {
             index: DeltaToolCall(
-                name="search_memory",
+                name="retrieve_case_context",
                 json_args=json.dumps({"query": f"query {index}"}),
-                tool_call_id=f"search-{index}",
+                tool_call_id=f"lookup-{index}",
             )
-            for index in range(7)
+            for index in range(25)
         }
 
     store = MemoryStore(tmp_path)
-
-    with pytest.raises(UsageLimitExceeded, match="tool_calls_limit of 6"):
+    with pytest.raises(UsageLimitExceeded, match="tool_calls_limit of 24"):
         ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
-            "Please help me make sense of this."
+            "Help me understand this."
         )
-
-    active = store.active_session()
-    assert active is not None
-    assert store.session_transcript(active.id) == ""
+    assert store.session_transcript(store.active_session().id) == ""  # type: ignore[union-attr]

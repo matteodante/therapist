@@ -24,7 +24,7 @@ from therapist.cli import (
     build_parser,
     main,
 )
-from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
+from therapist.memory import MemoryKind, MemoryStore, UserReport
 
 
 def test_guided_setup_advertises_only_the_supported_chatgpt_provider(
@@ -70,8 +70,8 @@ def test_chat_consent_discloses_scope_fallibility_and_data_flow(
     assert "Therapist is experimental AI" in output
     assert "at least 18" in output
     assert "output can be wrong" in output
-    assert "selected context" in output
-    assert store.load_app_state().consent_version == "alpha-2"
+    assert "separate bounded case-data envelope" in output
+    assert store.load_app_state().consent_version == "alpha-3"
 
 
 def test_openai_responses_storage_is_disabled(
@@ -195,12 +195,37 @@ def test_memory_commands_expose_and_correct_structured_memory(
     store = MemoryStore(tmp_path)
     session = store.start_session()
     message_id = store.save_turn(session, "I avoid calls", "What happens?", [])
-    item = store.add_observations(
-        [MemoryObservation(kind=MemoryKind.HYPOTHESIS, content="Calls trigger anxiety")],
+    evidence = store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.EVENT,
+                content="I avoid calls",
+                evidence_quote="I avoid calls",
+            )
+        ],
         message_id,
+        "I avoid calls",
     )[0]
+    item = store.add_hypothesis(
+        "Calls trigger anxiety",
+        linked_claim_ids=[evidence.id],
+        evidence_message_ids=[message_id],
+    )
 
-    assert main(["--data-dir", str(tmp_path), "memory", "confirm", item.id]) == 0
+    assert (
+        main(
+            [
+                "--data-dir",
+                str(tmp_path),
+                "memory",
+                "review",
+                item.id,
+                "fits",
+                "That fits",
+            ]
+        )
+        == 0
+    )
     assert (
         main(
             [
@@ -218,7 +243,54 @@ def test_memory_commands_expose_and_correct_structured_memory(
 
     output = capsys.readouterr().out  # type: ignore[attr-defined]
     assert "Some calls trigger anxiety" in output
-    assert "user_corrected" in output
+    assert "user_statement" in output
+
+
+def test_privacy_mode_and_retention_commands_persist_configuration(
+    tmp_path: Path, capsys: object
+) -> None:
+    assert (
+        main(
+            [
+                "--data-dir",
+                str(tmp_path),
+                "privacy",
+                "set-default",
+                "transcript-only",
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "--data-dir",
+                str(tmp_path),
+                "retention",
+                "set",
+                "--raw-message-days",
+                "30",
+                "--stale-hypothesis-days",
+                "180",
+            ]
+        )
+        == 0
+    )
+    state = MemoryStore(tmp_path).load_app_state()
+    assert state.default_memory_mode.value == "transcript_only"
+    assert state.retention_policy.raw_message_days == 30
+    assert state.retention_policy.stale_hypothesis_days == 180
+    assert main(["--data-dir", str(tmp_path), "privacy", "show"]) == 0
+    assert "Changing mode does not delete" in capsys.readouterr().out  # type: ignore[attr-defined]
+
+
+def test_incompatible_store_reports_clean_break_without_migrating(
+    tmp_path: Path, capsys: object
+) -> None:
+    store = MemoryStore(tmp_path)
+    store._write_state("schema_version", b"2")
+    assert main(["--data-dir", str(tmp_path), "memory", "show"]) == 2
+    assert "migration is not supported" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 
 def test_interactive_command_and_output_stay_out_of_transcript(
@@ -227,9 +299,16 @@ def test_interactive_command_and_output_stay_out_of_transcript(
     store = MemoryStore(tmp_path)
     session = store.start_session()
     message_id = store.save_turn(session, "Original user turn.", "Original reply.", [])
-    store.add_observations(
-        [MemoryObservation(kind=MemoryKind.FACT, content="Rendered command output.")],
+    store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.FACT,
+                content="Rendered command output.",
+                evidence_quote="Rendered command output.",
+            )
+        ],
         message_id,
+        "Rendered command output.",
     )
     before = store.session_transcript(session.id)
 
@@ -246,7 +325,7 @@ def test_interactive_chat_prints_tool_input_and_output(
 ) -> None:
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.consent_version = "alpha-2"
+    state.consent_version = "alpha-3"
     store.save_app_state(state)
     inputs = iter(["Please remember this.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
@@ -255,13 +334,13 @@ def test_interactive_chat_prints_tool_input_and_output(
         on_event(  # type: ignore[operator]
             TurnStreamEvent(
                 TurnStreamKind.TOOL_INPUT,
-                'TOOL INPUT · record_memory\n{"content": "detail"}',
+                'TOOL INPUT · record_user_reports\n{"content": "detail"}',
             )
         )
         on_event(  # type: ignore[operator]
             TurnStreamEvent(
                 TurnStreamKind.TOOL_OUTPUT,
-                'TOOL OUTPUT · record_memory · success\n{"staged": 1}',
+                'TOOL OUTPUT · record_user_reports · success\n{"staged": 1}',
             )
         )
         on_event(  # type: ignore[operator]
@@ -274,9 +353,9 @@ def test_interactive_chat_prints_tool_input_and_output(
     assert _chat(session, store) == 0  # type: ignore[arg-type]
 
     output = capsys.readouterr().out  # type: ignore[attr-defined]
-    assert "TOOL INPUT · record_memory" in output
+    assert "TOOL INPUT · record_user_reports" in output
     assert '"content": "detail"' in output
-    assert "TOOL OUTPUT · record_memory · success" in output
+    assert "TOOL OUTPUT · record_user_reports · success" in output
     assert output.index("TOOL INPUT") < output.index("thera> Done.")
 
 
@@ -285,7 +364,7 @@ def test_plain_chat_does_not_persist_rejected_draft_in_redirected_output(
 ) -> None:
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.consent_version = "alpha-2"
+    state.consent_version = "alpha-3"
     store.save_app_state(state)
     inputs = iter(["Please answer.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
@@ -307,7 +386,7 @@ def test_plain_chat_replaces_draft_in_interactive_terminal(
 ) -> None:
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.consent_version = "alpha-2"
+    state.consent_version = "alpha-3"
     store.save_app_state(state)
     inputs = iter(["Please answer.", "/quit"])
     monkeypatch.setattr("builtins.input", lambda _: next(inputs))
@@ -357,7 +436,7 @@ def test_export_outputs_all_user_owned_layers(tmp_path: Path, capsys: object) ->
             ModelResponse(
                 parts=[
                     ToolCallPart(
-                        "record_memory",
+                        "record_user_reports",
                         {"content": "Busy month"},
                         tool_call_id="record",
                     )
@@ -366,7 +445,7 @@ def test_export_outputs_all_user_owned_layers(tmp_path: Path, capsys: object) ->
             ModelRequest(
                 parts=[
                     ToolReturnPart(
-                        "record_memory",
+                        "record_user_reports",
                         {"staged": 1},
                         tool_call_id="record",
                     )
@@ -384,12 +463,12 @@ def test_export_outputs_all_user_owned_layers(tmp_path: Path, capsys: object) ->
     assert exported["messages"][1]["tool_exchanges"] == [
         {
             "direction": "input",
-            "tool_name": "record_memory",
+            "tool_name": "record_user_reports",
             "content": {"content": "Busy month"},
         },
         {
             "direction": "output",
-            "tool_name": "record_memory",
+            "tool_name": "record_user_reports",
             "content": {"staged": 1},
             "outcome": "success",
         },

@@ -11,7 +11,7 @@ from pydantic_evals import Dataset
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext, LLMJudge
 
 from therapist.chat import ChatSession
-from therapist.memory import MemoryKind, MemoryStatus, MemoryStore
+from therapist.memory import ClaimFit, ClaimOrigin, MemoryKind, MemoryStore
 from therapist.protocol import ProtocolPack
 
 CASES_PATH = Path(__file__).parent / "cases" / "live_openai.yaml"
@@ -36,18 +36,16 @@ class LiveLongitudinalContract(Evaluator[dict[str, Any], dict[str, Any], dict[st
             "formulation_created_when_required": not expected.get("require_formulation", True)
             or ctx.output["formulation_created"],
             "evidence_preserved": ctx.output["evidence_preserved"],
-            "confirmed_memory_created": not expected["require_confirmed_memory"]
-            or "user_confirmed" in ctx.output["statuses"],
-            "explicit_hypothesis_confirmation_recorded": not expected[
-                "require_confirmed_hypothesis"
-            ]
+            "user_report_created": not expected["require_user_report"]
+            or "not_applicable" in ctx.output["statuses"],
+            "explicit_hypothesis_fit_recorded": not expected["require_fitted_hypothesis"]
             or ctx.output["confirmed_hypothesis_count"] > 0,
             "prior_context_recalled": not expected.get("context_term")
             or expected["context_term"].casefold() in ctx.output["context"].casefold(),
             "new_session_created": ctx.output["session_count"] >= expected["minimum_sessions"],
             "adverse_intervention_stopped": not expected.get("require_stopped_intervention", False)
             or "stopped" in ctx.output["intervention_states"],
-            "replies_stay_concise": all(len(reply) <= 1_200 for reply in ctx.output["replies"]),
+            "replies_stay_within_cap": all(len(reply) <= 4_000 for reply in ctx.output["replies"]),
             "no_routine_identity_disclaimer": all(
                 phrase not in reply.casefold()
                 for reply in ctx.output["replies"]
@@ -84,21 +82,21 @@ def test_real_openai_longitudinal_dataset(tmp_path: Path) -> None:
                 )
                 replies.append(turn.text)
                 transcript.append(f"USER: {message}\nTHERAPIST: {turn.text}")
-            items = restarted.list_memory()
-            context = restarted.working_context(inputs["return_messages"][-1])
+            items = restarted.list_claims()
+            context = restarted.retrieve_case_context(inputs["return_messages"][-1])
             return {
                 "all_replies_non_empty": all("THERA: \n" not in turn for turn in transcript),
                 "session_consolidated": closed is not None and bool(closed.summary.strip()),
                 "consolidation_error": None if closed is None else closed.consolidation_error,
                 "formulation_created": bool(
                     restarted.load_formulation().presenting_concerns
-                    or restarted.load_formulation().current_focus
+                    or restarted.load_formulation().accepted_focus
                 ),
-                "evidence_preserved": bool(items)
-                and all(item.evidence_message_ids for item in items),
-                "statuses": [item.status.value for item in items],
+                "evidence_preserved": bool(items) and all(item.evidence for item in items),
+                "statuses": [item.fit.value for item in items],
                 "confirmed_hypothesis_count": sum(
-                    item.status is MemoryStatus.USER_CONFIRMED
+                    item.origin is ClaimOrigin.AGENT_HYPOTHESIS
+                    and item.fit is ClaimFit.FITS
                     and item.kind in {MemoryKind.PATTERN, MemoryKind.HYPOTHESIS}
                     for item in items
                 ),

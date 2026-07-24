@@ -157,30 +157,38 @@ PydanticAI tool loop + plain-text reply -> local model or configured remote prov
 Encrypted SQLite archive + structured longitudinal memory
 ```
 
-Use one PydanticAI agent run per conversation turn. The agent returns the visible reply as `str` and may
-call six bounded function tools: `search_memory`, `record_memory`, `correct_memory`,
-`confirm_hypotheses`, `set_focus`, and `record_intervention`. The first is an optional read-only
-longitudinal lookup; the other five validate and stage actions without mutating SQLite during the
-model run. After a valid final reply, the transcript and all staged actions are committed in one
-transaction; failure leaves both unchanged. The successful PydanticAI message sequence is retained
-in encrypted model history, including paired function-tool inputs and outputs but excluding repeated
-internal instructions and provider thinking, and those tool exchanges are rendered before the final
-reply in both CLI and Telegram. Slash commands such as `/start`,
-`/status`, and `/quit`, their rendered output, and transport-level notices remain excluded from the
-conversation archive and model history.
+Use one PydanticAI agent run per conversation turn. Static instructions contain only the root
+protocol, verified skill catalog, tool/epistemic contracts, and response rules. Longitudinal data is
+serialized as a bounded `CaseContextEnvelope` JSON object in a separate user-data message with an
+explicit quoted-data boundary; it is never concatenated into instructions. Successful session
+history remains another distinct message sequence.
+
+The model may call two read tools, `load_therapeutic_skill` and `retrieve_case_context`, and eight
+staged write tools: `record_user_reports`, `record_hypothesis`, `correct_claim`,
+`review_hypotheses`, `set_focus`, `record_process_feedback`, `record_intervention`, and
+`record_support_choice`. The model may call tools repeatedly when a refined read or another
+evidence-supported mutation adds value. Read results accumulate, identical writes are idempotent,
+and write invariants are validated across the complete staged turn. The model may use no tool and
+may load no skill. It may load at most one verified skill, with no keyword router or preliminary
+classifier. Write tools are absent outside standard memory mode.
+
+The minimal structured output is `TherapistTurnOutput`: a visible reply plus `selected_skill`,
+`referenced_claim_ids`, and `referenced_intervention_ids`. Metadata describes observable actions,
+not private reasoning. After validation, transcript and staged changes commit in one transaction;
+failure leaves both unchanged. Encrypted successful history retains paired tool exchanges while
+excluding repeated instructions, loaded skill bodies, the case envelope, and provider thinking.
+Slash commands and transport notices remain outside conversation history.
 
 Conversation transports receive cumulative reply snapshots and tool input/output events from the
 complete PydanticAI event stream. Drafts may contain an output attempt that is later rejected; the
 next attempt replaces it, and only the validated final output is committed. Provider thinking is
 never emitted. CLI renders drafts in Textual and Telegram uses ephemeral rich-message drafts.
 
-A conversation run permits at most eight model requests, six successful tool calls, two validation
-retries for each invalid tool call, and two output retries within that global budget. All
-model-written strings and collections have size limits. Accepted
-focus, confirmed hypotheses, and agreed or updated interventions require exact supporting text from
-the current user message. The IDs of the last explicitly offered hypothesis and active intervention
-remain pending so confirmation, agreement, and outcome update the original records instead of
-creating copies. Provider transport retries remain a separate concern.
+A conversation run permits at most twenty model requests, twenty-four tool calls, two validation
+retries per invalid tool call, and two output retries. Exact current-message evidence gates direct reports,
+hypothesis reviews, corrections, accepted focus, reusable process feedback, support choices, and
+intervention consent/outcomes where relevant. The last offered hypothesis and active intervention
+remain pending so later review updates the same records.
 
 When a session closes, use one additional model call with the structured `SessionReflection` output
 to summarize the episode and link existing claims into the case formulation. Consolidation allows
@@ -221,25 +229,27 @@ model on every turn.
 - `Message`: complete encrypted user/assistant archive retained until deletion.
 - `Session`: time- or context-bounded episode with summary, themes, interventions, user response,
   open questions, and an explicit end reason.
-- `MemoryItem`: a durable fact, preference, consequential event, pattern, or hypothesis with
-  provenance and timestamps; a turn may write at most two.
+- `MemoryItem`: a durable fact reported by the user, preference, event, pattern, or hypothesis with
+  independent origin, fit, lifecycle, evidence, conflict links, and timestamps.
 - `CaseFormulation`: an evidence map that derives concerns, triggers, thoughts, behavior, coping,
   relationships, course, functioning, explanatory model, preferences, maintaining factors,
   strengths, hypotheses, and focus from active memory claim IDs.
 - `InterventionRecord`: one offered or agreed technique with consent state, linked claims,
   prediction, outcome, user appraisal, and follow-up information. It is not a goal.
-- `WorkingContext`: formulation, bounded confirmed memory, unresolved hypotheses, the latest three
-  completed sessions, at most five active interventions, and five historical excerpts.
+- `CaseContextEnvelope`: bounded user reports, hypotheses, conflicts, relevant sessions, active
+  interventions, process preferences, support choices, excerpts, and accepted/proposed focus.
 - `SemanticIndex`: encrypted vectors for active memory items, active interventions, and bounded
   candidate user messages. It is derived, excluded from export, safe to discard, and never
   establishes truth or provenance.
 
-Memory states:
+Claim dimensions:
 
-- `user_confirmed`: directly stated or explicitly confirmed by the user;
-- `agent_hypothesis`: an interpretation that must remain tentative;
-- `user_corrected`: a user correction that overrides older inferences;
-- `archived`: excluded from future context while retained in the user's export until full deletion.
+- origin: `user_statement` or `agent_hypothesis`;
+- fit: `not_applicable`, `not_reviewed`, `fits`, `partly_fits`, `does_not_fit`, or `unsure`;
+- lifecycle: `active`, `superseded`, or `archived`;
+- evidence relation: `supports`, `corrects`, `reviews`, or `contradicts`;
+- evidence quality: `exact_quote`. No legacy-unquoted records are created because this revision is a
+  clean break without migration.
 
 The complete archive is retained until the user deletes it. Corrections and forgotten items must be
 removed from derived formulation and summaries and suppressed from future retrieval. Current-session
@@ -248,8 +258,9 @@ boundary; long-term continuity across the resulting sessions comes from structur
 relevant excerpts.
 When generated derived text paraphrases corrected or forgotten evidence, the overlapping derived
 field is conservatively invalidated instead of risking stale personal information returning.
-Explicit corrections from natural conversation target an existing claim ID, retain the old wording
-as superseded provenance, clear stale aliases, and cannot also create a replacement claim.
+Explicit corrections target an existing claim ID, retain old wording as superseded provenance,
+clear stale aliases, and derive any replacement only from a second exact quote. A contradiction
+without replacement supersedes the claim without inventing new content.
 If forgetting removes the meaningful description of an intervention, its sensitive content is
 replaced with a neutral tombstone and the record is stopped rather than deleted, preserving lifecycle
 and provenance without returning forgotten content.
@@ -259,6 +270,17 @@ payload in the same transaction so restart cannot move the eight-hour boundary b
 comes from the Python standard library. Sensitive payloads are encrypted with Fernet using a
 separate local key with filesystem mode `0600`. This protects copied databases and casual backups;
 it does not replace full-disk encryption or protect a compromised operating-system account.
+
+Memory modes are explicit. `standard` persists every encrypted layer; `transcript_only` persists
+only transcript and successful model history and exposes no structured write tools; `ephemeral`
+uses an in-process encrypted SQLite store and writes nothing to disk. Mode changes do not erase
+earlier data. `RetentionPolicy` independently controls raw-message, session-summary, and stale-
+hypothesis days; all values default to `None`. Apply it at startup, before retrieval when configured,
+or through explicit CLI commands. There is no worker.
+
+This schema is an intentional clean break. Do not add migration code, legacy aliases, schema
+fallbacks, or plaintext backups. Reject an older or unknown schema without modifying it and direct
+the user to a fresh data directory or deliberate deletion.
 
 ## CLI contract
 
@@ -291,8 +313,8 @@ Primary commands:
 
 ```text
 thera setup
-thera chat [--plain] --model <provider:model> --locale it-IT|en-US --context-window-tokens <16000..128000>
-thera telegram --model <provider:model> --locale it-IT|en-US --allowed-user-id <numeric-id> --context-window-tokens <16000..128000>
+thera chat [--plain] [--memory-mode standard|transcript-only|ephemeral]
+thera telegram [--memory-mode standard|transcript-only|ephemeral]
 thera telegram-service install
 thera telegram-service status
 thera telegram-service restart
@@ -304,13 +326,21 @@ thera memory show
 thera memory case
 thera memory sessions
 thera memory interventions
-thera memory confirm <id>
+thera memory review <id> fits|partly_fits|does_not_fit|unsure <evidence>
 thera memory correct <id> <text>
 thera memory forget <id>
 thera memory model status
 thera memory model verify
 thera memory model install
 thera memory model remove
+thera privacy show
+thera privacy set-default <mode>
+thera retention show
+thera retention set
+thera retention dry-run
+thera retention apply
+thera delete-session <id>
+thera delete-before <date>
 thera export [--output path]
 thera delete-data
 thera doctor
@@ -493,23 +523,22 @@ Original protocol text is licensed under the repository license; linked sources 
 relicensed. It remains `experimental`; clinical review is deferred and no clinical claims are
 permitted.
 
-The current default is `therapist.transdiagnostic`. Its six bounded skills cover shared
-formulation, psychological flexibility and emotional awareness, avoidance and behavioral change,
-practical problem solving, review/maintenance, and explicit repair after misattunement. The root
-skill routes each turn and permits at most one intervention skill at a time.
+The current default is `therapist.transdiagnostic`. Its ten separately loaded skills cover contract
+and preferences, progressive formulation, shared planning, alliance/outcome/harm monitoring,
+misattunement repair, psychological flexibility, avoidance behavior, practical problem solving,
+review/maintenance, and support/referral/closure. The root contains only cross-cutting principles.
 
-Each turn returns concise GitHub-compatible Markdown capped at 1,200 characters, without raw HTML,
-images, or embedded media. Durable changes use validated staged tools, including a hypothesis
-offered for confirmation so a later user confirmation promotes that exact pending memory item.
-Questions are optional and normally sparse; naturalness and avoidance of interrogation are evaluated
-at the conversation level. The turn has no `process_stage`,
-`selected_skill`, or other model-written process classifier; the prompt supplies the full protocol
-and the agent chooses conversational behavior and tools from meaning and context.
+Each turn returns GitHub-compatible Markdown capped at 4,000 characters, without raw HTML or
+embedded media. Questions are optional and normally sparse. `selected_skill` is observable audit
+metadata derived from a successful load-tool call, not a process classifier or explanation. The
+model chooses from meaning, history, case data, protocol, and tool results.
 
-Memory tool use is intentionally sparse: at most two durable items total per turn, with no more than
-one hypothesis. A model-written pattern remains tentative by default. A directly stated user pattern
-may be stored as confirmed only when its content and evidence are the same exact quote from the
-current message.
+Memory mutation is bounded by cumulative semantic invariants rather than one-call-per-tool rules:
+at most two new direct user reports, one new hypothesis, and one intervention change per turn.
+Distinct evidence-linked corrections, reviews, process preferences, and support choices may be
+staged through multiple calls; incompatible mutations of the same record fail before commit.
+A model-written pattern remains tentative by default. A directly stated user pattern may be stored
+as confirmed only when its content and evidence are the same exact quote from the current message.
 Near-identical claims merge conservatively using the standard library, while differing numbers or
 negation always remain distinct. An unaccepted proposed focus expires when the session closes.
 
@@ -520,7 +549,7 @@ before extending an old pattern to new material.
 The agent recognizes misattunement semantically from the current message, history, and protocol
 rather than from a fixed phrase list. The reply must acknowledge the mismatch, stop the rejected
 technique, and invite one correction before further therapeutic work. Delivery preferences learned
-from the repair still require exact user evidence through the memory tool.
+from the repair still require exact user evidence through `record_process_feedback`.
 
 Relational safety is part of the protocol: the agent must not encourage exclusivity, imply human
 feelings, or use remembered vulnerability to drive engagement. It follows user-defined functioning
@@ -644,8 +673,9 @@ manually before releases or after changing model integration; do not make ordina
 depend on an external provider.
 
 Deterministic runtime-contract tests additionally verify that staged tool actions survive output
-retry but never persist after a failed run, successful history retains paired tool exchanges, and the
-per-turn tool-call budget is enforced before commit.
+retry but never persist after a failed run, repeated reads and cumulative writes work without
+duplication, successful history retains paired tool exchanges, and the per-turn operational
+tool-call budget is enforced before commit.
 
 A separate Codex-subscription memory eval exercises the configured experimental OAuth backend with
 synthetic data through the production `ChatSession`: capture, explicit hypothesis confirmation,
@@ -671,6 +701,11 @@ THERA_RUN_CODEX_SAFETY_EVALS=1 \
 
 Set `THERA_CODEX_SAFETY_EVAL_REPEAT=3` before a release candidate. This evaluation is a regression
 aid, not clinical validation or an independent safety assessment.
+
+The bilingual conversational role-play eval runs the twenty versioned synthetic process scenarios
+with a separate streaming semantic judge and exportable review artifacts. Set
+`THERA_CONVERSATION_EVAL_CASES` to comma-separated scenario IDs for focused reruns without changing
+the dataset.
 
 After Telegram is configured, its opt-in transport smoke test sends one clearly labeled persistent
 test message to the allowlisted private chat:

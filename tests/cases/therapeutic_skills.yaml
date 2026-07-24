@@ -1,156 +1,64 @@
 name: therapeutic_skill_contracts
 cases:
-  - name: SKILL-001
-    metadata:
-      description: Shared formulation stays concrete, tentative, and collaborative.
-    inputs:
-      path: skills/build-shared-formulation/SKILL.md
-      required_terms:
-        - possible moves, not ordered steps or a checklist
-        - one recent concrete episode
-        - Offer one concise maintaining loop as a hypothesis only when
-        - Invite confirmation or correction
-        - There is no obligation to cover every area or complete a cycle
-        - Do not infer childhood cause
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-002
-    metadata:
-      description: Psychological flexibility uses one consented process without promising relief.
-    inputs:
-      path: skills/increase-psychological-flexibility/SKILL.md
-      required_terms:
-        - Select one process
-        - ask permission
-        - change the relationship to the experience
-        - Do not promise calm
-        - Stop if the exercise increases distress
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-003
-    metadata:
-      description: Behavioral work is a small experiment whose outcome is reviewed.
-    inputs:
-      path: skills/change-avoidance-behavior/SKILL.md
-      required_terms:
-        - Confirm the maintaining loop and ask permission
-        - Make the action smaller
-        - State the prediction being tested
-        - Treat non-completion as information
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-004
-    metadata:
-      description: Problem solving is bounded, chosen by the user, and not imposed on harm or loss.
-    inputs:
-      path: skills/solve-practical-problems/SKILL.md
-      required_terms:
-        - Separate the concrete solvable part
-        - Let the user choose
-        - smallest next action
-        - Do not turn grief
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-005
-    metadata:
-      description: Review compares prediction and outcome before adapting the formulation.
-    inputs:
-      path: skills/review-and-maintain-change/SKILL.md
-      required_terms:
-        - what the user actually tried
-        - Compare the prediction with what happened
-        - Update the formulation
-        - Treat non-completion and setbacks as data
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-006
-    metadata:
-      description: The root process routes to no more than one intervention per turn.
+  - name: ROOT
     inputs:
       path: SKILL.md
       required_terms:
-        - Select at most one intervention skill
-        - Do not combine several exercises
-        - this protocol as a private map, not a script
-        - formulation is an option, not the automatic destination
         - Questions are optional
-        - reflection-hypothesis-question template
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-007
-    metadata:
-      description: Misattunement is acknowledged and repaired before more technique.
+        - Do not force formulation
+        - Ask permission before experiential work
+        - at most one intervention approach per turn
+        - Use ordinary presence
+        - Loading no skill is valid
+        - agent hypothesis remains an agent hypothesis
+    expected_output: {all_required_terms_present: true}
+  - name: CONTRACT
+    inputs:
+      path: skills/establish-contract-and-preferences/SKILL.md
+      required_terms: [listening, preferred pace and length, immediate request, reusable process preference]
+    expected_output: {all_required_terms_present: true}
+  - name: FORMULATION
+    inputs:
+      path: skills/build-shared-formulation/SKILL.md
+      required_terms: [recent concrete episode, maintaining loop, intake battery, agent hypothesis, active claims]
+    expected_output: {all_required_terms_present: true}
+  - name: PLAN
+    inputs:
+      path: skills/agree-plan-and-review-criteria/SKILL.md
+      required_terms: [present focus, a shared plan, an intervention, poor fit or harm, user wants to be heard]
+    expected_output: {all_required_terms_present: true}
+  - name: MONITOR
+    inputs:
+      path: skills/monitor-alliance-outcomes-and-harms/SKILL.md
+      required_terms: [actually tried, functioning, shame, relational harm, general efficacy]
+    expected_output: {all_required_terms_present: true}
+  - name: REPAIR
     inputs:
       path: skills/repair-misattunement/SKILL.md
-      required_terms:
-        - Acknowledge the specific mismatch
-        - Stop the rejected interpretation
-        - ask one concrete question
-        - Do not propose a new technique
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-008
-    metadata:
-      description: Formulation progressively covers context without becoming an intake battery.
+      required_terms: [specific mismatch, without defending, one concrete question, new technique in the repair turn]
+    expected_output: {all_required_terms_present: true}
+  - name: FLEXIBILITY
     inputs:
-      path: skills/build-shared-formulation/SKILL.md
-      required_terms:
-        - duration and change over time
-        - user's own explanation
-        - prior helpful or harmful responses
-        - intake battery
-        - active memory IDs
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-009
-    metadata:
-      description: Relational safety prevents dependency and engagement manipulation.
+      path: skills/increase-psychological-flexibility/SKILL.md
+      required_terms: [Select one process, ask permission, changing the relationship, Do not promise calm, increases distress]
+    expected_output: {all_required_terms_present: true}
+  - name: AVOIDANCE
     inputs:
-      path: SKILL.md
-      required_terms:
-        - Support the user's autonomy
-        - irreplaceable source
-        - replacing people or professional care
-        - support one realistic human
-        - manufacture intimacy
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-010
-    metadata:
-      description: Longitudinal review includes user-defined outcomes and unwanted effects.
+      path: skills/change-avoidance-behavior/SKILL.md
+      required_terms: [ask permission, avoidance threshold, state the prediction, non-completion as information]
+    expected_output: {all_required_terms_present: true}
+  - name: PRACTICAL
     inputs:
-      path: SKILL.md
-      required_terms:
-        - meaningful change in the user's own terms
-        - unwanted effects
-        - not evidence that the approach works generally
-        - stop and understand the effect
-        - AI-supported conversation or self-help
-    expected_output:
-      all_required_terms_present: true
-
-  - name: SKILL-011
-    metadata:
-      description: Safety responses use contextual judgment instead of keyword routing.
+      path: skills/solve-practical-problems/SKILL.md
+      required_terms: [controllable part, let the user choose, smallest step, Do not turn grief]
+    expected_output: {all_required_terms_present: true}
+  - name: REVIEW
     inputs:
-      path: SKILL.md
-      required_terms:
-        - Assess possible danger from the user's meaning
-        - Never infer danger from a keyword alone
-        - ask one brief, direct question
-        - possible immediate danger
-        - call/text 988
-        - 112 for Italy or the European Union
-        - 911 for the United States
-        - cannot monitor, locate, contact emergency services
-    expected_output:
-      all_required_terms_present: true
+      path: skills/review-and-maintain-change/SKILL.md
+      required_terms: [actually tried, Compare prediction and result, unintended effects, user's words, long gap]
+    expected_output: {all_required_terms_present: true}
+  - name: SUPPORT
+    inputs:
+      path: skills/support-referral-and-closure/SKILL.md
+      required_terms: [human support, practical barriers, wish to stop, return without pressure, generic referral language]
+    expected_output: {all_required_terms_present: true}

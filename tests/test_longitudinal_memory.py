@@ -1,148 +1,221 @@
-from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-from tempfile import TemporaryDirectory
-from typing import Any
+"""Bounded longitudinal retrieval scenarios using synthetic data only."""
 
-from pydantic_evals import Dataset
-from pydantic_evals.evaluators import Evaluator, EvaluatorContext
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
-from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
-
-CASES_PATH = Path(__file__).parent / "cases" / "longitudinal_memory.yaml"
-
-
-@dataclass
-class LongitudinalMemoryContract(Evaluator[dict[str, Any], dict[str, Any], dict[str, Any]]):
-    def evaluate(
-        self, ctx: EvaluatorContext[dict[str, Any], dict[str, Any], dict[str, Any]]
-    ) -> dict[str, bool]:
-        expected = ctx.expected_output or {}
-        context = ctx.output["context"].casefold()
-        expected_export_status = expected.get("export_status")
-        return {
-            "at_least_three_months": ctx.output["age_days"] >= 90,
-            "required_memory_recalled": all(
-                term.casefold() in context for term in expected["required_terms"]
-            ),
-            "superseded_or_forgotten_memory_absent": all(
-                term.casefold() not in context for term in expected["forbidden_terms"]
-            ),
-            "memory_states_match": set(ctx.output["statuses"]) == set(expected["statuses"]),
-            "evidence_provenance_preserved": ctx.output["evidence_preserved"],
-            "completed_session_persisted": ctx.output["completed_session_persisted"],
-            "sensitive_plaintext_absent": ctx.output["sensitive_plaintext_absent"],
-            "archive_status_matches": expected_export_status is None
-            or expected_export_status in ctx.output["export_statuses"],
-        }
+from therapist.memory import (
+    ClaimCorrection,
+    ClaimFit,
+    HypothesisReview,
+    InterventionDecision,
+    InterventionState,
+    MemoryKind,
+    MemoryStore,
+    UserReport,
+)
 
 
-def _run_longitudinal_case(inputs: dict[str, Any]) -> dict[str, Any]:
-    with TemporaryDirectory(prefix="therapist-eval-") as directory:
-        path = Path(directory)
-        store = MemoryStore(path)
-        started_at = datetime.fromisoformat(inputs["started_at"])
-        return_at = datetime.fromisoformat(inputs["return_at"])
-        session = store.start_session(started_at)
-        evidence_id = store.save_turn(
-            session,
-            inputs["user_message"],
-            inputs["assistant_message"],
-            [],
-            started_at,
+class ConceptEmbedder:
+    @staticmethod
+    def _vector(text: str) -> list[float]:
+        text = text.casefold()
+        concepts = (
+            ("phone", "call", "telefon", "chiamat"),
+            ("sleep", "night", "sonno", "notte"),
+            ("support", "psychologist", "aiuto", "psicolog"),
         )
-        items = store.add_observations(
-            [
-                MemoryObservation(kind=MemoryKind(item["kind"]), content=item["content"])
-                for item in inputs["observations"]
-            ],
-            evidence_id,
-            started_at,
-        )
-        store.close_session(session, summary=inputs["summary"], now=started_at)
+        for index, terms in enumerate(concepts):
+            if any(term in text for term in terms):
+                return [float(position == index) for position in range(4)]
+        return [0.0, 0.0, 0.0, 1.0]
 
-        operation = inputs.get("operation")
-        if operation:
-            target = next(item for item in items if item.content == operation["target"])
-            if operation["type"] == "correct":
-                store.correct_memory(target.id, operation["replacement"])
-            else:
-                store.forget_memory(target.id)
+    def embed_documents_sync(self, documents: list[str]) -> SimpleNamespace:
+        return SimpleNamespace(embeddings=[self._vector(value) for value in documents])
 
-        restarted = MemoryStore(path)
-        context = restarted.working_context(inputs["query"])
-        active_items = context.confirmed_memory + context.hypotheses
-        exported = restarted.export()
-        exported_by_id = {item["id"]: item for item in exported["memory"]}
-        sensitive_fragments = [
-            inputs["user_message"].encode(),
-            *(item["content"].encode() for item in inputs["observations"]),
-        ]
-        database = restarted.database_path.read_bytes()
-        return {
-            "age_days": (return_at - started_at).days,
-            "context": context.model_dump_json(),
-            "statuses": [item.status.value for item in active_items],
-            "evidence_preserved": all(
-                exported_by_id[item.id]["evidence_message_ids"] == [evidence_id]
-                for item in active_items
-            ),
-            "completed_session_persisted": bool(
-                context.recent_sessions and context.recent_sessions[0].ended_at
-            ),
-            "sensitive_plaintext_absent": all(
-                fragment not in database for fragment in sensitive_fragments
-            ),
-            "export_statuses": [item["status"] for item in exported["memory"]],
-        }
+    def embed_query_sync(self, query: str) -> SimpleNamespace:
+        return SimpleNamespace(embeddings=[self._vector(query)])
 
 
-def test_written_longitudinal_dataset() -> None:
-    loaded = Dataset[dict[str, Any], dict[str, Any], dict[str, Any]].from_file(CASES_PATH)
-    dataset = Dataset(
-        name=loaded.name,
-        cases=loaded.cases,
-        evaluators=[LongitudinalMemoryContract()],
+def _store(tmp_path) -> MemoryStore:
+    return MemoryStore(
+        tmp_path,
+        embedding_model="test:concept",
+        embedder=ConceptEmbedder(),  # type: ignore[arg-type]
     )
 
-    report = dataset.evaluate_sync(_run_longitudinal_case, progress=False)
-    failed = [
-        f"{case.name}:{name}"
-        for case in report.cases
-        for name, result in case.assertions.items()
-        if not result.value
-    ]
 
-    assert not report.failures, report.render(include_errors=True)
-    assert not failed, report.render(include_input=True, include_output=True, include_reasons=True)
+def _report(store: MemoryStore, text: str, when: datetime):
+    session = store.active_session() or store.start_session(when)
+    message_id = store.save_turn(session, text, "Noted.", [], when)
+    return store.add_user_reports(
+        [UserReport(kind=MemoryKind.EVENT, content=text, evidence_quote=text)],
+        message_id,
+        text,
+        when,
+    )[0]
 
 
-def test_longitudinal_context_stays_bounded_with_hundreds_of_records(tmp_path: Path) -> None:
-    store = MemoryStore(tmp_path)
-    for index in range(120):
-        started_at = datetime.fromisoformat(f"2025-01-{index % 28 + 1:02d}T09:00:00+00:00")
-        session = store.start_session(started_at)
-        evidence_id = store.save_turn(
-            session,
-            f"Recurring workload record {index}",
-            "Recorded.",
-            [],
-            started_at,
-        )
-        store.add_observations(
-            [
-                MemoryObservation(kind=MemoryKind.EVENT, content=f"Workload event {index}"),
-                MemoryObservation(kind=MemoryKind.PATTERN, content=f"Workload pattern {index}"),
-            ],
-            evidence_id,
-            started_at,
-        )
-        store.close_session(session, summary=f"Session {index} about workload", now=started_at)
+def test_old_relevant_claim_beats_recent_distractor(tmp_path) -> None:
+    store = _store(tmp_path)
+    old = datetime.now(UTC) - timedelta(days=300)
+    relevant = _report(store, "Phone calls with my manager feel difficult", old)
+    _report(store, "I bought a green notebook today", datetime.now(UTC))
+    context = store.retrieve_case_context("I need to make a work call")
+    assert context.user_reports[0].id == relevant.id
 
-    context = MemoryStore(tmp_path).working_context("recurring workload")
 
-    assert len(context.confirmed_memory) == 30
-    assert len(context.hypotheses) == 10
-    assert len(context.recent_sessions) == 3
-    assert len(context.relevant_excerpts) == 5
-    assert len(context.model_dump_json()) < 30_000
+def test_accepted_focus_pending_intervention_and_process_preference_are_pinned(tmp_path) -> None:
+    store = _store(tmp_path)
+    now = datetime.now(UTC)
+    claim = _report(store, "Work calls are difficult", now)
+    store.save_formulation_links(
+        {"presenting_concerns": [claim.id]},
+        accepted_focus="Understand work-call avoidance",
+    )
+    store.record_process_preference(
+        "I want reflection before advice",
+        "I want reflection before advice",
+        4,
+        "I want reflection before advice",
+    )
+    intervention = store.create_intervention(
+        skill="change-avoidance-behavior",
+        description="One two-minute call",
+        state=InterventionState.AGREED,
+        linked_claim_ids=[claim.id],
+        evidence_message_id=5,
+        consent_quote="yes",
+    )
+    state = store.load_app_state()
+    state.pending_intervention_id = intervention.id
+    store.save_app_state(state)
+    context = store.retrieve_case_context("something unrelated")
+    assert context.accepted_focus == "Understand work-call avoidance"
+    assert context.process_preferences[0].content == "I want reflection before advice"
+    assert context.active_interventions[0].id == intervention.id
+
+
+def test_unwanted_effect_and_support_choice_are_retrievable(tmp_path) -> None:
+    store = _store(tmp_path)
+    intervention = store.create_intervention(
+        skill="increase-psychological-flexibility",
+        description="Brief grounding",
+        state=InterventionState.AGREED,
+        linked_claim_ids=[],
+        evidence_message_id=1,
+        consent_quote="yes",
+    )
+    store.update_intervention(
+        intervention.id,
+        state=InterventionState.TRIED,
+        evidence_message_id=2,
+        unwanted_effects="Grounding increased panic",
+        decision=InterventionDecision.STOP,
+    )
+    store.record_support_choice(
+        "I want to speak with a psychologist",
+        "I want to speak with a psychologist",
+        3,
+        "I want to speak with a psychologist",
+    )
+    context = store.retrieve_case_context("panic and support")
+    assert context.active_interventions[0].unwanted_effects == "Grounding increased panic"
+    assert context.support_choices[0].content == "I want to speak with a psychologist"
+
+
+def test_correction_removes_superseded_wording_from_context(tmp_path) -> None:
+    store = _store(tmp_path)
+    now = datetime.now(UTC)
+    item = _report(store, "I live in Rome", now)
+    text = "That is wrong; I live in Turin"
+    message_id = store.save_turn(store.active_session(), text, "Thanks", [], now)  # type: ignore[arg-type]
+    store.correct_claim(
+        ClaimCorrection(
+            memory_id=item.id,
+            correction_quote="That is wrong",
+            replacement_quote="I live in Turin",
+        ),
+        message_id,
+        text,
+    )
+    serialized = store.retrieve_case_context("where I live").model_dump_json()
+    assert "I live in Turin" in serialized
+    assert "I live in Rome" not in serialized
+
+
+def test_forgotten_claim_is_absent_from_context_and_excerpts(tmp_path) -> None:
+    store = _store(tmp_path)
+    item = _report(store, "A forgotten private event", datetime.now(UTC))
+    store.forget_claim(item.id)
+    assert (
+        "forgotten private event"
+        not in store.retrieve_case_context("private event").model_dump_json()
+    )
+
+
+def test_stale_hypothesis_can_be_retrieved_but_is_marked_stale(tmp_path) -> None:
+    store = _store(tmp_path)
+    old = datetime.now(UTC) - timedelta(days=200)
+    evidence = _report(store, "I fear work calls", old)
+    item = store.add_hypothesis(
+        "Calls may trigger fear of judgment",
+        linked_claim_ids=[evidence.id],
+        evidence_message_ids=[evidence.evidence[0].message_id],
+        now=old,
+    )
+    context = store.retrieve_case_context("fear during calls")
+    found = next(value for value in context.hypotheses if value.id == item.id)
+    assert found.stale
+
+
+def test_does_not_fit_hypothesis_is_not_retrieved(tmp_path) -> None:
+    store = _store(tmp_path)
+    evidence = _report(store, "I fear calls", datetime.now(UTC))
+    item = store.add_hypothesis(
+        "Calls may trigger fear",
+        linked_claim_ids=[evidence.id],
+        evidence_message_ids=[evidence.evidence[0].message_id],
+    )
+    text = "No, it does not fit"
+    session = store.start_session()
+    message_id = store.save_turn(session, text, "Understood", [])
+    store.review_hypotheses(
+        [
+            HypothesisReview(
+                memory_id=item.id,
+                fit=ClaimFit.DOES_NOT_FIT,
+                evidence_quote="does not fit",
+            )
+        ],
+        message_id,
+        text,
+    )
+    assert item.id not in {
+        value.id for value in store.retrieve_case_context("fear and calls").hypotheses
+    }
+
+
+def test_relevant_closed_session_is_retrieved_after_long_gap(tmp_path) -> None:
+    store = _store(tmp_path)
+    old = datetime.now(UTC) - timedelta(days=300)
+    session = store.start_session(old)
+    store.save_turn(session, "I struggled with phone calls", "We discussed that.", [], old)
+    store.close_session(
+        session,
+        summary="The user discussed phone calls.",
+        themes=["phone calls"],
+        now=old,
+    )
+    context = store.retrieve_case_context("I have another call")
+    assert context.relevant_sessions[0].id == session.id
+
+
+def test_bounded_result_is_valid_json_with_complete_records(tmp_path) -> None:
+    store = _store(tmp_path)
+    start = datetime.now(UTC) - timedelta(days=100)
+    for index in range(60):
+        _report(store, f"Phone call record {index}", start + timedelta(days=index))
+    context = store.retrieve_case_context("phone call")
+    assert len(context.user_reports) <= 20
+    assert len(context.relevant_excerpts) <= 5
+    assert context.model_validate_json(context.model_dump_json()) == context

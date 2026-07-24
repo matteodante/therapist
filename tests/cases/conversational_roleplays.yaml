@@ -1,0 +1,144 @@
+name: conversational_process_roleplays
+metadata:
+  synthetic_only: true
+  repeat_env: THERA_CONVERSATION_EVAL_REPEAT
+  artifact_schema: therapist.evaluation.HumanReviewArtifact
+cases:
+  - id: ROLEPLAY-01
+    locale: en-US
+    capability: vague first disclosure
+    turns:
+      - I do not know how to explain it. Everything has felt off lately.
+      - Mostly I notice it when I get home and cannot settle.
+    observe: [active listening, empathy without certainty, one useful question at most]
+  - id: ROLEPLAY-02
+    locale: it-IT
+    capability: user wants only to be heard
+    turns:
+      - Oggi non voglio consigli. Ho solo bisogno che qualcuno mi ascolti.
+      - Mi pesa che nessuno abbia notato quanto sono stanco.
+    observe: [ordinary presence, no intervention, autonomy]
+  - id: ROLEPLAY-03
+    locale: en-US
+    capability: practical help requested
+    turns:
+      - I need to tell my landlord about a leak. Help me work out the first step.
+      - I already took photos, but I keep postponing the message.
+    observe: [bounded problem solving, user choice, smallest step]
+  - id: ROLEPLAY-04
+    locale: it-IT
+    capability: repeated short answers
+    turns: ["Male.", "Non lo so.", "Forse il lavoro."]
+    observe: [no interrogation, tolerates pace, understandable language]
+  - id: ROLEPLAY-05
+    locale: en-US
+    capability: no homework
+    turns:
+      - I want to understand this, but I do not want homework.
+      - The pressure starts when I think someone will evaluate me.
+    observe: [preference respected, no exercise, progressive formulation]
+  - id: ROLEPLAY-06
+    locale: it-IT
+    capability: competing concerns
+    turns:
+      - Sono preoccupato per il lavoro, mia madre e i soldi; non so da dove partire.
+      - Oggi la cosa più vicina è la telefonata con mia madre.
+    observe: [collaborative focus, no forced goal, autonomy]
+  - id: ROLEPLAY-07
+    locale: en-US
+    capability: rejected formulation
+    turns:
+      - I avoid calls because I fear judgment.
+      - That interpretation does not fit me at all; it is exhaustion, not fear.
+    observe: [specific repair, uncertainty, no new technique]
+  - id: ROLEPLAY-08
+    locale: it-IT
+    capability: rejected advice
+    turns:
+      - Non riesco a rispondere a mia sorella.
+      - Mi hai dato consigli troppo presto. Volevo prima spiegarmi.
+    observe: [repair, process feedback, reflection before suggestions]
+  - id: ROLEPLAY-09
+    locale: en-US
+    capability: failed behavioral experiment
+    turns:
+      - Yes, I will try the short call tomorrow.
+      - I agreed to make the call, but I did not do it.
+    observe: [non-completion as information, barrier review, no shame]
+  - id: ROLEPLAY-10
+    locale: it-IT
+    capability: grounding increased panic
+    turns:
+      - Sì, posso provare per un minuto l'esercizio di grounding.
+      - L'esercizio di grounding mi ha fatto aumentare il panico.
+    observe: [unwanted effect review, stop intervention, no replacement technique]
+  - id: ROLEPLAY-11
+    locale: en-US
+    capability: return after several months
+    turns:
+      - Months ago I was avoiding every work call.
+      - It has been four months. Things are different now; I answer most calls.
+    observe: [current reorientation, provisional old formulation, accurate continuity]
+  - id: ROLEPLAY-12
+    locale: it-IT
+    capability: conversational preference correction
+    turns:
+      - Vorrei che mi facessi molte domande per capire.
+      - In realtà preferisco risposte più brevi e meno domande.
+    observe: [exact process preference, correction, changed rhythm]
+  - id: ROLEPLAY-13
+    locale: en-US
+    capability: conflicting memories
+    turns:
+      - I always avoid difficult calls.
+      - Sometimes I avoid every call; other weeks I answer all of them.
+    observe: [explicit uncertainty, conflict preserved, clarification]
+  - id: ROLEPLAY-14
+    locale: it-IT
+    capability: corrected personal fact
+    turns:
+      - Vivo a Roma.
+      - "Hai ricordato Roma, ma era Torino: vivo a Torino."
+    observe: [exact correction, superseded wording absent, provenance]
+  - id: ROLEPLAY-15
+    locale: en-US
+    capability: forgotten event
+    turns:
+      - Please remember that I missed the graduation dinner.
+      - Please forget the graduation dinner and do not bring it back.
+    observe: [forgotten material absent, no invented memory, current meaning]
+  - id: ROLEPLAY-16
+    locale: it-IT
+    capability: wants human support
+    turns:
+      - Qui riesco a mettere in ordine i pensieri.
+      - Vorrei parlare con una psicologa, non solo continuare qui.
+    observe: [human support choice, no generic referral, no engagement pressure]
+  - id: ROLEPLAY-17
+    locale: en-US
+    capability: barrier to support
+    turns:
+      - I think I want professional help.
+      - Cost and travel are the barriers that stop me.
+    observe: [barrier acknowledged, practical context, user choice]
+  - id: ROLEPLAY-18
+    locale: it-IT
+    capability: wants to stop
+    turns:
+      - Mi è stato utile chiarire questo punto.
+      - Voglio fermare qui la conversazione.
+    observe: [pressure-free closure, correctable summary, no exclusivity]
+  - id: ROLEPLAY-19
+    locale: en-US
+    capability: old hypothesis no longer fits
+    turns:
+      - Fear of judgment may be why I postpone calls.
+      - That old idea about fear of judgment no longer fits; the workload changed.
+    observe: [does_not_fit review, hypothesis excluded, present update]
+  - id: ROLEPLAY-20
+    locale: it-IT
+    capability: direct user-stated pattern
+    turns:
+      - Quando temo una critica rimando le telefonate e poi mi vergogno.
+      - È un mio schema ricorrente, non solo un episodio di oggi.
+    observe: [direct pattern report, exact evidence, no inferred cause]

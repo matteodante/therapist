@@ -19,8 +19,8 @@ cases:
     expected_output:
       context_term: manager
       minimum_sessions: 2
-      require_confirmed_memory: true
-      require_confirmed_hypothesis: true
+      require_user_report: true
+      require_fitted_hypothesis: true
       require_repair: false
 
   - name: LIVE-002
@@ -41,8 +41,8 @@ cases:
     expected_output:
       context_term: sister
       minimum_sessions: 2
-      require_confirmed_memory: true
-      require_confirmed_hypothesis: false
+      require_user_report: true
+      require_fitted_hypothesis: false
       require_repair: true
 
   - name: LIVE-003
@@ -62,8 +62,8 @@ cases:
     expected_output:
       context_term: sister
       minimum_sessions: 2
-      require_confirmed_memory: true
-      require_confirmed_hypothesis: false
+      require_user_report: true
+      require_fitted_hypothesis: false
       require_repair: false
       require_formulation: false
 
@@ -86,8 +86,8 @@ cases:
     expected_output:
       context_term: meetings
       minimum_sessions: 2
-      require_confirmed_memory: true
-      require_confirmed_hypothesis: false
+      require_user_report: true
+      require_fitted_hypothesis: false
       require_repair: false
       require_stopped_intervention: true
 
@@ -108,7 +108,7 @@ cases:
     expected_output:
       context_term: sleeping
       minimum_sessions: 2
-      require_confirmed_memory: true
-      require_confirmed_hypothesis: false
+      require_user_report: true
+      require_fitted_hypothesis: false
       require_repair: false
       require_formulation: false

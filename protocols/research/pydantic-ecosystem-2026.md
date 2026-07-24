@@ -30,7 +30,7 @@ that schemas cannot express.
 
 ### 2. Replace character slicing with structured budgets
 
-`context.model_dump_json(indent=2)[:12000]` can cut JSON inside a field. Build
+Slicing a serialized context can cut JSON inside a field. Build
 a bounded context first, prioritizing formulation, confirmed memories, active
 hypotheses, recent sessions, and retrieved excerpts, then serialize complete
 valid JSON. Likewise, select complete recent transcript turns instead of

@@ -7,7 +7,7 @@ from urllib.error import HTTPError
 import pytest
 
 from therapist.chat import TurnStreamEvent, TurnStreamKind
-from therapist.memory import MemoryKind, MemoryObservation, MemoryStore
+from therapist.memory import MemoryKind, MemoryMode, MemoryStore, UserReport
 from therapist.telegram import (
     TelegramBot,
     TelegramChannel,
@@ -64,6 +64,7 @@ class FakeSession:
     def __init__(self) -> None:
         self.received: list[str] = []
         self.end_calls = 0
+        self.memory_mode = MemoryMode.STANDARD
 
     def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
         self.received.append(text)
@@ -132,12 +133,12 @@ def test_channel_requires_separate_consent_then_uses_shared_session(
     assert "Therapist is experimental AI" in bot.messages[-1][1]
     assert "at least 18" in bot.messages[-1][1]
     assert "output can be wrong" in bot.messages[-1][1]
-    assert "selected context" in bot.messages[-1][1]
+    assert "separate bounded case-data envelope" in bot.messages[-1][1]
     assert "not end-to-end encrypted" in bot.messages[-1][1]
     assert session.received == []
 
     channel.process_update(private_update(2, 42, "/consent I UNDERSTAND"))
-    assert store.load_app_state().telegram_consent_version == "alpha-3"
+    assert store.load_app_state().telegram_consent_version == "alpha-4"
 
     channel.process_update(private_update(3, 42, "/start"))
     assert "already recorded" in bot.messages[-1][1]
@@ -212,21 +213,21 @@ def test_transparency_commands_show_status_memory_case_and_privacy(
     session = FakeSession()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     state.embedding_model = "sentence-transformers:test"
     store.save_app_state(state)
     active = store.start_session()
     message_id = store.save_turn(active, "I avoid calls", "What happens?", [])
-    item = store.add_observations(
+    item = store.add_user_reports(
         [
-            MemoryObservation(
+            UserReport(
                 kind=MemoryKind.FACT,
-                content="The user avoids some difficult calls",
+                content="I avoid calls",
                 evidence_quote="I avoid calls",
             )
         ],
         message_id,
-        evidence_text="I avoid calls",
+        "I avoid calls",
     )[0]
     formulation = store.load_formulation()
     formulation.presenting_concerns = [item.content]
@@ -240,12 +241,12 @@ def test_transparency_commands_show_status_memory_case_and_privacy(
 
     output = "\n".join(message for _, message in bot.messages)
     assert "Active memory: 1 items" in output
-    assert f"{item.id} · fact · confirmed" in output
+    assert f"{item.id} · fact · user_statement" in output
     assert f"[evidence: {item.id}]" in output
-    assert f"Evidence: messages {message_id}" in output
+    assert f"Evidence: {message_id}: I avoid calls" in output
     assert "Telegram receives messages" in output
     assert "not end-to-end encrypted" in output
-    assert "delete the bot chat or messages separately" in output
+    assert "Local deletion cannot remove provider" in output
     assert "Agent tool inputs and outputs are shown" in output
     assert "Internal prompts, tokens, and private reasoning are not shown" in output
     assert session.received == []
@@ -257,51 +258,51 @@ def test_memory_command_is_paginated(tmp_path: Path) -> None:
     bot = FakeBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
     session = store.start_session()
     for index in range(12):
         message_id = store.save_turn(session, f"fact {index}", "ok", [])
-        store.add_observations(
+        store.add_user_reports(
             [
-                MemoryObservation(
+                UserReport(
                     kind=MemoryKind.FACT,
-                    content=f"Stable fact number {index}",
+                    content=f"fact {index}",
                     evidence_quote=f"fact {index}",
                 )
             ],
             message_id,
-            evidence_text=f"fact {index}",
+            f"fact {index}",
         )
     channel = TelegramChannel(bot, FakeSession(), store, 42)  # type: ignore[arg-type]
 
     channel.process_update(private_update(1, 42, "/memory 2"))
 
     assert "page 2/2" in bot.messages[-1][1]
-    assert bot.messages[-1][1].count(" · fact · confirmed") == 2
+    assert bot.messages[-1][1].count(" · fact · user_statement") == 2
 
 
 def test_normal_turn_discloses_committed_memory_change(tmp_path: Path) -> None:
     bot = FakeBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
     active = store.start_session()
 
     class RecordingSession(FakeSession):
         def respond(self, text: str, *, on_event: object | None = None) -> SimpleNamespace:
             message_id = store.save_turn(active, text, "Understood.", [])
-            store.add_observations(
+            store.add_user_reports(
                 [
-                    MemoryObservation(
+                    UserReport(
                         kind=MemoryKind.FACT,
                         content=text,
                         evidence_quote=text,
                     )
                 ],
                 message_id,
-                evidence_text=text,
+                text,
             )
             if on_event:
                 on_event(  # type: ignore[operator]
@@ -322,7 +323,7 @@ def test_normal_turn_sends_tool_input_and_output_before_reply(tmp_path: Path) ->
     bot = FakeBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
 
     class ToolSession(FakeSession):
@@ -332,13 +333,13 @@ def test_normal_turn_sends_tool_input_and_output_before_reply(tmp_path: Path) ->
             on_event(  # type: ignore[operator]
                 TurnStreamEvent(
                     TurnStreamKind.TOOL_INPUT,
-                    'TOOL INPUT · record_memory\n{"content": "detail"}',
+                    'TOOL INPUT · record_user_reports\n{"content": "detail"}',
                 )
             )
             on_event(  # type: ignore[operator]
                 TurnStreamEvent(
                     TurnStreamKind.TOOL_OUTPUT,
-                    'TOOL OUTPUT · record_memory · success\n{"staged": 1}',
+                    'TOOL OUTPUT · record_user_reports · success\n{"staged": 1}',
                 )
             )
             on_event(  # type: ignore[operator]
@@ -347,8 +348,8 @@ def test_normal_turn_sends_tool_input_and_output_before_reply(tmp_path: Path) ->
             return SimpleNamespace(
                 text="Done.",
                 tool_trace=(
-                    'TOOL INPUT · record_memory\n{"content": "detail"}\n\n'
-                    'TOOL OUTPUT · record_memory · success\n{"staged": 1}'
+                    'TOOL INPUT · record_user_reports\n{"content": "detail"}\n\n'
+                    'TOOL OUTPUT · record_user_reports · success\n{"staged": 1}'
                 ),
             )
 
@@ -357,8 +358,8 @@ def test_normal_turn_sends_tool_input_and_output_before_reply(tmp_path: Path) ->
     channel.process_update(private_update(1, 42, "Remember this"))
 
     assert bot.messages == [
-        (42, 'TOOL INPUT · record_memory\n{"content": "detail"}'),
-        (42, 'TOOL OUTPUT · record_memory · success\n{"staged": 1}'),
+        (42, 'TOOL INPUT · record_user_reports\n{"content": "detail"}'),
+        (42, 'TOOL OUTPUT · record_user_reports · success\n{"staged": 1}'),
     ]
     assert bot.rich_messages == [(42, "Done.")]
 
@@ -457,7 +458,7 @@ def test_channel_throttles_streamed_drafts_with_one_id(
     bot = FakeBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
 
     class StreamingSession(FakeSession):
@@ -487,7 +488,7 @@ def test_channel_bounds_rejected_draft_to_plain_message_limit(tmp_path: Path) ->
     bot = FakeBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
 
     class LongDraftSession(FakeSession):
@@ -525,7 +526,7 @@ def test_channel_rate_limits_draft_attempts_after_failure(
     bot = RateLimitedDraftBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
     times = iter((1.0, 1.1, 1.3, 6.1))
     monkeypatch.setattr("therapist.telegram.time.monotonic", lambda: next(times))
@@ -543,7 +544,7 @@ def test_channel_uses_plain_delivery_for_unsafe_markdown(tmp_path: Path) -> None
     bot = FakeBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
 
     class UnsafeSession(FakeSession):
@@ -573,7 +574,7 @@ def test_channel_falls_back_to_plain_only_for_rejected_rich_format(
     bot = RejectedRichBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
     channel = TelegramChannel(bot, FakeSession(), store, 42)  # type: ignore[arg-type]
 
@@ -592,7 +593,7 @@ def test_channel_does_not_plain_fallback_after_transient_rich_error(
     bot = UnavailableRichBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
     channel = TelegramChannel(bot, FakeSession(), store, 42)  # type: ignore[arg-type]
 
@@ -617,7 +618,7 @@ def test_channel_retries_missing_tool_events_separately_without_duplicates(
     bot = FirstToolFailureBot()
     store = MemoryStore(tmp_path)
     state = store.load_app_state()
-    state.telegram_consent_version = "alpha-3"
+    state.telegram_consent_version = "alpha-4"
     store.save_app_state(state)
 
     class ToolSession(FakeSession):

@@ -1,7 +1,7 @@
 # Data protection impact assessment screening
 
 **Status:** maintainer screening completed for the planned public alpha
-**Date:** 2026-07-23  
+**Date:** 2026-07-24
 **Owner:** Matteo Dante, individual maintainer and publisher
 
 This is an engineering record, not legal advice or a compliance claim. It maps the current design
@@ -25,8 +25,8 @@ against official screening criteria and records the proportionate release decisi
 
 | Stage | Data | Purpose | Location or recipient | Retention and control |
 | --- | --- | --- | --- | --- |
-| Conversation | Free text that can reveal health, relationships, beliefs, and other highly personal information | Generate a reply and maintain continuity | Local process, then the selected model provider if remote | Complete encrypted local archive until user deletion; provider terms apply externally |
-| Structured memory | Exact evidence, facts, tentative hypotheses, formulation links, interventions, and session summaries | Longitudinal recall and user correction | Encrypted local SQLite | Until corrected, forgotten, or fully deleted |
+| Conversation | Free text that can reveal health, relationships, beliefs, and other highly personal information | Generate a reply and maintain continuity | Local process, then the selected model provider if remote | Standard/transcript-only retain encrypted transcripts; ephemeral does not persist; provider terms apply externally |
+| Structured memory | Exact evidence, user reports, agent hypotheses, conflicts, formulation links, process feedback, interventions/outcomes/harms, support choices, and summaries | Longitudinal recall and user correction | Encrypted local SQLite in standard mode only | Configurable local retention or explicit correction, forgetting, selective deletion, or full deletion |
 | Semantic retrieval | Encrypted derived vectors and bounded candidate messages | Rank relevant local context | Local device | Rebuildable cache; affected rows removed on correction or forgetting |
 | Credentials | Provider keys, Codex tokens, Telegram token and allowlisted ID | Authenticate user-selected services | Encrypted local store; service recipient on use | Local until logout or data deletion; provider terms apply |
 | Telegram transport | Messages, replies, tool events, and requested memory views | Deliver the private bot conversation | Telegram plus selected model provider | Telegram and provider terms apply; local deletion cannot delete their copies |
@@ -77,6 +77,9 @@ and their legal position depends on actual use.
 - Telegram disclosure that cloud chats are not end-to-end encrypted and require separate deletion;
 - public-report rules that prohibit personal data;
 - opt-in remote providers with disclosed external data flow.
+- strict separation of protocol instructions from a separately labelled JSON case-data envelope;
+- standard, transcript-only, and ephemeral modes, plus disabled-by-default retention periods;
+- no migration or plaintext migration backup; incompatible stores fail closed.
 
 These controls reduce exposure but do not establish GDPR compliance, anonymity, confidentiality, or
 provider deletion.

@@ -1,26 +1,15 @@
 ---
 name: change-avoidance-behavior
-description: Design and review one small collaborative behavioral activation step or behavioral experiment. Use when avoidance, withdrawal, inactivity, over-preparation, or short-term relief is maintaining a difficulty and the user is ready to test an alternative action.
+description: Design or review one small collaborative behavioral experiment.
 ---
 
 # Change avoidance behavior
 
-## Workflow
+Confirm the possible maintaining loop and ask permission. Choose one behavior linked to functioning,
+relationship, care, mastery, or values. Make it smaller than the current avoidance threshold; agree
+when and where; state the prediction; and choose a minimal observation. Review what happened later.
+Treat non-completion as information about barriers.
 
-1. Confirm the maintaining loop and ask permission before designing an experiment.
-2. Choose one behavior linked to daily functioning, connection, care, mastery, or stated values.
-3. Make the action smaller than the user's current avoidance threshold; define when and where.
-4. State the prediction being tested without promising a result.
-5. Agree on minimal observation: completion, what happened, and one relevant internal response.
-6. Review outcome later. Treat non-completion as information about barriers, not failure.
-7. Record the offered or agreed experiment, prediction, consent, and later result as one intervention
-   record so it can be reviewed after a long gap.
-
-## Constraints
-
-- Do not prescribe a full schedule, exposure hierarchy, or repeated homework in one turn.
-- Do not make mood improvement a prerequisite for action or a guaranteed consequence.
-- Do not confuse unsafe, coercive, or medically risky action with therapeutic approach behavior.
-- Prefer a draft, first minute, or reversible step when perfectionism makes the task itself avoidable.
-
-Read [references/basis.md](references/basis.md) when auditing scope or source provenance.
+Do not automatically prescribe a routine, hierarchy, repetition, intense exposure, or extended
+homework. Do not promise improvement or confuse unsafe, coercive, or medically risky action with an
+experiment. Prefer a reversible first step.

@@ -46,6 +46,9 @@ Before creating a tag, link durable evidence for every item below in the release
   locale, results, and residual failures recorded;
 - deterministic tests, lint, formatting, protocol validation, installer syntax, wheel installation,
   packaging metadata, dependency audit, and the configured real-provider memory evaluation pass;
+- protocol/context separation, dynamic one-skill loading, no-skill conversation, epistemic
+  provenance, all memory modes, retention, selective deletion, and clean-break schema rejection
+  pass deterministic tests;
 - public claims, runtime consent, privacy notice, support guidance, examples, and release notes remain
   consistent with [docs/claims-and-intended-purpose.md](docs/claims-and-intended-purpose.md);
 - license, protocol-source references, bundled embedding-model license, and generated artifacts have
@@ -94,9 +97,11 @@ Run from a clean checkout of the exact candidate commit:
 
 ```bash
 uv sync --locked --all-groups --extra dev
-uv run ruff check .
 uv run ruff format --check .
-uv run pytest -m "not live" -q
+uv run ruff check .
+uv run ty check src/therapist
+uv run coverage run -m pytest -m "not live"
+uv run coverage report
 uv run thera protocol validate
 sh -n install.sh
 pwsh -NoProfile -Command '$null = [scriptblock]::Create((Get-Content -Raw install.ps1))'
@@ -153,7 +158,8 @@ Human-written notes must include:
 
 1. the public claim and mandatory limitation;
 2. the exact intended audience and excluded uses;
-3. important changes and migrations;
+3. important changes, including the explicit absence of migration and the fresh-data-directory
+   requirement for this clean-break schema;
 4. local and external data flows;
 5. models/providers and locales exercised by live evaluations;
 6. known limitations, residual safety failures, and upstream warnings;

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import math
 import time
 import webbrowser
 from collections.abc import Callable
@@ -59,7 +60,19 @@ def login_codex(
     device_id = _required_str(device, "device_auth_id")
     user_code = _required_str(device, "user_code")
     interval_value = device.get("interval", 5)
-    if not isinstance(interval_value, int | float) or isinstance(interval_value, bool):
+    if isinstance(interval_value, str):
+        try:
+            interval_value = int(interval_value.strip(), 10)
+        except ValueError as error:
+            raise AuthError(
+                "OpenAI authentication response contains an invalid interval."
+            ) from error
+    if (
+        not isinstance(interval_value, int | float)
+        or isinstance(interval_value, bool)
+        or not math.isfinite(interval_value)
+        or interval_value <= 0
+    ):
         raise AuthError("OpenAI authentication response contains an invalid interval.")
     interval = max(1.0, float(interval_value))
     notify(f"Open {DEVICE_VERIFICATION_URI} and enter code: {user_code}")

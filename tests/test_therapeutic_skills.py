@@ -17,10 +17,10 @@ def test_written_therapeutic_skill_contracts() -> None:
     )
 
     def audit_skill(inputs: dict[str, Any]) -> dict[str, bool]:
-        text = (PACK_ROOT / inputs["path"]).read_text(encoding="utf-8").casefold()
+        text = " ".join((PACK_ROOT / inputs["path"]).read_text(encoding="utf-8").casefold().split())
         return {
             "all_required_terms_present": all(
-                term.casefold() in text for term in inputs["required_terms"]
+                " ".join(term.casefold().split()) in text for term in inputs["required_terms"]
             )
         }
 
