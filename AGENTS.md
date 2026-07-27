@@ -124,6 +124,15 @@ Behavioral rules:
 - respond to the user's immediate meaning before suggesting an action, without mechanically
   paraphrasing every message;
 - ask brief, concrete questions and avoid interrogation;
+- answer a question about how something works — a mechanism, what usually helps, whether an
+  experience is common — directly and concretely; withholding that is not neutrality;
+- leave a question about the user's own life to the user, without withdrawing from it: set out the
+  options, what separates them, what they would need to know to choose, and what is noticeable in
+  how they describe it;
+- answer a direct question before asking another one; routinely returning the question is evasion
+  and damages the alliance;
+- state uncertainty as content — what is not known and why the reading could be wrong — instead of
+  diluting the wording until it asserts nothing;
 - identify recurring themes and inconsistencies with a gentle, collaborative tone;
 - label interpretations as hypotheses until the user confirms them;
 - ask permission before exercises;
@@ -248,8 +257,41 @@ Claim dimensions:
 - fit: `not_applicable`, `not_reviewed`, `fits`, `partly_fits`, `does_not_fit`, or `unsure`;
 - lifecycle: `active`, `superseded`, or `archived`;
 - evidence relation: `supports`, `corrects`, `reviews`, or `contradicts`;
-- evidence quality: `exact_quote`. No legacy-unquoted records are created because this revision is a
-  clean break without migration.
+- evidence quality: `exact_quote` or `grounded_paraphrase`. Both require an exact quote from the
+  message that produced the record, so provenance is identical; they differ only in whether the
+  stored content repeats that quote verbatim. Only a `preference` or a `pattern` may be restated,
+  because both are already summaries of something said across a conversation; a `fact` or an
+  `event` keeps the user's exact wording, since that is where an invented specific does the damage.
+  Restating is extractive, not generative: the content must be a subsequence of its quote, so it
+  may only drop the user's own words, never reorder or substitute them. It may not change the
+  quote's negation and requires a quote of at least four words. A gate bounding only length,
+  digits and names would admit vocabulary wholly disjoint from the quote, which is how a reported
+  bad night becomes a recorded chronic condition; a gate allowing reordering would let the same
+  words invert what they denied.
+
+  Polarity markers are counted rather than merely detected, so dropping one of two negations
+  cannot invert a conjunct while leaving the sentence negative overall. Coordinating conjunctions
+  and dashes count as clause boundaries alongside punctuation, so the same drop cannot be smuggled
+  in through the choice of quote either.
+
+  Separately, and for every durable record including a verbatim one, a quote may not be mined out
+  of the clause that qualified it: each clause fragment of the quote must carry the same polarity
+  as the clause it came from, so "è insonnia cronica" cannot be lifted out of "non è insonnia
+  cronica, è solo stress", and extending a quote across the next boundary does not launder the
+  qualifier off its leading fragment. It applies to every quoted field that reaches durable state —
+  report content and evidence, correction and replacement wording, hypothesis evidence, review and
+  accepted wording, accepted focus, process preferences, support choice content, barriers and
+  preferences, retrieval aliases, and intervention consent, where a mined quote would record a
+  refusal as agreement. Every one of those is checked in the conversation tools, where a rejection
+  can be retried, and again in the store as the backstop — except an accepted focus, which the
+  store writes through the generic formulation save and which is therefore validated in the tool
+  only. A quote whose clauses disagree in polarity cannot be shortened at all, since
+  dropping across the boundary would attach one clause's negation to another clause's verb. A
+  residual risk remains and is accepted: within a single clause, deletion can still move what a
+  negation lands on, and can drop an unmarked qualifier such as a condition, turning "only when I
+  drink coffee" into an unconditional claim. No lexical check closes either, and the exact quote is
+  retained beside the content so both stay auditable. No unquoted records are created because this revision
+  is a clean break without migration.
 
 The complete archive is retained until the user deletes it. Corrections and forgotten items must be
 removed from derived formulation and summaries and suppressed from future retrieval. Current-session
@@ -523,10 +565,17 @@ Original protocol text is licensed under the repository license; linked sources 
 relicensed. It remains `experimental`; clinical review is deferred and no clinical claims are
 permitted.
 
-The current default is `therapist.transdiagnostic`. Its ten separately loaded skills cover contract
-and preferences, progressive formulation, shared planning, alliance/outcome/harm monitoring,
-misattunement repair, psychological flexibility, avoidance behavior, practical problem solving,
-review/maintenance, and support/referral/closure. The root contains only cross-cutting principles.
+The current default is `therapist.transdiagnostic`. Its fifteen separately loaded skills cover
+staying with emotion, contract and preferences, progressive formulation, shared planning,
+alliance/outcome/harm monitoring, misattunement repair, psychological flexibility, self-criticism
+and shame, examining a specific thought, repetitive thinking, avoidance behavior, activity
+restoration, practical problem solving, review/maintenance, and support/referral/closure. The root
+contains only cross-cutting principles.
+
+Each skill states the conditions under which it adds value before its procedure, so selection has a
+positive criterion rather than only prohibitions. Skills describe what a stronger move accomplishes
+instead of supplying reusable phrasing, because fixed wording would work against the required
+variation in rhythm and conversational move.
 
 Each turn returns GitHub-compatible Markdown capped at 4,000 characters, without raw HTML or
 embedded media. Questions are optional and normally sparse. `selected_skill` is observable audit
@@ -537,8 +586,12 @@ Memory mutation is bounded by cumulative semantic invariants rather than one-cal
 at most two new direct user reports, one new hypothesis, and one intervention change per turn.
 Distinct evidence-linked corrections, reviews, process preferences, and support choices may be
 staged through multiple calls; incompatible mutations of the same record fail before commit.
-A model-written pattern remains tentative by default. A directly stated user pattern may be stored
-as confirmed only when its content and evidence are the same exact quote from the current message.
+A model-written pattern remains tentative by default. A directly stated user report always requires
+an exact quote from the current message; a fact or event stores that quote verbatim, while a
+preference or pattern may restate it under the structural constraints above, and the two cases are
+distinguished by evidence quality rather than by rejecting the second. Correcting or forgetting a
+restated claim retires and invalidates the quotes that supported it as well as its stored content,
+so the user's superseded wording cannot return through retrieval or derived text.
 Near-identical claims merge conservatively using the standard library, while differing numbers or
 negation always remain distinct. An unaccepted proposed focus expires when the session closes.
 
@@ -591,7 +644,10 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
 - The agent does not claim a memory without archive evidence.
 - Facts and hypotheses remain visibly distinct and retain provenance.
 - Every direct model-written fact has an exact quote in its evidence message; unsupported facts are
-  rejected before persistence.
+  rejected before persistence. A record whose content restates rather than repeats that quote is
+  stored as `grounded_paraphrase` and keeps the user's own wording on its evidence.
+- A competence question receives a direct answer; a question about the user's life receives the
+  options and what separates them rather than a decision or a deflection.
 - Natural-language corrections replace the targeted claim without leaving the contradicted version
   active, and conservative deduplication never merges different numbers or opposite negation.
 - Every formulation statement resolves to an active memory ID; invented IDs and forgotten claims are

@@ -85,6 +85,7 @@ def test_accepted_focus_pending_intervention_and_process_preference_are_pinned(t
         linked_claim_ids=[claim.id],
         evidence_message_id=5,
         consent_quote="yes",
+        evidence_text="yes, let us try that",
     )
     state = store.load_app_state()
     state.pending_intervention_id = intervention.id
@@ -104,6 +105,7 @@ def test_unwanted_effect_and_support_choice_are_retrievable(tmp_path) -> None:
         linked_claim_ids=[],
         evidence_message_id=1,
         consent_quote="yes",
+        evidence_text="yes, let us try that",
     )
     store.update_intervention(
         intervention.id,

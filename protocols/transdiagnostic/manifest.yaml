@@ -3,65 +3,95 @@ status: experimental
 locales: [it-IT, en-US]
 population: adults-18-plus
 intended_use: Adult self-reflection and organization of user-provided thoughts; not diagnosis, treatment, monitoring, or emergency care.
-root_sha256: bbbd6b0a788e4c895fad58220256f7702d539d6df2b21584c8800d3f59e8ac70
+root_sha256: 73096a2ab1ee73952b10ebf0254bfc59c596beabed5b09d267e048bc8eaf0f66
 skills:
+  - id: stay-with-emotion
+    path: skills/stay-with-emotion/SKILL.md
+    sha256: dab3b75edf9eede9dbe705a2dfd40e00d17f57444bb0178d0afe0967d0463091
+    category: core
+    description: Stay with what is felt, name it accurately, and let it be understood.
+    locales: [it-IT, en-US]
   - id: establish-contract-and-preferences
     path: skills/establish-contract-and-preferences/SKILL.md
-    sha256: 694f6eec01d43eb43e8856bd88acdd54071b3bc699f23700794d367c4a92d11e
+    sha256: 103f50b83e1ecf5b834a9c1502fc55898f43ef6ed9069195a26d344dab353c6f
     category: core
     description: Clarify desired help and reusable conversational preferences without onboarding.
     locales: [it-IT, en-US]
   - id: build-shared-formulation
     path: skills/build-shared-formulation/SKILL.md
-    sha256: 6c7683d03e48e1088ac7472bf67c947b65bc37397b18b6b2f89f6ff6d8c6bff2
+    sha256: cd26b0c42aaeb1aaf8f6dfa2f8a6444a10818477b998f99f6d0039bcc3686ed3
     category: core
     description: Build a progressive, collaborative, evidence-linked understanding.
     locales: [it-IT, en-US]
   - id: agree-plan-and-review-criteria
     path: skills/agree-plan-and-review-criteria/SKILL.md
-    sha256: 1d3bbd58dd81fe7d12aca36a32b51985f1ef077b4af04aa31d0df34c746d7f67
+    sha256: aded61f615c078a23c27ff82a8e6ac43d5f3601100e34dd7b733bc087841d7db
     category: core
     description: Agree a light plan and criteria for usefulness or poor fit.
     locales: [it-IT, en-US]
   - id: monitor-alliance-outcomes-and-harms
     path: skills/monitor-alliance-outcomes-and-harms/SKILL.md
-    sha256: 7178453a7e1a3af7727c96b10fb643f4da2949c794f9b98b9d2318af8aa023e8
+    sha256: d3b5e82ca0170a19cc5e7648f569e168bb395ba31760f472790b4fa7c89babd3
     category: review
     description: Review conversational fit, outcomes, functioning, and unwanted effects.
     locales: [it-IT, en-US]
   - id: repair-misattunement
     path: skills/repair-misattunement/SKILL.md
-    sha256: 2f76ff72251aa13a7b83297d16f964ec7f2224888c2c942c4a7a209e1d0f13dc
+    sha256: b9fd93af0ad822d3c21a3112ac4b9d95b59ed2941d7b3a6764a8afa1a4ba7700
     category: repair
     description: Repair a specific mismatch before further formulation or technique.
     locales: [it-IT, en-US]
   - id: increase-psychological-flexibility
     path: skills/increase-psychological-flexibility/SKILL.md
-    sha256: be01467e43dd0345b4fc7568e1fc26e51a1030c98710da9b22dce7a45516311b
+    sha256: 67c2a6e1fca0c309e0254339d68ce7a77c20902bac4c1a1ec3994eebbf2b9c08
     category: intervention
     description: Use one consented awareness, defusion, acceptance, values, or kindness process.
     locales: [it-IT, en-US]
+  - id: meet-self-criticism
+    path: skills/meet-self-criticism/SKILL.md
+    sha256: e4df2763962d044c973cc4ace9b325df1c361d4a7c9fd6a91ffb908b83753a59
+    category: intervention
+    description: Work with the critical voice and with shame without arguing against them.
+    locales: [it-IT, en-US]
+  - id: examine-a-thought
+    path: skills/examine-a-thought/SKILL.md
+    sha256: a9cd389c9e12f3a8c1bf3624bd599d307835835367db7299b7833c62bee69769
+    category: intervention
+    description: Examine one specific thought collaboratively, testing it rather than correcting it.
+    locales: [it-IT, en-US]
+  - id: interrupt-rumination
+    path: skills/interrupt-rumination/SKILL.md
+    sha256: 59e022bae25bdde33e951e519bb57e2bad89b73bc411be18d0240491788a5484
+    category: intervention
+    description: Work with repetitive thinking by changing how it runs rather than what it concludes.
+    locales: [it-IT, en-US]
   - id: change-avoidance-behavior
     path: skills/change-avoidance-behavior/SKILL.md
-    sha256: 9872bcab4e040f232b93002c627636f3949ade1843822f6c57f7c083815296cd
+    sha256: 9b0637edf2959eb009320f3487a01916717f623630e039baed8fe9a76f3da522
     category: intervention
     description: Design or review one small behavioral experiment below the avoidance threshold.
     locales: [it-IT, en-US]
+  - id: restore-activity
+    path: skills/restore-activity/SKILL.md
+    sha256: 2ac6d9fa915d79e1fd781ff65ba384f6a89fabe151b362d504bdffbddd56966d
+    category: intervention
+    description: Rebuild contact with activity that matters when withdrawal has become self-sustaining.
+    locales: [it-IT, en-US]
   - id: solve-practical-problems
     path: skills/solve-practical-problems/SKILL.md
-    sha256: 8ecc9d93da6fffc5e3497943d69f663f8f6d7407ceed4c27a3a84ef7905524cb
+    sha256: 1e118cac29659be98f4686d700b5bef5ba99cd4b1d3fc480344252ffe6ef8527
     category: intervention
     description: Support one bounded user-chosen response to a controllable external problem.
     locales: [it-IT, en-US]
   - id: review-and-maintain-change
     path: skills/review-and-maintain-change/SKILL.md
-    sha256: 65767f3b7a82400edc1e53aedbb8e0b8b92f33f6fbe8fafb986a0e955585cdef
+    sha256: fc1c747a9630cd02fc1570c318d5a8067b371fdfa7905b1b55f1baf54c8e8e5d
     category: review
     description: Compare actual use, prediction, outcomes, unwanted effects, and next decision.
     locales: [it-IT, en-US]
   - id: support-referral-and-closure
     path: skills/support-referral-and-closure/SKILL.md
-    sha256: d74c1dc149cc79f8800cac286682baf484958c3789930ad9f0f5f3785e1d0e60
+    sha256: d65602764ea2e330c6ea42ed9a60ae9f7d7c96abcf4eac53b2d1066f8bff4f91
     category: support
     description: Discuss desired human support, barriers, different needs, and pressure-free closure.
     locales: [it-IT, en-US]

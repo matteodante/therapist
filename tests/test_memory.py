@@ -92,16 +92,359 @@ def test_user_report_requires_exact_current_message_quote(tmp_path) -> None:
         )
 
 
-def test_user_report_rejects_model_paraphrase(tmp_path) -> None:
+def test_user_report_marks_paraphrase_while_keeping_the_users_wording(tmp_path) -> None:
     store = MemoryStore(tmp_path)
     message_id = _message(store, "I prefer shorter answers")
-    with pytest.raises(ValueError, match="exact evidence quote"):
+    [verbatim, paraphrased] = store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.FACT,
+                content="I prefer shorter answers",
+                evidence_quote="I prefer shorter answers",
+            ),
+            UserReport(
+                kind=MemoryKind.PREFERENCE,
+                content="prefer shorter answers",
+                evidence_quote="I prefer shorter answers",
+            ),
+        ],
+        message_id,
+        "I prefer shorter answers",
+    )
+
+    assert verbatim.evidence[0].quality is EvidenceQuality.EXACT_QUOTE
+    assert paraphrased.content == "prefer shorter answers"
+    assert paraphrased.evidence[0].quality is EvidenceQuality.GROUNDED_PARAPHRASE
+    # The restatement never replaces the user's own words: they stay on the evidence.
+    assert paraphrased.evidence[0].quote == "I prefer shorter answers"
+
+
+def test_restatement_may_drop_words_but_never_substitute_vocabulary(tmp_path) -> None:
+    message = "vorrei evitare il tema famiglia e preferisco scrivere la sera"
+    store = MemoryStore(tmp_path)
+    message_id = _message(store, message)
+
+    # Dropping filler and keeping the user's own words across a long sentence is the point.
+    [item] = store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.PREFERENCE,
+                content="evitare il tema famiglia",
+                evidence_quote=message,
+            )
+        ],
+        message_id,
+        message,
+    )
+    assert item.evidence[0].quality is EvidenceQuality.GROUNDED_PARAPHRASE
+
+    # Substituting clinical vocabulary the user never used is what the gate exists to stop.
+    with pytest.raises(ValueError, match="restatement"):
+        store.add_user_reports(
+            [
+                UserReport(
+                    kind=MemoryKind.PATTERN,
+                    content="evitamento fobico familiare",
+                    evidence_quote=message,
+                )
+            ],
+            message_id,
+            message,
+        )
+
+
+def test_user_report_refuses_to_paraphrase_a_fact(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    message_id = _message(store, "I slept badly again last night")
+    with pytest.raises(ValueError, match="exact wording"):
+        store.add_user_reports(
+            [
+                UserReport(
+                    kind=MemoryKind.FACT,
+                    content="The user has chronic insomnia",
+                    evidence_quote="I slept badly again last night",
+                )
+            ],
+            message_id,
+            "I slept badly again last night",
+        )
+
+
+@pytest.mark.parametrize(
+    ("content", "quote", "message"),
+    [
+        # Expands beyond the words it claims to compress.
+        (
+            "I find long detailed answers hard to follow",
+            "I dislike long answers",
+            "I dislike long answers",
+        ),
+        # Introduces a number the user never gave.
+        ("I wake up 4 times", "I keep waking up", "I keep waking up"),
+        # Flips the polarity of what was said.
+        ("I do not enjoy running", "I enjoy running these days", "I enjoy running these days"),
+        # Introduces a name absent from the quote.
+        ("Marco makes it worse", "my colleague makes it worse", "my colleague makes it worse"),
+        # The quote is too slight to support any claim.
+        ("The user avoids conflict", "I do", "I do that a lot"),
+        # Reordering the user's own words can invert exactly what they denied.
+        (
+            "non è solo stress, è insonnia cronica",
+            "non è insonnia cronica, è solo stress",
+            "non è insonnia cronica, è solo stress",
+        ),
+        # Escalates a reported bad night into a recorded condition.
+        (
+            "insonnia cronica grave",
+            "ultimamente dormo poco e mi sveglio spesso",
+            "ultimamente dormo poco e mi sveglio spesso",
+        ),
+        # Dropping a word is enough to reverse the meaning of the quote.
+        (
+            "una volta che mi senta bene",
+            "mai una volta che mi senta bene",
+            "mai una volta che mi senta bene",
+        ),
+        # Dropping one of two negations inverts a conjunct while the clause stays negative.
+        (
+            "bevo alcol e non fumo",
+            "non bevo alcol e non fumo da mesi ormai",
+            "non bevo alcol e non fumo da mesi ormai",
+        ),
+    ],
+)
+def test_user_report_rejects_an_ungrounded_restatement(tmp_path, content, quote, message) -> None:
+    store = MemoryStore(tmp_path)
+    message_id = _message(store, message)
+    with pytest.raises(ValueError, match="restatement"):
+        store.add_user_reports(
+            [UserReport(kind=MemoryKind.PATTERN, content=content, evidence_quote=quote)],
+            message_id,
+            message,
+        )
+
+
+def test_correcting_a_restated_claim_retires_the_wording_it_restated(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    first = _message(store, "I dislike long answers")
+    [claim] = store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.PREFERENCE,
+                content="dislike long answers",
+                evidence_quote="I dislike long answers",
+            )
+        ],
+        first,
+        "I dislike long answers",
+    )
+    assert claim.evidence[0].quality is EvidenceQuality.GROUNDED_PARAPHRASE
+
+    second = _message(store, "actually I like detail now")
+    corrected = store.correct_claim(
+        ClaimCorrection(
+            memory_id=claim.id,
+            correction_quote="actually I like detail now",
+            replacement_quote="I like detail now",
+        ),
+        second,
+        "actually I like detail now",
+    )
+
+    # Both the stored restatement and the user's original wording must be retired, or the
+    # superseded phrasing returns through retrieval.
+    assert "dislike long answers" in corrected.superseded_content
+    assert "I dislike long answers" in corrected.superseded_content
+    context = store.retrieve_case_context("answers")
+    quotes = [reference.quote for item in context.user_reports for reference in item.evidence]
+    assert "I dislike long answers" not in quotes
+
+
+@pytest.mark.parametrize(
+    ("quote", "message"),
+    [
+        ("è insonnia cronica", "non è insonnia cronica, è solo stress"),
+        ("I want to die", "I would never say I want to die"),
+        # Spanning a clause boundary must not launder the qualifier off the leading fragment.
+        ("I want to die, I want to live", "I would never say I want to die, I want to live"),
+        # A conjunction divides clauses too: this conjunct was negative in the message.
+        ("bevo alcol e non fumo", "non bevo alcol e non fumo da mesi ormai"),
+        # English contractions must count as negation, including with a typographic apostrophe.
+        ("drink wine", "I don't drink wine and don't smoke these days"),
+        ("drink wine", "I don\u2019t drink wine and don\u2019t smoke these days"),
+    ],
+)
+def test_user_report_refuses_a_quote_mined_out_of_its_negation(tmp_path, quote, message) -> None:
+    # Being an exact substring is not enough: the clause that qualified it has to come along.
+    store = MemoryStore(tmp_path)
+    message_id = _message(store, message)
+    with pytest.raises(ValueError, match="negation"):
+        store.add_user_reports(
+            [UserReport(kind=MemoryKind.FACT, content=quote, evidence_quote=quote)],
+            message_id,
+            message,
+        )
+
+
+def test_correction_whose_replacement_contains_the_old_wording_is_not_duplicated(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    message = "vorrei evitare il tema famiglia"
+    message_id = _message(store, message)
+    [claim] = store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.PREFERENCE,
+                content="evitare il tema famiglia",
+                evidence_quote=message,
+            )
+        ],
+        message_id,
+        message,
+    )
+    formulation = store.load_formulation()
+    formulation.accepted_focus = "evitare il tema famiglia"
+    store.save_formulation(formulation)
+
+    correction = "in realtà non voglio evitare il tema famiglia"
+    second = _message(store, correction)
+    store.correct_claim(
+        ClaimCorrection(
+            memory_id=claim.id,
+            correction_quote=correction,
+            replacement_quote="non voglio evitare il tema famiglia",
+        ),
+        second,
+        correction,
+    )
+
+    # A replacement that contains the wording it replaces must not be rewritten inside itself.
+    focus = store.load_formulation().accepted_focus
+    assert focus is None or "non voglio non voglio" not in focus
+
+
+def test_correcting_a_verbatim_claim_by_negation_updates_derived_text(tmp_path) -> None:
+    # The commonest correction there is. Derived text must not keep asserting what was just
+    # denied, and must not end up containing the replacement twice.
+    store = MemoryStore(tmp_path)
+    message = "bevo caffè la sera"
+    message_id = _message(store, message)
+    [claim] = store.add_user_reports(
+        [UserReport(kind=MemoryKind.FACT, content=message, evidence_quote=message)],
+        message_id,
+        message,
+    )
+    formulation = store.load_formulation()
+    formulation.accepted_focus = "ridurre il caffè: bevo caffè la sera"
+    store.save_formulation(formulation)
+
+    correction = "in realtà non bevo caffè la sera"
+    second = _message(store, correction)
+    store.correct_claim(
+        ClaimCorrection(
+            memory_id=claim.id,
+            correction_quote=correction,
+            replacement_quote="non bevo caffè la sera",
+        ),
+        second,
+        correction,
+    )
+
+    focus = store.load_formulation().accepted_focus
+    assert focus != "ridurre il caffè: bevo caffè la sera"
+    if focus is not None:
+        assert focus.count("non bevo caffè la sera") == 1
+        assert "non non" not in focus
+
+
+def test_intervention_consent_cannot_be_mined_out_of_a_refusal(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    refusal = "non sono d'accordo a provare l'esercizio stasera"
+    with pytest.raises(ValueError, match="negation"):
+        store.create_intervention(
+            skill="change-avoidance-behavior",
+            description="One small step tonight",
+            state=InterventionState.AGREED,
+            linked_claim_ids=[],
+            evidence_message_id=1,
+            consent_quote="sono d'accordo a provare l'esercizio stasera",
+            evidence_text=refusal,
+        )
+
+
+def test_intervention_consent_must_come_from_the_message(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    with pytest.raises(ValueError, match="current message"):
+        store.create_intervention(
+            skill="change-avoidance-behavior",
+            description="One small step tonight",
+            state=InterventionState.AGREED,
+            linked_claim_ids=[],
+            evidence_message_id=1,
+            consent_quote="sure, let us do it",
+            evidence_text="I am not sure about this",
+        )
+
+
+def test_correction_refuses_a_replacement_mined_out_of_its_negation(tmp_path) -> None:
+    # The inversion the whole gate exists to stop, attempted on the path meant to fix claims.
+    store = MemoryStore(tmp_path)
+    original = "bevo caffè la sera"
+    first = _message(store, original)
+    [claim] = store.add_user_reports(
+        [UserReport(kind=MemoryKind.FACT, content=original, evidence_quote=original)],
+        first,
+        original,
+    )
+
+    correction = "in realtà non bevo caffè la sera, era mio fratello"
+    second = _message(store, correction)
+    with pytest.raises(ValueError, match="negation"):
+        store.correct_claim(
+            ClaimCorrection(
+                memory_id=claim.id,
+                correction_quote=correction,
+                replacement_quote="bevo caffè la sera",
+            ),
+            second,
+            correction,
+        )
+
+
+def test_forgetting_a_restated_claim_also_clears_the_users_own_wording(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    message = "I dislike long answers"
+    message_id = _message(store, message)
+    [claim] = store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.PREFERENCE,
+                content="dislike long answers",
+                evidence_quote=message,
+            )
+        ],
+        message_id,
+        message,
+    )
+    formulation = store.load_formulation()
+    # Derived text quotes the user, not the model's shortened content.
+    formulation.accepted_focus = message
+    store.save_formulation(formulation)
+
+    store.forget_claim(claim.id)
+
+    assert store.load_formulation().accepted_focus is None
+
+
+def test_user_report_paraphrase_still_requires_a_quote_from_the_message(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    message_id = _message(store, "I prefer shorter answers")
+    with pytest.raises(ValueError, match="exact quote"):
         store.add_user_reports(
             [
                 UserReport(
                     kind=MemoryKind.PREFERENCE,
                     content="The user values brevity",
-                    evidence_quote="I prefer shorter answers",
+                    evidence_quote="I want you to be brief",
                 )
             ],
             message_id,
@@ -352,6 +695,7 @@ def test_intervention_is_updated_in_place_with_outcome_and_harm(tmp_path) -> Non
         linked_claim_ids=[item.id],
         evidence_message_id=1,
         consent_quote="yes",
+        evidence_text="yes, let us try that",
     )
     updated = store.update_intervention(
         record.id,

@@ -56,6 +56,17 @@ class MemoryKind(StrEnum):
     HYPOTHESIS = "hypothesis"
 
 
+PARAPHRASABLE_KINDS = frozenset({MemoryKind.PREFERENCE, MemoryKind.PATTERN})
+"""Kinds whose content may restate its quote instead of repeating it.
+
+A preference or a pattern is already a summary of something said across a conversation, so
+restating it in plainer words is the point. A fact or an event is where an invented specific does
+the damage, so those keep the user's exact wording.
+"""
+
+MIN_PARAPHRASE_QUOTE_WORDS = 4
+
+
 class ClaimOrigin(StrEnum):
     USER_STATEMENT = "user_statement"
     AGENT_HYPOTHESIS = "agent_hypothesis"
@@ -84,7 +95,14 @@ class EvidenceRelation(StrEnum):
 
 
 class EvidenceQuality(StrEnum):
+    """How faithfully a stored claim preserves the wording of its evidence quote.
+
+    Both levels require an exact quote from the message that produced them, so provenance is
+    identical. They differ only in whether the stored content repeats that quote verbatim.
+    """
+
     EXACT_QUOTE = "exact_quote"
+    GROUNDED_PARAPHRASE = "grounded_paraphrase"
 
 
 class MemoryMode(StrEnum):
@@ -798,8 +816,21 @@ class MemoryStore:
             quote = _normalized(report.evidence_quote)
             if not _supported_quote(quote, evidence_text):
                 raise ValueError("A user report requires an exact quote from the current message.")
-            if _normalized(report.content).casefold() != quote.casefold():
-                raise ValueError("User-report content must be the exact evidence quote.")
+            if not quote_keeps_clause_polarity(quote, evidence_text):
+                raise ValueError(
+                    "A user report may not quote across the negation that qualified it."
+                )
+            content = _normalized(report.content)
+            if (
+                _evidence_quality(content, quote) is EvidenceQuality.GROUNDED_PARAPHRASE
+                and report.kind not in PARAPHRASABLE_KINDS
+            ):
+                raise ValueError(
+                    "Only a preference or a pattern may restate its quote; a fact or an event "
+                    "must use the user's exact wording."
+                )
+            _require_grounded_paraphrase(content, quote, "a user report")
+            _require_quoted_aliases(report.aliases, evidence_text)
             duplicate = next(
                 (
                     item
@@ -809,8 +840,12 @@ class MemoryStore:
                     and item.kind is report.kind
                     and (
                         item.id == report.merge_into_id
-                        or item.content.casefold() == quote.casefold()
-                        or _near_duplicate(item.content, quote)
+                        or item.content.casefold() == content.casefold()
+                        # Matching on content alone is sound because a restatement reuses the
+                        # words of its quote. Matching on the shared quote instead would merge
+                        # two distinct claims drawn from one sentence, and would swallow a user
+                        # re-asserting wording they had previously corrected.
+                        or _near_duplicate(item.content, content)
                     )
                 ),
                 None,
@@ -820,13 +855,19 @@ class MemoryStore:
                 message_id=evidence_message_id,
                 quote=quote,
                 relation=EvidenceRelation.SUPPORTS,
-                quality=EvidenceQuality.EXACT_QUOTE,
+                quality=_evidence_quality(content, quote),
                 recorded_at=timestamp,
             )
             if duplicate:
                 duplicate.last_seen_at = timestamp
                 if evidence_message_id not in {item.message_id for item in duplicate.evidence}:
-                    duplicate.evidence.append(evidence)
+                    # Quality describes the record this evidence lands on, which keeps its own
+                    # existing content, not the incoming report's wording.
+                    duplicate.evidence.append(
+                        evidence.model_copy(
+                            update={"quality": _evidence_quality(duplicate.content, quote)}
+                        )
+                    )
                 duplicate.aliases = list(dict.fromkeys([*duplicate.aliases, *report.aliases]))[:5]
                 self._save_claim(duplicate)
                 saved.append(duplicate)
@@ -834,7 +875,7 @@ class MemoryStore:
             item = MemoryItem(
                 id=uuid4().hex[:12],
                 kind=report.kind,
-                content=quote,
+                content=content,
                 origin=ClaimOrigin.USER_STATEMENT,
                 fit=ClaimFit.NOT_APPLICABLE,
                 lifecycle=ClaimLifecycle.ACTIVE,
@@ -875,6 +916,7 @@ class MemoryStore:
         active = {item.id: item for item in self.list_claims()}
         if set(linked_claim_ids) - set(active):
             raise ValueError("Hypothesis links must reference available active claims.")
+        _require_quoted_aliases(aliases or [], evidence_text)
         timestamp = _iso(now)
         evidence = [
             reference.model_copy(update={"relation": EvidenceRelation.SUPPORTS})
@@ -882,12 +924,13 @@ class MemoryStore:
             for reference in active[item_id].evidence
             if reference.message_id in evidence_message_ids
         ]
-        if (
-            evidence_message_id is not None
-            and evidence_quote
-            and evidence_text
-            and _supported_quote(evidence_quote, evidence_text)
-        ):
+        if evidence_message_id is not None and evidence_quote and evidence_text:
+            if not _supported_quote(evidence_quote, evidence_text):
+                raise ValueError("A hypothesis quote must come from the current message.")
+            if not quote_keeps_clause_polarity(evidence_quote, evidence_text):
+                raise ValueError(
+                    "A hypothesis may not quote across the negation that qualified it."
+                )
             evidence.append(
                 EvidenceRef(
                     message_id=evidence_message_id,
@@ -951,8 +994,30 @@ class MemoryStore:
                 correction.replacement_quote, evidence_text
             ):
                 raise ValueError("A replacement requires an exact current-message quote.")
+            # The correction path needs this most of all: a replacement mined out of its negation
+            # writes the inversion straight into the claim it was meant to fix.
+            for quoted, label in (
+                (correction.correction_quote, "correction"),
+                (correction.replacement_quote, "replacement"),
+            ):
+                if quoted and not quote_keeps_clause_polarity(quoted, evidence_text):
+                    raise ValueError(
+                        f"A {label} may not quote across the negation that qualified it."
+                    )
             timestamp = _iso(now)
             old = item.content
+            # A restated claim carries wording that differs from its content, so the quotes that
+            # supported the superseded content must be retired with it. Otherwise the corrected
+            # wording keeps returning through retrieval and derived text.
+            replacement_wording = _normalized(correction.replacement_quote or "")
+            retained = {old.casefold(), replacement_wording.casefold()}
+            superseded_quotes = [
+                reference.quote
+                for reference in item.evidence
+                if reference.quote
+                and reference.relation is EvidenceRelation.SUPPORTS
+                and reference.quote.casefold() not in retained
+            ]
             relation = (
                 EvidenceRelation.CORRECTS
                 if correction.replacement_quote
@@ -977,7 +1042,7 @@ class MemoryStore:
                         recorded_at=timestamp,
                     )
                 )
-            item.superseded_content.append(old)
+            item.superseded_content.extend([old, *superseded_quotes])
             item.aliases = []
             item.last_seen_at = timestamp
             item.last_reviewed_at = timestamp
@@ -995,7 +1060,11 @@ class MemoryStore:
             )
             self._rebuild_claim_conflicts()
             self._refresh_formulation_links()
-            self._invalidate_derived_text(old, item.content if correction.replacement_quote else "")
+            replacement = item.content if correction.replacement_quote else ""
+            # Longest first: replacing the shorter stored content before the longer quote it was
+            # drawn from would fragment the derived text and leave the quote unmatchable.
+            for wording in sorted({old, *superseded_quotes}, key=len, reverse=True):
+                self._invalidate_derived_text(wording, replacement)
             self._clear_pending_hypothesis(item.id)
             return item
 
@@ -1020,6 +1089,14 @@ class MemoryStore:
                 review.accepted_wording_quote, evidence_text
             ):
                 raise ValueError("Accepted wording must be an exact current-message quote.")
+            for quoted, label in (
+                (review.evidence_quote, "review"),
+                (review.accepted_wording_quote, "accepted wording"),
+            ):
+                if quoted and not quote_keeps_clause_polarity(quoted, evidence_text):
+                    raise ValueError(
+                        f"A {label} quote may not cross the negation that qualified it."
+                    )
             item = self._get_claim(review.memory_id)
             if (
                 item.origin is not ClaimOrigin.AGENT_HYPOTHESIS
@@ -1073,7 +1150,12 @@ class MemoryStore:
             )
             self._rebuild_claim_conflicts()
             self._refresh_formulation_links()
-            self._invalidate_derived_text(item.content, "", forgotten_id=item.id)
+            # Derived text quotes what the user actually wrote, which for a restated claim is not
+            # the stored content, so forgetting has to reach both. Longest first, or removing the
+            # shorter content leaves the longer quote unmatchable.
+            wordings = {item.content, *(ref.quote for ref in item.evidence if ref.quote)}
+            for wording in sorted(wordings, key=len, reverse=True):
+                self._invalidate_derived_text(wording, "", forgotten_id=item.id)
             self._clear_pending_hypothesis(item.id)
             return item
 
@@ -1098,8 +1180,11 @@ class MemoryStore:
     ) -> ProcessPreference:
         if not _supported_quote(evidence_quote, evidence_text):
             raise ValueError("Process feedback requires an exact evidence quote.")
-        if _normalized(content).casefold() != _normalized(evidence_quote).casefold():
-            raise ValueError("Reusable process preference must use the user's exact wording.")
+        if not quote_keeps_clause_polarity(evidence_quote, evidence_text):
+            raise ValueError(
+                "Process feedback may not quote across the negation that qualified it."
+            )
+        _require_grounded_paraphrase(content, evidence_quote, "a process preference")
         timestamp = _iso(now)
         existing = next(
             (
@@ -1120,7 +1205,7 @@ class MemoryStore:
                 message_id=evidence_message_id,
                 quote=_normalized(evidence_quote),
                 relation=EvidenceRelation.SUPPORTS,
-                quality=EvidenceQuality.EXACT_QUOTE,
+                quality=_evidence_quality(content, evidence_quote),
                 recorded_at=timestamp,
             ),
             created_at=timestamp,
@@ -1149,12 +1234,20 @@ class MemoryStore:
     ) -> SupportChoice:
         if not _supported_quote(evidence_quote, evidence_text):
             raise ValueError("A support choice requires exact evidence.")
-        if _normalized(content).casefold() != _normalized(evidence_quote).casefold():
-            raise ValueError("A support choice must use the user's exact wording.")
+        if not quote_keeps_clause_polarity(evidence_quote, evidence_text):
+            raise ValueError(
+                "A support choice may not quote across the negation that qualified it."
+            )
+        _require_grounded_paraphrase(content, evidence_quote, "a support choice")
         if barrier and not _supported_quote(barrier, evidence_text):
             raise ValueError("A support barrier requires exact evidence.")
         if preference and not _supported_quote(preference, evidence_text):
             raise ValueError("A support preference requires exact evidence.")
+        for quoted, label in ((barrier, "barrier"), (preference, "preference")):
+            if quoted and not quote_keeps_clause_polarity(quoted, evidence_text):
+                raise ValueError(
+                    f"A support {label} may not quote across the negation that qualified it."
+                )
         timestamp = _iso(now)
         item = SupportChoice(
             id=uuid4().hex[:12],
@@ -1163,7 +1256,7 @@ class MemoryStore:
                 message_id=evidence_message_id,
                 quote=_normalized(evidence_quote),
                 relation=EvidenceRelation.SUPPORTS,
-                quality=EvidenceQuality.EXACT_QUOTE,
+                quality=_evidence_quality(content, evidence_quote),
                 recorded_at=timestamp,
             ),
             barrier=_normalized(barrier) if barrier else None,
@@ -1190,6 +1283,7 @@ class MemoryStore:
         linked_claim_ids: list[str],
         evidence_message_id: int,
         consent_quote: str | None = None,
+        evidence_text: str | None = None,
         prediction: str | None = None,
         context: str | None = None,
         follow_up_information: str | None = None,
@@ -1197,6 +1291,7 @@ class MemoryStore:
     ) -> InterventionRecord:
         if state not in {InterventionState.OFFERED, InterventionState.AGREED}:
             raise ValueError("A new intervention must be offered or agreed.")
+        _require_consent_quote(consent_quote, evidence_text)
         if any(
             item.skill == skill and _near_duplicate(item.description, description)
             for item in self.list_interventions(active_only=True)
@@ -1242,6 +1337,7 @@ class MemoryStore:
         description: str | None = None,
         linked_claim_ids: list[str] | None = None,
         consent_quote: str | None = None,
+        evidence_text: str | None = None,
         prediction: str | None = None,
         context: str | None = None,
         outcome: str | None = None,
@@ -1254,6 +1350,7 @@ class MemoryStore:
         record = self._get_intervention(record_id)
         if not valid_intervention_transition(record.state, state):
             raise ValueError(f"Invalid intervention transition: {record.state} -> {state}")
+        _require_consent_quote(consent_quote, evidence_text)
         record.state = state
         for field_name, value in (
             ("description", description),
@@ -2237,7 +2334,7 @@ def _cosine_similarity(left: list[float], right: list[float]) -> float | None:
 def _near_duplicate(left: str, right: str) -> bool:
     if set(re.findall(r"\d+", left)) != set(re.findall(r"\d+", right)):
         return False
-    if _has_negation(left) != _has_negation(right):
+    if _has_broad_negation(left) != _has_broad_negation(right):
         return False
     if _named_tokens(left) != _named_tokens(right):
         return False
@@ -2278,13 +2375,55 @@ def _named_tokens(value: str) -> set[str]:
     }
 
 
+_APOSTROPHES = str.maketrans({"\u2019": "'", "\u02bc": "'", "\u00b4": "'"})
+
+# `\w+n't` covers every English contraction at once, including the ones an explicit list keeps
+# missing: don't, won't, haven't, wouldn't, shouldn't.
+_NEGATION = re.compile(r"\b(non|not|never|cannot|no|\w+n't)\b")
+# "mai" belongs here rather than with plain negation: "meglio che mai" is an ordinary positive
+# statement, and treating it as a contradiction marker would invent conflicts between claims.
+_WEAK_NEGATION = re.compile(
+    r"\b(mai|none|nothing|nobody|without|hardly|rarely|neither|nor|niente|nulla|nessun|"
+    r"nessuno|nessuna|senza|né|neanche|nemmeno|neppure)\b"
+)
+
+
 def _has_negation(value: str) -> bool:
-    return bool(
-        re.search(
-            r"\b(non|not|never|cannot|can't|isn't|doesn't|didn't|no)\b",
-            value.casefold(),
-        )
-    )
+    """Detect plain sentence negation.
+
+    Deliberately narrow. This decides whether two claims contradict each other, and words like
+    "senza" or "without" appear in ordinary positive statements — "dormo bene senza problemi" is
+    not the negation of "dormo bene".
+    """
+    return bool(_NEGATION.search(_fold_apostrophes(value)))
+
+
+def _fold_apostrophes(value: str) -> str:
+    """Case-fold and normalise typographic apostrophes before matching negation.
+
+    Phones and messaging apps substitute U+2019 by default, which would otherwise hide every
+    English contraction from these patterns while leaving the text visually identical.
+    """
+    return value.casefold().translate(_APOSTROPHES)
+
+
+def _has_broad_negation(value: str) -> bool:
+    """Detect any polarity marker, including ones that only weaken a statement.
+
+    Used where a missed negation is worse than a spurious one: deciding whether a shortened
+    restatement still says what the user said.
+    """
+    return _negation_count(value) > 0
+
+
+def _negation_count(value: str) -> int:
+    """Count polarity markers rather than merely detecting one.
+
+    A clause can negate twice — "non bevo alcol e non fumo" — and dropping one marker inverts a
+    conjunct while leaving the sentence negative overall, which a boolean check would wave through.
+    """
+    folded = _fold_apostrophes(value)
+    return len(_NEGATION.findall(folded)) + len(_WEAK_NEGATION.findall(folded))
 
 
 def _supported_quote(quote: str | None, evidence: str) -> bool:
@@ -2293,10 +2432,140 @@ def _supported_quote(quote: str | None, evidence: str) -> bool:
     return _normalized(quote).casefold() in _normalized(evidence).casefold()
 
 
+# Coordinating conjunctions and dashes divide clauses as surely as punctuation does. Without them
+# "bevo alcol" could be quoted out of "non bevo alcol e non fumo", where the conjunct it belongs to
+# is negative even though the sentence keeps a negation either way.
+_CLAUSE_BOUNDARY = re.compile(
+    r"[.!?;,\n]|\s[-\u2013\u2014]\s|\b(?:e|ed|o|oppure|ma|per\u00f2|and|or|but)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def quote_keeps_clause_polarity(quote: str, evidence: str) -> bool:
+    """Reject a quote mined out of the clause that negated it.
+
+    "è insonnia cronica" is a genuine substring of "non è insonnia cronica, è solo stress", so
+    being an exact quote is not by itself enough to make it something the user said. A quote
+    spanning several clauses is checked one fragment at a time against the clause it came from,
+    since a partial leading fragment can shed the words that qualified it.
+    """
+    clauses = [clause for clause in _CLAUSE_BOUNDARY.split(_normalized(evidence)) if clause.strip()]
+    for fragment in _CLAUSE_BOUNDARY.split(_normalized(quote)):
+        if not fragment.strip():
+            continue
+        source = next(
+            (clause for clause in clauses if fragment.strip().casefold() in clause.casefold()),
+            None,
+        )
+        if source is not None and _negation_count(source) != _negation_count(fragment):
+            return False
+    return True
+
+
+def _evidence_quality(content: str, quote: str) -> EvidenceQuality:
+    """Classify a claim by whether its content repeats its evidence quote verbatim.
+
+    The quote itself is validated against the current message by the caller, so a paraphrase is
+    still anchored to words the user actually wrote.
+    """
+    if _normalized(content).casefold() == _normalized(quote).casefold():
+        return EvidenceQuality.EXACT_QUOTE
+    return EvidenceQuality.GROUNDED_PARAPHRASE
+
+
+def is_grounded_paraphrase(content: str, quote: str) -> bool:
+    """Check that a restatement only drops and reorders the words of its quote.
+
+    Restating is extractive rather than generative: the content must be a subsequence of the
+    quote, so it may only drop words and never reorder or substitute them. Allowing any subset
+    would let a reordering invert exactly what the user denied — "non è insonnia cronica, è solo
+    stress" rearranges into "non è solo stress, è insonnia cronica" using the same words.
+
+    Polarity is checked separately, because dropping one word is enough to reverse it. A quote
+    whose clauses do not agree in polarity cannot be shortened at all: dropping across the boundary
+    would attach the negation of one clause to the verb of another, turning "non voglio dormire,
+    voglio lavorare" into "non voglio lavorare".
+    """
+    content_words = re.findall(r"\w+", _normalized(content).casefold())
+    quote_words = re.findall(r"\w+", _normalized(quote).casefold())
+    remaining = iter(quote_words)
+    return (
+        len(quote_words) >= MIN_PARAPHRASE_QUOTE_WORDS
+        and len(content_words) <= len(quote_words)
+        and _has_uniform_polarity(quote)
+        and all(word in remaining for word in content_words)
+        and _negation_count(content) == _negation_count(quote)
+    )
+
+
+def _has_uniform_polarity(value: str) -> bool:
+    clauses = [clause for clause in _CLAUSE_BOUNDARY.split(value) if clause.strip()]
+    return len({_has_broad_negation(clause) for clause in clauses}) <= 1
+
+
+def _require_grounded_paraphrase(content: str, quote: str, subject: str) -> None:
+    if _evidence_quality(content, quote) is EvidenceQuality.EXACT_QUOTE:
+        return
+    if not is_grounded_paraphrase(content, quote):
+        raise ValueError(
+            f"A restatement of {subject} must stay inside its quote: no added number or name, "
+            "no changed negation, no more words than the quote, and a quote of at least "
+            f"{MIN_PARAPHRASE_QUOTE_WORDS} words."
+        )
+
+
+def _require_quoted_aliases(aliases: list[str], evidence: str | None) -> None:
+    """Hold retrieval aliases to the same standard as content.
+
+    Aliases never surface as claim text, but they are durable, they steer lexical retrieval, and
+    nothing else constrains them — an alias saying the opposite of its claim would pull that claim
+    into exactly the conversations it contradicts.
+    """
+    for alias in aliases:
+        if evidence is None or not _supported_quote(alias, evidence):
+            raise ValueError("Each alias must be an exact quote from the current message.")
+        if not quote_keeps_clause_polarity(alias, evidence):
+            raise ValueError("An alias may not quote across the negation that qualified it.")
+
+
+def _require_consent_quote(quote: str | None, evidence: str | None) -> None:
+    """Hold consent to the same standard as every other durable quote.
+
+    Consent is the one field where a mined quote is worst: "sono d'accordo a provare l'esercizio"
+    lifted out of "non sono d'accordo a provare l'esercizio" records a refusal as agreement.
+    """
+    if not quote:
+        return
+    if evidence is None:
+        raise ValueError("An intervention consent quote requires the message it came from.")
+    if not _supported_quote(quote, evidence):
+        raise ValueError("An intervention consent quote must come from the current message.")
+    if not quote_keeps_clause_polarity(quote, evidence):
+        raise ValueError("Consent may not be quoted across the negation that qualified it.")
+
+
 def _replace_derived(value: str, old: str, new: str) -> str:
-    replaced = re.sub(re.escape(old), new, value, flags=re.IGNORECASE).strip()
-    if replaced != value:
-        return replaced
+    """Replace superseded wording, without rewriting text that is already the replacement.
+
+    A replacement routinely contains the wording it replaces — every correction by negation does,
+    turning "I drink coffee late" into "I do not drink coffee late". Substituting blindly would
+    then match inside the text just written and duplicate it, so occurrences of the replacement
+    are held aside while the rest of the value is rewritten.
+    """
+    if new:
+        segments = re.split(f"({re.escape(new)})", value, flags=re.IGNORECASE)
+        rewritten = "".join(
+            segment if index % 2 else re.sub(re.escape(old), new, segment, flags=re.IGNORECASE)
+            for index, segment in enumerate(segments)
+        ).strip()
+    else:
+        rewritten = re.sub(re.escape(old), new, value, flags=re.IGNORECASE).strip()
+    if rewritten != value:
+        return rewritten
+    if new and _normalized(new).casefold() in _normalized(value).casefold():
+        # Already carries the replacement, from an earlier wording of the same correction. The
+        # lexical fallback would read the overlap as stale text and discard a correct field.
+        return value
     if _lexical_score(old, value) >= 2:
         return ""
     return value

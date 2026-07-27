@@ -11,6 +11,10 @@ cases:
         - Use ordinary presence
         - Loading no skill is valid
         - agent hypothesis remains an agent hypothesis
+        - Withholding it is not neutrality
+        - Answer a direct question before asking another one
+        - do not withdraw either
+        - Understand before advising
     expected_output: {all_required_terms_present: true}
   - name: CONTRACT
     inputs:
@@ -61,4 +65,29 @@ cases:
     inputs:
       path: skills/support-referral-and-closure/SKILL.md
       required_terms: [human support, practical barriers, wish to stop, return without pressure, generic referral language]
+    expected_output: {all_required_terms_present: true}
+  - name: EMOTION
+    inputs:
+      path: skills/stay-with-emotion/SKILL.md
+      required_terms: [in the words the user used, tentative reading, Accuracy validates more than sympathy does, Do not rush to regulate]
+    expected_output: {all_required_terms_present: true}
+  - name: SELF_CRITICISM
+    inputs:
+      path: skills/meet-self-criticism/SKILL.md
+      required_terms: [what it was trying to protect, what it costs now, witnessed before it can be examined, Do not argue against the criticism]
+    expected_output: {all_required_terms_present: true}
+  - name: EXAMINE_THOUGHT
+    inputs:
+      path: skills/examine-a-thought/SKILL.md
+      required_terms: [attached to the moment it occurred, without leading, argument with extra steps, Do not dispute]
+    expected_output: {all_required_terms_present: true}
+  - name: RUMINATION
+    inputs:
+      path: skills/interrupt-rumination/SKILL.md
+      required_terms: [not the topic but the form, what it seems to be for, take it to the decision, Do not tell the user to stop thinking about it, ask permission first, say what you expect will happen, Stop if it increases distress]
+    expected_output: {all_required_terms_present: true}
+  - name: ACTIVITY
+    inputs:
+      path: skills/restore-activity/SKILL.md
+      required_terms: [what the days actually contain, motivation usually follows action, survive a bad day, Do not build a full timetable, Ask permission before agreeing, treat exhaustion or illness as avoidance, Stop if activity increases distress]
     expected_output: {all_required_terms_present: true}
