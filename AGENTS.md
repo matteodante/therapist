@@ -570,7 +570,6 @@ protocols/<id>/
 `- skills/
    `- <therapeutic-skill>/
       |- SKILL.md
-      |- agents/openai.yaml
       `- references/
 ```
 
