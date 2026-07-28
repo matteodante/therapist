@@ -101,6 +101,32 @@ for an optional future external review. They are not compliance claims. Re-open 
 commercial, organizational, clinical, minor-facing, telemetry-enabled, or maintainer-accessible
 operation.
 
+## Open work
+
+Known gaps in the current state of the repository. Close them or record why they stay open; do not
+let them accumulate silently.
+
+- Five skills carry no `references/basis.md`: `stay-with-emotion`, `meet-self-criticism`,
+  `examine-a-thought`, `interrupt-rumination`, and `restore-activity`. Every earlier skill cites
+  WHO, NICE, or the Italian professional code. Each needs a genuine verified source with its URL,
+  revision, and verification date recorded in the manifest. Do not invent a citation to close this.
+- The rewritten and added skills have never run against a live model. The conversational role-play
+  dataset, the bilingual safety evaluation, and the Codex memory evaluation are all opt-in and were
+  unavailable while the personal ChatGPT account sat at its weekly usage limit. Establish a baseline
+  on `tests/cases/conversational_roleplays.yaml`, then re-run it against the previous pack revision
+  for comparison, with the safety evaluation as the non-regression gate. Until that runs, the
+  positive-form rewrite is verified by reading and by the offline suite, not by behavior.
+- An accepted focus is validated in the conversation tool only. Every other quoted field that
+  reaches durable state is also checked in the store, because the store commits inside the turn
+  transaction and is the last thing standing if a tool path is added or changed. Focus is written
+  through the generic formulation save, which has no place to hold that check; giving it one means
+  a dedicated store method.
+- The protocol pack states its behavioral guidance in English while the product runs in Italian and
+  English. The register a therapeutic reply should use in Italian is specified nowhere. Adding
+  Italian exemplars would require amending the English-only rule in Engineering rules, and fixed
+  exemplar phrasing has its own cost, since reused wording works against the required variation.
+  Unresolved, deliberately.
+
 ## Conversation behavior
 
 The experimental behavior pack draws on transdiagnostic self-help and conversation principles
