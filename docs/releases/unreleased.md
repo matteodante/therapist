@@ -4,8 +4,19 @@ This is an engineering change record, not a published release or clinical-valida
 
 - Separated root protocol, verified skill catalog, dynamically loaded skill body, successful
   history, and bounded JSON case data.
-- Expanded the experimental pack to ten conversational-process skills; status remains
+- Expanded the experimental pack to fifteen conversational-process skills; status remains
   `experimental`, with no reviewers invented.
+- Rewrote every skill in positive form: entry conditions first, then procedure, then the remaining
+  prohibitions. Added staying with emotion, self-criticism and shame, examining one thought,
+  repetitive thinking, and restoring activity, and gave the root explicit rules for answering
+  competence questions, life questions, and direct questions, plus a precedence order for choosing
+  among skills.
+- Allowed a preference or pattern to shorten its evidence quote by dropping the user's own words in
+  their original order, recorded as `grounded_paraphrase`; facts and events still store the quote
+  verbatim. No quoted field may be taken out of the clause that qualified it, including intervention
+  consent. Correcting or forgetting a restated claim now retires the quotes that supported it.
+- Added a maintainer tool for recomputing manifest digests, removed unused per-skill agent interface
+  descriptors, and moved background research out of `protocols/` into `docs/research/`.
 - Replaced overloaded memory status with independent origin, fit, lifecycle, evidence relation,
   conflict, and staleness semantics.
 - Added exact-evidence tools for user reports, hypotheses, corrections, reviews, conversational

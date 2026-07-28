@@ -580,10 +580,11 @@ identified by Git commits and tags rather than duplicated SemVer directories or 
 Keep one directory per genuinely different protocol; do not copy a directory merely to preserve an
 older revision.
 
-The canonical protocol remains under `protocols/`. The wheel build copies the default pack into the
-installed `therapist` package so a user-tool installation is self-contained; source checkouts fall
-back to the canonical repository path. Git forces LF endings for protocol files so their byte-level
-manifest hashes remain valid on Windows checkouts.
+The canonical protocol remains under `protocols/`, which holds protocol packs and nothing else.
+Background reading and maintainer assessments belong in `docs/research/`. The wheel build copies the
+default pack into the installed `therapist` package so a user-tool installation is self-contained;
+source checkouts fall back to the canonical repository path. Git forces LF endings for protocol
+files so their byte-level manifest hashes remain valid on Windows checkouts.
 
 The pack contains original transdiagnostic abstractions informed by official WHO and NICE materials.
 Original protocol text is licensed under the repository license; linked sources are not copied or

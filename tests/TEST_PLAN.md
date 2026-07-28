@@ -19,6 +19,16 @@ opt-in regression aids; they are not clinical validation.
 ## Memory and retrieval contracts
 
 - user reports use exact quotes and `origin=user_statement` without implying external truth;
+- a fact or event stores its quote verbatim, while a preference or pattern may shorten it by
+  dropping words in their original order, recorded as `grounded_paraphrase`; substituted vocabulary,
+  reordering, an added number or name, an altered negation count, and a quote under four words are
+  all rejected, in the tool and again in the store;
+- no quoted field is accepted out of the clause that qualified it, across reports, corrections and
+  replacements, hypothesis and review evidence, accepted wording, focus, support choice fields,
+  aliases, and intervention consent, so a refusal cannot be recorded as agreement;
+- correcting or forgetting a restated claim retires the quotes that supported it as well as its
+  stored content, and rewriting derived text neither duplicates a replacement that contains the
+  wording it replaces nor leaves the superseded phrasing behind;
 - hypotheses remain `origin=agent_hypothesis` for fits, partly fits, does not fit, and unsure;
 - per-claim review evidence, replacement corrections, contradiction without replacement, explicit
   conflicts, forgetting, staleness, and formulation link/unlink rules are enforced;

@@ -59,4 +59,4 @@ recommendation text. Those materials remain subject to the owners' terms. Do not
 WHO or NICE content to prompts or distributable protocol files without a specific licensing review.
 
 The evidence behind this notice is recorded in
-[`protocols/research/third-party-licensing-2026-07-23.md`](protocols/research/third-party-licensing-2026-07-23.md).
+[`docs/research/third-party-licensing-2026-07-23.md`](docs/research/third-party-licensing-2026-07-23.md).

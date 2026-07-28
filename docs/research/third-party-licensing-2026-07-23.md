@@ -157,7 +157,7 @@ from `uv.lock`.
 
 The default protocol pack distributes independently written project text plus titles, dates, scope
 notes, and links recorded in
-[`protocols/transdiagnostic/references/sources.md`](../transdiagnostic/references/sources.md). The
+[`protocols/transdiagnostic/references/sources.md`](../../protocols/transdiagnostic/references/sources.md). The
 reviewed wheel and sdist contain no WHO/NICE PDF, image, logo, script, or copied publication file.
 
 WHO's official linking rules permit external sites to link to WHO pages without permission, but

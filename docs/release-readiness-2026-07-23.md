@@ -112,6 +112,6 @@ treatment claims, or any legally required output-marking deadline.
 
 See [compliance-assessment-brief.md](compliance-assessment-brief.md),
 [dpia-screening.md](dpia-screening.md), [article-50-assessment.md](article-50-assessment.md), and the
-[privacy and regulatory proportionality assessment](../protocols/research/privacy-and-regulatory-proportionality-2026-07-23.md)
-and [provider matrix](../protocols/research/provider-data-and-policy-matrix-2026-07-23.md) for the
+[privacy and regulatory proportionality assessment](research/privacy-and-regulatory-proportionality-2026-07-23.md)
+and [provider matrix](research/provider-data-and-policy-matrix-2026-07-23.md) for the
 review records and primary sources.

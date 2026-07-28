@@ -68,7 +68,11 @@ choices, and a derived semantic index.
   state.
 - `lifecycle` independently records `active`, `superseded`, or `archived`.
 - Exact evidence quotes support new user reports, reviews, corrections, preferences, and support
-  choices.
+  choices. A fact or event stores that quote word for word. A preference or pattern may shorten it
+  by dropping your own words in their original order, never substituting or reordering them and
+  never altering a negation, and the full quote stays beside it.
+- No quote is taken out of the clause that qualified it, so a refusal cannot be recorded as
+  agreement to an exercise.
 - A hypothesis remains an agent hypothesis even when the user says it fits.
 - Corrections preserve superseded history in export while preventing old wording from returning in
   active context.
