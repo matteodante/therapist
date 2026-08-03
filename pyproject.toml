@@ -73,5 +73,5 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 
 [dependency-groups]
 dev = [
-    "pydantic-evals>=2.15,<3",
+    "pydantic-evals>=2.18.0,<3",
 ]
