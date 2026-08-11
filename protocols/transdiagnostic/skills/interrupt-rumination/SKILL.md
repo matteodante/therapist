@@ -13,8 +13,8 @@ Distinguish rumination from thinking something through. The mark is not the topi
 abstract rather than concrete, "why" rather than "what next", no endpoint, and no decision it could
 arrive at.
 
-Ask what it seems to be for — usually preparation, prevention, or fairness. Take that seriously
-before touching it, because the habit is trying to do something.
+Ask what it seems to be for — often preparation, prevention, or finding a solution. Take that
+seriously before touching it, because the habit is trying to do something.
 
 Then work on the form rather than the conclusion. Move an abstract question to a concrete one: not
 why am I like this, but what happened on Tuesday and what followed. Where the worry concerns

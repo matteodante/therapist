@@ -3,7 +3,7 @@ status: experimental
 locales: [it-IT, en-US]
 population: adults-18-plus
 intended_use: Adult self-reflection and organization of user-provided thoughts; not diagnosis, treatment, monitoring, or emergency care.
-root_sha256: 73096a2ab1ee73952b10ebf0254bfc59c596beabed5b09d267e048bc8eaf0f66
+root_sha256: 2e5a039d45f4ca2879ac8fc0ba4352ac905d8bdfe3bd236c4ceda473ae902560
 skills:
   - id: stay-with-emotion
     path: skills/stay-with-emotion/SKILL.md
@@ -49,19 +49,19 @@ skills:
     locales: [it-IT, en-US]
   - id: meet-self-criticism
     path: skills/meet-self-criticism/SKILL.md
-    sha256: e4df2763962d044c973cc4ace9b325df1c361d4a7c9fd6a91ffb908b83753a59
+    sha256: ddb571c9b81c167ee3a34e2bd0c134ec286f87caa2a35fe7951a347fbfc1f664
     category: intervention
     description: Work with the critical voice and with shame without arguing against them.
     locales: [it-IT, en-US]
   - id: examine-a-thought
     path: skills/examine-a-thought/SKILL.md
-    sha256: a9cd389c9e12f3a8c1bf3624bd599d307835835367db7299b7833c62bee69769
+    sha256: 42cde864f29de8712e2def340c5c0a490d2245d62ac8ab18572f63a326645c14
     category: intervention
     description: Examine one specific thought collaboratively, testing it rather than correcting it.
     locales: [it-IT, en-US]
   - id: interrupt-rumination
     path: skills/interrupt-rumination/SKILL.md
-    sha256: 59e022bae25bdde33e951e519bb57e2bad89b73bc411be18d0240491788a5484
+    sha256: b9e3ce8057e501a1a29a7b94557f068c76e486b8866802a48efbcb2e2643b2de
     category: intervention
     description: Work with repetitive thinking by changing how it runs rather than what it concludes.
     locales: [it-IT, en-US]
@@ -101,6 +101,36 @@ references:
     url: https://www.who.int/publications/i/item/9789240105935
     revision: "2025-07-10"
     verified_at: 2026-07-24
+    license: links-and-original-summary-only
+  - path: skills/stay-with-emotion/references/basis.md
+    sha256: 444d952a9c084cd20aec5d0aedf8feb7cd4c043dad499e1638e5c36a09488cc4
+    url: https://www.who.int/publications/i/item/9789240105935
+    revision: "2025-08-25"
+    verified_at: 2026-08-04
+    license: links-and-original-summary-only
+  - path: skills/meet-self-criticism/references/basis.md
+    sha256: a4748ae35b6a1b6f3742b4c70b0c06d612588cd219bf1ffd58f3f5e6f6d56ff3
+    url: https://www.who.int/publications/i/item/9789240003927
+    revision: "2020-04-29"
+    verified_at: 2026-08-04
+    license: links-and-original-summary-only
+  - path: skills/examine-a-thought/references/basis.md
+    sha256: f2017b735fa59c09fb5a7149ba09e09924677b52fe388fb66e9c85cbec18f302
+    url: https://www.nice.org.uk/guidance/ng222/chapter/Recommendations
+    revision: "2026-01-30"
+    verified_at: 2026-08-04
+    license: links-and-original-summary-only
+  - path: skills/interrupt-rumination/references/basis.md
+    sha256: 03860dcb3f512a7db1c541092124b92a25bf657cf983a1c947788d4d4d7b67fe
+    url: https://www.cci.health.wa.gov.au/resources/looking-after-yourself/worry-and-rumination
+    revision: "2023-07-10"
+    verified_at: 2026-08-04
+    license: links-and-original-summary-only
+  - path: skills/restore-activity/references/basis.md
+    sha256: c3fb1e7de52f01fd8ee9c6326213bdf9aad2b7256bd08c32a34c3b58fb707bd0
+    url: https://www.who.int/publications/i/item/B09738
+    revision: "2026-06-01"
+    verified_at: 2026-08-04
     license: links-and-original-summary-only
   - path: skills/establish-contract-and-preferences/references/basis.md
     sha256: e68318b0727f2f4c0162446da60845dad4d5dd5cd0bc0ff887a18fe5a0529c3d

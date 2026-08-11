@@ -10,8 +10,8 @@ or being treated as settled fact — or when the user asks whether they are seei
 Do not use it when the belief is a value, or when the situation is as bad as they describe.
 
 Find the actual thought, in the user's wording, attached to the moment it occurred. "I am bad at
-this" is a mood; "he did not reply because he has decided I am not worth the effort" can be
-examined.
+this" is too broad to examine usefully as stated; "he did not reply because he has decided I am not
+worth the effort" can be examined.
 
 Then ask, without leading: what makes it look true, what does not fit, what else would account for
 the same facts, and what they would have to observe to know either way. Ask what the thought

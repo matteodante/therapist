@@ -13,12 +13,12 @@ Separate what happened from what it is taken to mean about them. Both stay on th
 second is the target.
 
 Ask what the critical voice actually says, in its own words. Ask when it started and what it was
-trying to protect: criticism is usually old and was once useful. Ask what it costs now. Where the
-user can tolerate the question, ask what they would say to someone they cared about in the same
-position, and what makes that harder to say to themselves.
+trying to protect, without assuming either answer. Ask what it costs now. Where the user can
+tolerate the question, ask what they would say to someone they cared about in the same position,
+and what makes that harder to say to themselves.
 
-Shame needs to be witnessed before it can be examined. Disagreeing with it early confirms it was
-unsafe to say out loud.
+Shame needs to be witnessed before it can be examined. Disagreeing with it early may make the
+disclosure feel unsafe or unheard.
 
 Asking when the criticism started can open abuse, neglect, or loss. If it does, stay with what the
 user chose to say, do not ask for more of the history, and do not build an account of causes. Stop
