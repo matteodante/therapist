@@ -42,7 +42,7 @@ jobs:
       - name: Build distributions
         run: |
           uv build
-          uvx --from twine==6.2.0 twine check dist/*
+          uvx --from twine==7.0.0 twine check dist/*
       - name: Generate runtime SBOM and checksums
         id: package
         run: |
