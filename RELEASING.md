@@ -65,7 +65,7 @@ Use [docs/compliance-assessment-brief.md](docs/compliance-assessment-brief.md) w
 becomes proportionate, [docs/dpia-screening.md](docs/dpia-screening.md) for the data-protection
 screening, and [docs/article-50-assessment.md](docs/article-50-assessment.md) for the transparency
 record.
-Use [docs/release-readiness-2026-07-23.md](docs/release-readiness-2026-07-23.md) as the current
+Use [docs/release-readiness-2026-08-04.md](docs/release-readiness-2026-08-04.md) as the current
 engineering evidence and open-blocker record.
 
 ## Accepted alpha governance risks
@@ -113,6 +113,9 @@ uv audit --locked
 Run the configured real-provider gates separately:
 
 ```bash
+THERA_RUN_CONVERSATION_EVALS=1 THERA_EVAL_MODEL=codex:gpt-5.6-sol \
+  uv run pytest tests/test_live_conversational_roleplays.py -m live
+
 THERA_RUN_CODEX_EVALS=1 \
   uv run pytest tests/test_live_codex_memory.py -m live
 

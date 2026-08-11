@@ -1,6 +1,6 @@
 [project]
 name = "therapist-cli"
-version = "0.1.2"
+version = "0.2.0"
 description = "Open-source AI agent for reflection with encrypted longitudinal memory"
 authors = [{ name = "Matteo Dante" }]
 readme = "README.md"
@@ -15,7 +15,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-  "cryptography>=45,<51",
+  "cryptography>=50,<51",
   "huggingface-hub>=1,<2",
   "pydantic-ai-slim[anthropic,google,openai,sentence-transformers]>=2.15,<3",
   "pyyaml>=6,<7",

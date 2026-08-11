@@ -33,4 +33,5 @@ This is an engineering change record, not a published release or clinical-valida
   exportable human-review artifact.
 
 Remaining limitations include no clinical review or validation, no background retention worker, no
-provider/Telegram deletion control, and opt-in-only live provider evaluation.
+provider/Telegram deletion control, and opt-in live provider evaluation. Current results and release
+blockers are recorded in `docs/release-readiness-2026-08-04.md`.

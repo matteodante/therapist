@@ -106,26 +106,17 @@ operation.
 Known gaps in the current state of the repository. Close them or record why they stay open; do not
 let them accumulate silently.
 
-- Five skills carry no `references/basis.md`: `stay-with-emotion`, `meet-self-criticism`,
-  `examine-a-thought`, `interrupt-rumination`, and `restore-activity`. Every earlier skill cites
-  WHO, NICE, or the Italian professional code. Each needs a genuine verified source with its URL,
-  revision, and verification date recorded in the manifest. Do not invent a citation to close this.
-- The rewritten and added skills have never run against a live model. The conversational role-play
-  dataset, the bilingual safety evaluation, and the Codex memory evaluation are all opt-in and were
-  unavailable while the personal ChatGPT account sat at its weekly usage limit. Establish a baseline
-  on `tests/cases/conversational_roleplays.yaml`, then re-run it against the previous pack revision
-  for comparison, with the safety evaluation as the non-regression gate. Until that runs, the
-  positive-form rewrite is verified by reading and by the offline suite, not by behavior.
-- An accepted focus is validated in the conversation tool only. Every other quoted field that
-  reaches durable state is also checked in the store, because the store commits inside the turn
-  transaction and is the last thing standing if a tool path is added or changed. Focus is written
-  through the generic formulation save, which has no place to hold that check; giving it one means
-  a dedicated store method.
-- The protocol pack states its behavioral guidance in English while the product runs in Italian and
-  English. The register a therapeutic reply should use in Italian is specified nowhere. Adding
-  Italian exemplars would require amending the English-only rule in Engineering rules, and fixed
-  exemplar phrasing has its own cost, since reused wording works against the required variation.
-  Unresolved, deliberately.
+- Live Codex baselines now exist: the rewritten pack passed 20/20 role-plays while the extracted
+  previous pack passed 19/20; the memory evaluation passed; and the bilingual safety evaluation
+  passed 10 scenarios three times. Later findings tightened immediate-action safety, repair,
+  hypothesis provenance, and uncertainty for inferred behavioral functions. On the resulting final
+  protocol hash, ROLEPLAY-20 passed 3/3 and a full rerun passed its first 12 scenarios before the
+  personal Plus weekly usage limit stopped the provider. After that limit resets, rerun all 20
+  role-plays, the live memory evaluation, and the complete three-repeat safety gate on the exact
+  candidate. Do not publish `v0.2.0` from the partial evidence.
+- Telegram is not configured on the current maintainer machine, so the mandatory private-bot smoke
+  test has not run against the `v0.2.0` candidate. Configure an allowlisted private bot and repeat
+  the documented smoke before publication.
 
 ## Conversation behavior
 
@@ -147,6 +138,9 @@ Its loop is:
 Behavioral rules:
 
 - respond in the user's language;
+- in Italian, use idiomatic contemporary standard Italian, informal address unless the user chooses
+  formality, direct conversational syntax, and specific rather than formulaic warmth; avoid literal
+  English calques and bureaucratic, academic, clinical, theatrical, or overly solemn register;
 - respond to the user's immediate meaning before suggesting an action, without mechanically
   paraphrasing every message;
 - ask brief, concrete questions and avoid interrogation;
@@ -161,6 +155,8 @@ Behavioral rules:
   diluting the wording until it asserts nothing;
 - identify recurring themes and inconsistencies with a gentle, collaborative tone;
 - label interpretations as hypotheses until the user confirms them;
+- treat an unstated short-term benefit or protective function of a behavior as an inference and put
+  grammatical uncertainty on the functional verb itself, rather than elsewhere in the sentence;
 - ask permission before exercises;
 - when the user asks for understanding before suggestions, offer at most one brief hypothesis and
   keep exploring instead of listing explanations or introducing an exercise;
@@ -176,6 +172,10 @@ Behavioral rules:
   continue the therapeutic process or create or modify durable memory, focus, hypothesis, or
   intervention state, and encourage a trusted adult or age-appropriate local support;
   immediate-danger handling still takes priority.
+- for possible immediate danger, after localized emergency guidance, a physically present person,
+  distance from available means, and the no-monitoring boundary, ask which one immediate protective
+  action the user can take now; checking whether ingestion already occurred may accompany but not
+  replace that action-focused question.
 
 ## Architecture
 
@@ -206,6 +206,11 @@ evidence-supported mutation adds value. Read results accumulate, identical write
 and write invariants are validated across the complete staged turn. The model may use no tool and
 may load no skill. It may load at most one verified skill, with no keyword router or preliminary
 classifier. Write tools are absent outside standard memory mode.
+
+An agent-authored explanation or pattern that is important enough to revisit or ask the user to
+review later is recorded with `record_hypothesis` in the same turn before it is presented. A later
+user agreement reviews that agent-origin record rather than recasting the formulation as a direct
+user report. Fleeting possibilities need not become durable state.
 
 The minimal structured output is `TherapistTurnOutput`: a visible reply plus `selected_skill`,
 `referenced_claim_ids`, and `referenced_intervention_ids`. Metadata describes observable actions,
@@ -309,9 +314,9 @@ Claim dimensions:
   accepted wording, accepted focus, process preferences, support choice content, barriers and
   preferences, retrieval aliases, and intervention consent, where a mined quote would record a
   refusal as agreement. Every one of those is checked in the conversation tools, where a rejection
-  can be retried, and again in the store as the backstop — except an accepted focus, which the
-  store writes through the generic formulation save and which is therefore validated in the tool
-  only. A quote whose clauses disagree in polarity cannot be shortened at all, since
+  can be retried, and again in the store as the backstop. Accepted focus uses a dedicated store
+  method so later callers cannot bypass exact-text and polarity validation. A quote whose clauses
+  disagree in polarity cannot be shortened at all, since
   dropping across the boundary would attach one clause's negation to another clause's verb. A
   residual risk remains and is accepted: within a single clause, deletion can still move what a
   negation lands on, and can drop an unmarked qualifier such as a condition, turning "only when I
@@ -335,8 +340,10 @@ and provenance without returning forgotten content.
 
 Session activity timestamps are written both to the indexed SQLite column and the encrypted session
 payload in the same transaction so restart cannot move the eight-hour boundary backward. SQLite
-comes from the Python standard library. Sensitive payloads are encrypted with Fernet using a
-separate local key with filesystem mode `0600`. This protects copied databases and casual backups;
+comes from the Python standard library. Sensitive payloads are encrypted with Fernet from
+`cryptography>=50,<51` using a separate local key with filesystem mode `0600`. The 50.0.0 floor
+excludes the PKCS#7 decryption oracle fixed upstream; Therapist does not use the affected PKCS#7
+APIs. This protects copied databases and casual backups;
 it does not replace full-disk encryption or protect a compromised operating-system account.
 
 Memory modes are explicit. `standard` persists every encrypted layer; `transcript_only` persists
@@ -708,7 +715,8 @@ plainly distinguishes AI-supported conversation or self-help from diagnosis and 
   transparency, and refusal to diagnose; dedicated multilingual tests cover non-English behavior.
 - Possible danger is evaluated from meaning and context rather than keywords; ambiguous situations
   receive a direct safety clarification, while possible immediate danger receives an urgent,
-  localized response without diagnosis, scoring, or claims of monitoring.
+  localized response without diagnosis, scoring, or claims of monitoring and asks for one immediate
+  protective next action.
 - An explicit under-18 disclosure produces the adult-only boundary in Italian or English, no
   durable memory, hypothesis, focus, or intervention mutation, and a warm route toward a trusted
   adult or age-appropriate local support.
