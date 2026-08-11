@@ -603,7 +603,7 @@ def _select_model() -> str:
 
 def _prompt_provider_secret(
     store: MemoryStore, model: str
-) -> tuple[str, bytes] | None | Literal[False]:
+) -> tuple[str, bytes] | Literal[False] | None:
     config = _provider_secret_config(model)
     if config is None:
         return None
