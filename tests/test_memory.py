@@ -301,9 +301,12 @@ def test_correction_whose_replacement_contains_the_old_wording_is_not_duplicated
         message_id,
         message,
     )
-    formulation = store.load_formulation()
-    formulation.accepted_focus = "evitare il tema famiglia"
-    store.save_formulation(formulation)
+    store.set_focus(
+        "evitare il tema famiglia",
+        accepted=True,
+        evidence_quote=message,
+        evidence_text=message,
+    )
 
     correction = "in realtà non voglio evitare il tema famiglia"
     second = _message(store, correction)
@@ -322,6 +325,69 @@ def test_correction_whose_replacement_contains_the_old_wording_is_not_duplicated
     assert focus is None or "non voglio non voglio" not in focus
 
 
+def test_store_accepts_only_an_exact_current_user_focus(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    message = "voglio capire meglio le chiamate"
+
+    formulation = store.set_focus(
+        "capire meglio le chiamate",
+        accepted=True,
+        evidence_quote="capire meglio le chiamate",
+        evidence_text=message,
+    )
+
+    assert formulation.accepted_focus == "capire meglio le chiamate"
+    assert formulation.proposed_focus is None
+
+
+def test_store_rejects_focus_mined_out_of_a_refusal(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    refusal = "non voglio capire meglio le chiamate"
+
+    with pytest.raises(ValueError, match="negation"):
+        store.set_focus(
+            "voglio capire meglio le chiamate",
+            accepted=True,
+            evidence_quote="voglio capire meglio le chiamate",
+            evidence_text=refusal,
+        )
+
+
+def test_generic_formulation_writes_cannot_bypass_focus_evidence(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    formulation = store.load_formulation()
+    formulation.accepted_focus = "an unsupported focus"
+
+    with pytest.raises(ValueError, match="set_focus"):
+        store.save_formulation(formulation)
+
+    store.set_focus(
+        "understand the calls",
+        accepted=True,
+        evidence_quote="understand the calls",
+        evidence_text="I want to understand the calls",
+    )
+    formulation = store.load_formulation()
+    formulation.accepted_focus = None
+
+    with pytest.raises(ValueError, match="set_focus"):
+        store.save_formulation(formulation)
+
+
+def test_formulation_link_updates_preserve_validated_focus(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    store.set_focus(
+        "understand the calls",
+        accepted=True,
+        evidence_quote="understand the calls",
+        evidence_text="I want to understand the calls",
+    )
+
+    formulation = store.save_formulation_links({})
+
+    assert formulation.accepted_focus == "understand the calls"
+
+
 def test_correcting_a_verbatim_claim_by_negation_updates_derived_text(tmp_path) -> None:
     # The commonest correction there is. Derived text must not keep asserting what was just
     # denied, and must not end up containing the replacement twice.
@@ -333,9 +399,12 @@ def test_correcting_a_verbatim_claim_by_negation_updates_derived_text(tmp_path) 
         message_id,
         message,
     )
-    formulation = store.load_formulation()
-    formulation.accepted_focus = "ridurre il caffè: bevo caffè la sera"
-    store.save_formulation(formulation)
+    store.set_focus(
+        message,
+        accepted=True,
+        evidence_quote=message,
+        evidence_text=message,
+    )
 
     correction = "in realtà non bevo caffè la sera"
     second = _message(store, correction)
@@ -350,7 +419,7 @@ def test_correcting_a_verbatim_claim_by_negation_updates_derived_text(tmp_path) 
     )
 
     focus = store.load_formulation().accepted_focus
-    assert focus != "ridurre il caffè: bevo caffè la sera"
+    assert focus != message
     if focus is not None:
         assert focus.count("non bevo caffè la sera") == 1
         assert "non non" not in focus
@@ -425,10 +494,8 @@ def test_forgetting_a_restated_claim_also_clears_the_users_own_wording(tmp_path)
         message_id,
         message,
     )
-    formulation = store.load_formulation()
     # Derived text quotes the user, not the model's shortened content.
-    formulation.accepted_focus = message
-    store.save_formulation(formulation)
+    store.set_focus(message, accepted=True, evidence_quote=message, evidence_text=message)
 
     store.forget_claim(claim.id)
 
@@ -588,6 +655,27 @@ def test_correction_rejects_invented_replacement(tmp_path) -> None:
             _message(store, text),
             text,
         )
+
+
+def test_correction_cannot_turn_agent_hypothesis_into_user_statement(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    item = _hypothesis(store, "Avoiding calls may briefly reduce anxiety")
+    text = "No, I avoid calls because I dislike interruptions"
+
+    with pytest.raises(ValueError, match="agent hypothesis"):
+        store.correct_claim(
+            ClaimCorrection(
+                memory_id=item.id,
+                correction_quote=text,
+                replacement_quote="I avoid calls because I dislike interruptions",
+            ),
+            _message(store, text),
+            text,
+        )
+
+    unchanged = next(claim for claim in store.list_claims() if claim.id == item.id)
+    assert unchanged.origin is ClaimOrigin.AGENT_HYPOTHESIS
+    assert unchanged.content == item.content
 
 
 def test_forgetting_archives_and_removes_formulation_link(tmp_path) -> None:

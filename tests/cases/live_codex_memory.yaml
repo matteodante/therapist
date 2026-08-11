@@ -9,8 +9,8 @@ cases:
       return_after_days: 120
       initial_messages:
         - For several weeks I have postponed calls with my manager. First I think they will notice every mistake, then I prepare every detail, and finally I find an excuse not to call.
-        - When I postpone the call, I feel relieved for a while but ashamed by evening. It happens especially when I need to explain a delay.
-        - Yes, the hypothesis that fear of judgment drives the postponement seems accurate. I want to understand it before trying any exercises.
+        - When I postpone the call, I feel relieved for a while but ashamed by evening. It happens especially when I need to explain a delay. What one tentative hypothesis do you make from this pattern?
+        - Yes, that hypothesis seems accurate. I want to understand it before trying any exercises.
       semantic_query: Tomorrow I need to tell an authority figure that a delivery is late.
       return_message: Four months have passed. Tomorrow I need to tell an authority figure that a delivery is late, and I want to avoid the conversation.
     expected_output:

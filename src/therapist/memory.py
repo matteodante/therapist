@@ -559,15 +559,61 @@ class MemoryStore:
         )
 
     def save_formulation(self, formulation: CaseFormulation, now: datetime | None = None) -> None:
+        existing_focus = self.load_formulation().accepted_focus
+        if formulation.accepted_focus != existing_focus:
+            raise ValueError("Use set_focus with exact current-user evidence to accept a focus.")
+        self._save_formulation(formulation, now)
+
+    def _save_formulation(self, formulation: CaseFormulation, now: datetime | None = None) -> None:
         formulation.last_reviewed_at = _iso(now)
         self._write_state("formulation", formulation.model_dump_json().encode())
+
+    def set_focus(
+        self,
+        focus: str,
+        *,
+        accepted: bool,
+        evidence_quote: str | None = None,
+        evidence_text: str | None = None,
+        now: datetime | None = None,
+    ) -> CaseFormulation:
+        """Persist a proposed focus or an exact user-accepted focus.
+
+        The conversation tool validates accepted wording early so the model can retry. This store
+        check is the final backstop for callers added outside that tool path.
+        """
+        focus = _normalized(focus)
+        if not focus:
+            raise ValueError("Focus cannot be empty.")
+        if accepted:
+            if evidence_text is None:
+                raise ValueError("An accepted focus requires the current user message.")
+            if not _supported_quote(focus, evidence_text) or not _supported_quote(
+                evidence_quote, evidence_text
+            ):
+                raise ValueError(
+                    "An accepted focus and its evidence must be exact current-user text."
+                )
+            if not all(
+                quote_keeps_clause_polarity(quoted, evidence_text)
+                for quoted in (focus, evidence_quote)
+                if quoted
+            ):
+                raise ValueError("An accepted focus may not quote across its negation.")
+        formulation = self.load_formulation()
+        if accepted:
+            formulation.accepted_focus = focus
+            formulation.proposed_focus = None
+        else:
+            formulation.proposed_focus = focus
+        self._save_formulation(formulation, now)
+        return formulation
 
     def save_formulation_links(
         self,
         links: dict[str, list[str]],
         *,
         proposed_focus: str | None = None,
-        accepted_focus: str | None = None,
         merge_existing: bool = False,
         remove_links: dict[str, list[str]] | None = None,
         now: datetime | None = None,
@@ -592,7 +638,7 @@ class MemoryStore:
                 for field_name in FORMULATION_FIELDS
             }
         formulation = CaseFormulation(
-            accepted_focus=accepted_focus,
+            accepted_focus=existing.accepted_focus,
             proposed_focus=proposed_focus,
         )
         for field_name in FORMULATION_FIELDS:
@@ -988,6 +1034,11 @@ class MemoryStore:
             item = self._get_claim(correction.memory_id)
             if item.lifecycle is not ClaimLifecycle.ACTIVE:
                 raise ValueError("Only an active claim can be corrected.")
+            if correction.replacement_quote and item.origin is ClaimOrigin.AGENT_HYPOTHESIS:
+                raise ValueError(
+                    "An agent hypothesis cannot become a user statement through correction; "
+                    "review it or supersede it without a replacement."
+                )
             if not _supported_quote(correction.correction_quote, evidence_text):
                 raise ValueError("A correction requires an exact current-message quote.")
             if correction.replacement_quote and not _supported_quote(
@@ -2088,7 +2139,6 @@ class MemoryStore:
         self.save_formulation_links(
             formulation.evidence,
             proposed_focus=formulation.proposed_focus,
-            accepted_focus=formulation.accepted_focus,
         )
 
     def _rebuild_claim_conflicts(self) -> None:
@@ -2111,7 +2161,7 @@ class MemoryStore:
             value = getattr(formulation, field_name)
             if value:
                 setattr(formulation, field_name, _replace_derived(value, old, new) or None)
-        self.save_formulation(formulation)
+        self._save_formulation(formulation)
         stopped: set[str] = set()
         for intervention in self.list_interventions():
             if forgotten_id:

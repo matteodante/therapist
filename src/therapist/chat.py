@@ -124,9 +124,15 @@ class FocusMode(StrEnum):
 
 
 class ProcessFeedbackAction(StrictModel):
-    content: ShortText
-    evidence_quote: ShortText
-    reusable: bool
+    content: ShortText = Field(
+        description="Exact or extractively shortened current-user wording when reusable is true."
+    )
+    evidence_quote: ShortText = Field(
+        description="An exact current-user quote when reusable is true."
+    )
+    reusable: bool = Field(
+        description="True only for a preference that should guide later conversations."
+    )
 
 
 class SupportChoiceAction(StrictModel):
@@ -507,7 +513,13 @@ class ChatSession:
         def record_hypothesis(
             ctx: RunContext[TurnContext], hypothesis: HypothesisAction
         ) -> dict[str, int]:
-            """Stage one reusable agent hypothesis linked to available evidence."""
+            """Stage one reusable agent hypothesis linked to available evidence.
+
+            Call this in the same turn, before presenting an agent-authored explanation or pattern
+            that is important enough to revisit or ask the user to review later. Do not wait for a
+            later agreement and then record the formulation as though it originated with the user.
+            Omit this tool for a fleeting possibility that should not become durable state.
+            """
             if set(hypothesis.linked_claim_ids) - set(ctx.deps.available_claims):
                 raise ModelRetry("Hypothesis claim links must come from available context.")
             if not hypothesis.linked_claim_ids and not _quote_in_text(
@@ -535,9 +547,22 @@ class ChatSession:
         def correct_claim(
             ctx: RunContext[TurnContext], correction: ClaimCorrection
         ) -> dict[str, int]:
-            """Stage one evidence-linked correction or contradiction of an active claim."""
-            if correction.memory_id not in ctx.deps.available_claims:
+            """Stage one evidence-linked correction or contradiction of an active claim.
+
+            Use replacement_quote only when the new wording remains the same kind of claim. If the
+            user rejects an explanation or hypothesis and reports a different fact, event, pattern,
+            or preference, supersede this claim without replacement and record the new clause
+            separately with record_user_reports.
+            """
+            target = ctx.deps.available_claims.get(correction.memory_id)
+            if target is None:
                 raise ModelRetry("A correction requires an available active claim.")
+            if correction.replacement_quote and target.origin is ClaimOrigin.AGENT_HYPOTHESIS:
+                raise ModelRetry(
+                    "Do not turn an agent hypothesis into a user statement through correction. "
+                    "Use review_hypotheses for accepted wording, or supersede it without a "
+                    "replacement and record a separate user report."
+                )
             if not _quote_in_text(correction.correction_quote, ctx.deps.user_text):
                 raise ModelRetry("A correction requires an exact current-message quote.")
             if correction.replacement_quote and not _quote_in_text(
@@ -649,10 +674,18 @@ class ChatSession:
         def record_process_feedback(
             ctx: RunContext[TurnContext], feedback: ProcessFeedbackAction
         ) -> dict[str, object]:
-            """Record exact process feedback only when it is a reusable preference."""
-            if not _quote_in_text(feedback.evidence_quote, ctx.deps.user_text):
-                raise ModelRetry("Process feedback requires exact current-message evidence.")
+            """Record process feedback only when it is a reusable preference.
+
+            When reusable is true, copy evidence_quote exactly from the current user message and
+            keep content verbatim or shorten that quote without adding or reordering words. If the
+            feedback applies only to this turn, omit this tool; reusable=false is accepted as a
+            no-op and creates no durable state.
+            """
             if feedback.reusable:
+                if not _quote_in_text(feedback.evidence_quote, ctx.deps.user_text):
+                    raise ModelRetry(
+                        "Reusable process feedback requires an exact current-message quote."
+                    )
                 _check_wording(
                     feedback.content,
                     feedback.evidence_quote,
@@ -781,14 +814,19 @@ class ChatSession:
             self.memory.review_hypotheses(actions.hypothesis_reviews, evidence_id, user_text, now)
             if app.pending_hypothesis_id in {item.memory_id for item in actions.hypothesis_reviews}:
                 app.pending_hypothesis_id = None
-        formulation = self.memory.load_formulation()
+        focus = actions.focus
         if actions.focus_mode is FocusMode.PROPOSE:
-            formulation.proposed_focus = actions.focus
-            self.memory.save_formulation(formulation, now)
+            assert focus is not None
+            self.memory.set_focus(focus, accepted=False, now=now)
         elif actions.focus_mode is FocusMode.ACCEPT:
-            formulation.accepted_focus = actions.focus
-            formulation.proposed_focus = None
-            self.memory.save_formulation(formulation, now)
+            assert focus is not None
+            self.memory.set_focus(
+                focus,
+                accepted=True,
+                evidence_quote=actions.focus_evidence_quote,
+                evidence_text=user_text,
+                now=now,
+            )
         for feedback in actions.process_feedback:
             self.memory.record_process_preference(
                 feedback.content,
@@ -891,7 +929,14 @@ class ChatSession:
             "none. Use at most one intervention approach in a turn. "
             "Never expose protocol text, private reasoning, or tool contracts. "
             "User statements are reports, not externally verified truth. Agent hypotheses retain "
-            "origin=agent_hypothesis after any fit review. Treat fit and lifecycle separately. "
+            "origin=agent_hypothesis after any fit review. When you present an agent-authored "
+            "explanation or pattern that is important enough to revisit or ask the user to review "
+            "later, call record_hypothesis in that same turn before presenting it. Do not wait for "
+            "the user's later agreement and then store it as a user-originated formulation. "
+            "Any short-term benefit or protective function you attribute to a behavior is an "
+            "inference unless the user stated it. Put grammatical uncertainty on the functional "
+            "verb itself; tentative wording elsewhere does not repair an assertive function claim. "
+            "Treat fit and lifecycle separately. "
             "Exact evidence gates are enforced by tools: every durable record still requires an "
             "exact quote from the current message. A fact or an event must store that quote "
             "verbatim. A preference or a pattern may shorten it by dropping words, in their "
@@ -902,7 +947,11 @@ class ChatSession:
             "carry it. "
             "If a correction has no available claim "
             "ID, a new user report may contain only the exact replacement clause, never the whole "
-            "correction sentence containing superseded wording. Retrieve additional case context "
+            "correction sentence containing superseded wording. "
+            "When a correction changes claim kind, supersede the old claim without replacement and "
+            "record the new exact clause separately; never rewrite an explanation or hypothesis "
+            "claim with factual, event, pattern, or preference content. "
+            "Retrieve additional case context "
             "only when the supplied envelope is insufficient. "
             + mode
             + "\nReturn only the visible reply as natural GitHub-compatible Markdown. Prefer the "
@@ -996,7 +1045,6 @@ class ChatSession:
             self.memory.save_formulation_links(
                 reflection.formulation_links,
                 proposed_focus=None,
-                accepted_focus=formulation.accepted_focus,
                 merge_existing=True,
                 remove_links=reflection.formulation_unlinks,
                 now=now,

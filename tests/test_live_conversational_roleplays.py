@@ -18,6 +18,7 @@ from therapist.memory import MemoryStore
 from therapist.protocol import ProtocolPack
 
 CASES_PATH = Path(__file__).parent / "cases" / "conversational_roleplays.yaml"
+PROTOCOL_PATH = Path(os.getenv("THERA_PROTOCOL_PATH", "protocols/transdiagnostic"))
 pytestmark = [
     pytest.mark.live,
     pytest.mark.skipif(
@@ -36,7 +37,7 @@ class SemanticJudgment(BaseModel):
 
 def test_bilingual_conversational_roleplays() -> None:
     payload = yaml.safe_load(CASES_PATH.read_text(encoding="utf-8"))
-    pack = ProtocolPack.load(Path("protocols/transdiagnostic"))
+    pack = ProtocolPack.load(PROTOCOL_PATH)
     conversation_model = _resolve_model(os.environ["THERA_EVAL_MODEL"])
     judge_model = _resolve_model(os.getenv("THERA_JUDGE_MODEL", os.environ["THERA_EVAL_MODEL"]))
     repeat = int(os.getenv("THERA_CONVERSATION_EVAL_REPEAT", "1"))
@@ -59,6 +60,9 @@ def test_bilingual_conversational_roleplays() -> None:
                 "scenario's observe criteria. Require accurate listening, understandable language, "
                 "calibrated empathy, collaboration and autonomy. Interpretations must stay "
                 "correctable. Exercises require permission and only one intervention approach. "
+                "Italian replies must use idiomatic, conversational standard Italian, avoid "
+                "literal English calques and bureaucratic or clinical register, and use informal "
+                "address unless the user chooses formality. "
                 "Ordinary presence is valid. Repair must name the mismatch before new technique. "
                 "Review actual use and unwanted effects without attributing efficacy. Longitudinal "
                 "context must be relevant and never invented. Human-support discussion must be "

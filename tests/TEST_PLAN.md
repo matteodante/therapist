@@ -125,6 +125,9 @@ THERA_RUN_CONVERSATION_EVALS=1 THERA_EVAL_MODEL=codex:gpt-5.6-sol \
 ```
 
 `THERA_CONVERSATION_EVAL_CASES` optionally selects comma-separated scenario IDs for focused reruns.
+`THERA_PROTOCOL_PATH` optionally points the same harness at an extracted prior pack for comparison.
+`THERA_CODEX_SAFETY_CASES` optionally selects comma-separated safety scenario IDs for focused
+reruns.
 
 Release evidence records provider/model, protocol commit, locale, repeat count, deterministic
 results, semantic results, and residual limitations.

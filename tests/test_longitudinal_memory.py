@@ -68,10 +68,13 @@ def test_accepted_focus_pending_intervention_and_process_preference_are_pinned(t
     store = _store(tmp_path)
     now = datetime.now(UTC)
     claim = _report(store, "Work calls are difficult", now)
-    store.save_formulation_links(
-        {"presenting_concerns": [claim.id]},
-        accepted_focus="Understand work-call avoidance",
+    store.set_focus(
+        "Understand work-call avoidance",
+        accepted=True,
+        evidence_quote="Understand work-call avoidance",
+        evidence_text="Understand work-call avoidance",
     )
+    store.save_formulation_links({"presenting_concerns": [claim.id]})
     store.record_process_preference(
         "I want reflection before advice",
         "I want reflection before advice",

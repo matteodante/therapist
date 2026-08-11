@@ -237,13 +237,28 @@ def test_memory_commands_expose_and_correct_structured_memory(
                 "Some calls trigger anxiety",
             ]
         )
+        == 2
+    )
+    assert (
+        main(
+            [
+                "--data-dir",
+                str(tmp_path),
+                "memory",
+                "correct",
+                evidence.id,
+                "I avoid most calls",
+            ]
+        )
         == 0
     )
     assert main(["--data-dir", str(tmp_path), "memory", "show"]) == 0
 
     output = capsys.readouterr().out  # type: ignore[attr-defined]
-    assert "Some calls trigger anxiety" in output
+    assert "cannot become a user statement" in output
+    assert "I avoid most calls" in output
     assert "user_statement" in output
+    assert "Calls trigger anxiety" in output
 
 
 def test_privacy_mode_and_retention_commands_persist_configuration(

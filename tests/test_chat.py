@@ -354,6 +354,60 @@ def test_correct_claim_tool_uses_exact_replacement(tmp_path) -> None:
     assert store.list_claims()[0].content == "I live in Turin"
 
 
+def test_correct_claim_tool_cannot_recast_agent_hypothesis_as_user_report(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+    session = store.start_session()
+    message_id = store.save_turn(session, "I put calls off", "Noted", [])
+    report = store.add_user_reports(
+        [
+            UserReport(
+                kind=MemoryKind.EVENT,
+                content="I put calls off",
+                evidence_quote="I put calls off",
+            )
+        ],
+        message_id,
+        "I put calls off",
+    )[0]
+    hypothesis = store.add_hypothesis(
+        "Avoiding calls may briefly reduce anxiety",
+        linked_claim_ids=[report.id],
+        evidence_message_ids=[message_id],
+    )
+    retries = 0
+
+    async def stream(messages: list[Any], _info: Any):
+        nonlocal retries
+        retries = sum(
+            getattr(part, "part_kind", "") == "retry-prompt"
+            for message in messages
+            for part in message.parts
+        )
+        yield (
+            "Thanks for correcting that explanation."
+            if retries
+            else _tool(
+                "correct_claim",
+                {
+                    "correction": {
+                        "memory_id": hypothesis.id,
+                        "correction_quote": ("No, I avoid calls because I dislike interruptions"),
+                        "replacement_quote": ("I avoid calls because I dislike interruptions"),
+                    }
+                },
+            )
+        )
+
+    ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        "No, I avoid calls because I dislike interruptions"
+    )
+
+    unchanged = next(item for item in store.list_claims() if item.id == hypothesis.id)
+    assert retries == 1
+    assert unchanged.origin is ClaimOrigin.AGENT_HYPOTHESIS
+    assert unchanged.content == hypothesis.content
+
+
 def test_review_hypothesis_tool_preserves_origin_and_fit(tmp_path) -> None:
     store = MemoryStore(tmp_path)
     session = store.start_session()
@@ -461,6 +515,33 @@ def test_focus_process_feedback_and_support_choice_tools_commit(tmp_path) -> Non
     assert store.load_formulation().accepted_focus == "understand the calls"
     assert store.list_process_preferences()[0].content == "I want shorter replies"
     assert store.list_support_choices()[0].content == "I want to speak with a psychologist"
+
+
+def test_non_reusable_process_feedback_is_a_no_op(tmp_path) -> None:
+    store = MemoryStore(tmp_path)
+
+    async def stream(messages: list[Any], _info: Any):
+        yield (
+            "I understand."
+            if _has_return(messages, "record_process_feedback")
+            else _tool(
+                "record_process_feedback",
+                {
+                    "feedback": {
+                        "content": "A one-turn observation",
+                        "evidence_quote": "not an exact quote",
+                        "reusable": False,
+                    }
+                },
+            )
+        )
+
+    result = ChatSession(FunctionModel(stream_function=stream), _pack(), store, "en-US").respond(
+        "You moved too quickly."
+    )
+
+    assert result.text == "I understand."
+    assert store.list_process_preferences() == []
 
 
 def test_intervention_tool_creates_then_updates_single_record(tmp_path) -> None:

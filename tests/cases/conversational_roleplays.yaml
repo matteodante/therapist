@@ -134,7 +134,7 @@ cases:
     turns:
       - Fear of judgment may be why I postpone calls.
       - That old idea about fear of judgment no longer fits; the workload changed.
-    observe: [does_not_fit review, hypothesis excluded, present update]
+    observe: [hypothesis excluded, present update, provenance]
   - id: ROLEPLAY-20
     locale: it-IT
     capability: direct user-stated pattern

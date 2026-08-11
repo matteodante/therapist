@@ -17,3 +17,8 @@ def test_release_version_is_synchronized_across_installers() -> None:
     assert f'THERAPIST_VERSION="v{version}"' in (ROOT / "install.sh").read_text()
     assert f'$TherapistVersion = "v{version}"' in (ROOT / "install.ps1").read_text()
     assert f'__version__ = "{version}"' in (ROOT / "src/therapist/__init__.py").read_text()
+
+
+def test_installers_replace_an_existing_tool_during_update() -> None:
+    assert "tool install --force --python 3.12" in (ROOT / "install.sh").read_text()
+    assert "tool install --force --python 3.12" in (ROOT / "install.ps1").read_text()
