@@ -1803,7 +1803,7 @@ requires-dist = [
     { name = "coverage", marker = "extra == 'dev'", specifier = ">=7.15,<8" },
     { name = "cryptography", specifier = ">=50,<51" },
     { name = "huggingface-hub", specifier = ">=1,<2" },
-    { name = "pydantic-ai-slim", extras = ["anthropic", "google", "openai", "sentence-transformers"], specifier = ">=2.15,<3" },
+    { name = "pydantic-ai-slim", extras = ["anthropic", "google", "openai", "sentence-transformers"], specifier = ">=2.22.0,<3" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.4,<10" },
     { name = "pyyaml", specifier = ">=6,<7" },
     { name = "questionary", specifier = ">=2.1,<3" },
