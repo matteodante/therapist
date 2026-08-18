@@ -19,7 +19,13 @@ from huggingface_hub import HfApi, scan_cache_dir, snapshot_download
 from huggingface_hub.errors import CacheNotFound
 from pydantic_ai import Embedder
 from pydantic_ai.models import Model
-from pydantic_ai.models.openai import OpenAIResponsesModel, OpenAIResponsesModelSettings
+from pydantic_ai.models.openai import (
+    OpenAIChatModel,
+    OpenAIChatModelSettings,
+    OpenAIResponsesModel,
+    OpenAIResponsesModelSettings,
+)
+from pydantic_ai.providers.openai import OpenAIProvider
 from rich.console import Console
 from rich.live import Live
 
@@ -68,6 +74,11 @@ PROVIDER_SECRETS = {
     "google:": ("google_api_key", "GOOGLE_API_KEY", "Google API key"),
     "openrouter:": ("openrouter_api_key", "OPENROUTER_API_KEY", "OpenRouter API key"),
 }
+LOCAL_PREFIX = "local:"
+LOCAL_BASE_URL_ENV = "THERA_LOCAL_BASE_URL"
+LOCAL_BASE_URL_DEFAULT = "http://localhost:8080/v1"
+LOCAL_API_KEY_ENV = "THERA_LOCAL_API_KEY"
+LOCAL_REASONING_EFFORT = "xhigh"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -464,7 +475,11 @@ def _install_telegram_service(args: argparse.Namespace) -> Path | str:
         str(args.protocol.resolve()),
         "telegram",
     ]
-    return telegram_service.install(command, args.data_dir.resolve())
+    return telegram_service.install(
+        command,
+        args.data_dir.resolve(),
+        environment={LOCAL_BASE_URL_ENV: _local_base_url()},
+    )
 
 
 def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
@@ -589,14 +604,18 @@ def _setup(store: MemoryStore, args: argparse.Namespace) -> int:
 
 
 def _select_model() -> str:
+    local_models = _local_model_names()
     choices = [
-        questionary.Choice("ChatGPT Plus/Pro — GPT-5.6 Sol", value=DEFAULT_CODEX_MODEL),
+        questionary.Choice(f"Local server — {name}", value=f"{LOCAL_PREFIX}{name}")
+        for name in local_models
     ]
+    choices.append(questionary.Choice("ChatGPT Plus/Pro — GPT-5.6 Sol", value=DEFAULT_CODEX_MODEL))
+    default = choices[0].value
     return _ask(
         questionary.select(
             "Model provider",
             choices=choices,
-            default=DEFAULT_CODEX_MODEL,
+            default=default,
         )
     )
 
@@ -642,12 +661,45 @@ def _provider_secret_config(model: str) -> tuple[str, str, str] | None:
 def _conversation_model(store: MemoryStore, model: str) -> str | Model:
     if model.startswith("codex:"):
         return codex_model(store, model.removeprefix("codex:"))
+    if model.startswith(LOCAL_PREFIX):
+        return _local_model(model.removeprefix(LOCAL_PREFIX))
     if model.startswith("openai:"):
         return OpenAIResponsesModel(
             model.removeprefix("openai:"),
             settings=OpenAIResponsesModelSettings(openai_store=False),
         )
     return model
+
+
+def _local_base_url() -> str:
+    return os.getenv(LOCAL_BASE_URL_ENV, "").strip() or LOCAL_BASE_URL_DEFAULT
+
+
+def _local_model(model_name: str) -> OpenAIChatModel:
+    return OpenAIChatModel(
+        model_name,
+        provider=OpenAIProvider(
+            base_url=_local_base_url(),
+            api_key=os.getenv(LOCAL_API_KEY_ENV, "").strip() or "local",
+        ),
+        settings=OpenAIChatModelSettings(openai_reasoning_effort=LOCAL_REASONING_EFFORT),
+    )
+
+
+def _local_model_names() -> list[str]:
+    try:
+        with urlopen(f"{_local_base_url().rstrip('/')}/models", timeout=2) as response:
+            payload = json.load(response)
+    except (OSError, ValueError, TypeError):
+        return []
+    entries = payload.get("data")
+    if not isinstance(entries, list):
+        return []
+    return [
+        entry["id"]
+        for entry in entries
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry["id"]
+    ]
 
 
 def _model_context_window(model: str) -> int:

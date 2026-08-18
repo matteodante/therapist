@@ -21,9 +21,10 @@ The long-term product may support both self-hosted and SaaS distribution. The cu
 deliberately smaller: make the single-user conversation and long-term memory work well through the
 local CLI and one private Telegram transport before building broader infrastructure.
 The first public alpha support claim is limited to the CLI and private Telegram transport using a
-personal ChatGPT Plus/Pro account through the experimental `codex:` OAuth provider. Other local and
-PydanticAI conversation providers remain technical escape hatches, not configurations advertised or
-release-cleared for the first alpha.
+personal ChatGPT Plus/Pro account through the experimental `codex:` OAuth provider. Setup also offers
+the models of a reachable OpenAI-compatible `local:` server, which carries no support claim and has
+no release-cleared evaluation baseline. The remaining PydanticAI conversation providers stay
+technical escape hatches, not configurations advertised or release-cleared for the first alpha.
 
 Original code and project content are open source under `AGPL-3.0-or-later`. Linked or referenced
 third-party materials remain under their owners' terms and are not relicensed by this repository.
@@ -481,6 +482,15 @@ providers remain supported as technical escape hatches.
 Ordinary OpenAI Responses requests explicitly set `store=false`; provider abuse-monitoring retention
 can still apply. Ollama conversation models are forced to the loopback base URL.
 
+The `local:` provider reaches any OpenAI-compatible chat-completions server, such as a llama.cpp or
+llama-swap host on the operator's own network. Its base URL comes from `THERA_LOCAL_BASE_URL` and
+defaults to `http://localhost:8080/v1`; `THERA_LOCAL_API_KEY` supplies a key only when the server
+requires one, since self-hosted servers usually accept any value. Setup lists the models the server
+advertises on `/models` and offers them before the ChatGPT path, defaulting to the first one; when
+the server is unreachable the list is empty and only ChatGPT is offered. Requests ask for `xhigh`
+reasoning effort, which servers that do not support the field ignore. Model conversations stay on
+the operator's own hardware, so no conversation content reaches a third-party provider.
+
 Interactive chat commands:
 
 ```text
@@ -552,6 +562,16 @@ Linux operation beyond logout depends on the host's user manager/lingering polic
 `restart`, and `uninstall` inspect, restart, or stop the process and remove only this native
 definition. macOS operational output is written to the application data directory's
 `telegram-service.log`; Linux output is available through the user journal.
+
+A background service does not inherit an interactive shell profile, so install records the resolved
+`THERA_LOCAL_BASE_URL` in the LaunchAgent's `EnvironmentVariables` or the systemd unit's
+`Environment=` settings. Without that the listener would silently fall back to
+`http://localhost:8080/v1` and lose a `local:` server hosted elsewhere. Reinstall the service after
+the endpoint changes. `THERA_LOCAL_API_KEY` is deliberately not recorded, because these service
+definitions are plaintext on disk; a local server that requires a key must run through
+`thera telegram` in a shell that exports it. Windows scheduled tasks receive the user's persisted
+environment instead, so a Windows endpoint has to be set with `setx` rather than only in the current
+console.
 
 Minimal setup:
 

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart
 from pydantic_ai.messages import TextPart, ToolCallPart, ToolReturnPart
-from pydantic_ai.models.openai import OpenAIResponsesModel
+from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 
 from therapist.chat import TurnStreamEvent, TurnStreamKind
 from therapist.cli import (
@@ -18,6 +18,7 @@ from therapist.cli import (
     _chat_command,
     _conversation_model,
     _ensure_chat_consent,
+    _local_model_names,
     _model_context_window,
     _select_model,
     _setup,
@@ -37,6 +38,7 @@ def test_guided_setup_advertises_only_the_supported_chatgpt_provider(
         return SimpleNamespace(ask=lambda: DEFAULT_CODEX_MODEL)
 
     monkeypatch.setattr("therapist.cli.questionary.select", select)
+    monkeypatch.setattr("therapist.cli._local_model_names", list)
 
     assert _select_model() == DEFAULT_CODEX_MODEL
     choices = captured["choices"]
@@ -44,6 +46,80 @@ def test_guided_setup_advertises_only_the_supported_chatgpt_provider(
     assert [(choice.title, choice.value) for choice in choices] == [
         ("ChatGPT Plus/Pro — GPT-5.6 Sol", DEFAULT_CODEX_MODEL)
     ]
+
+
+def test_guided_setup_offers_a_reachable_local_server_before_chatgpt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def select(*_: object, **kwargs: object) -> object:
+        captured.update(kwargs)
+        return SimpleNamespace(ask=lambda: "local:small")
+
+    monkeypatch.setattr("therapist.cli.questionary.select", select)
+    monkeypatch.setattr("therapist.cli._local_model_names", lambda: ["small", "large"])
+
+    assert _select_model() == "local:small"
+    choices = captured["choices"]
+    assert isinstance(choices, list)
+    assert [(choice.title, choice.value) for choice in choices] == [
+        ("Local server — small", "local:small"),
+        ("Local server — large", "local:large"),
+        ("ChatGPT Plus/Pro — GPT-5.6 Sol", DEFAULT_CODEX_MODEL),
+    ]
+    assert captured["default"] == "local:small"
+
+
+def test_local_model_names_reads_the_openai_compatible_catalogue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requested: list[str] = []
+
+    class Response:
+        def __enter__(self) -> "Response":
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            pass
+
+        def read(self) -> bytes:
+            return json.dumps({"data": [{"id": "small"}, {"id": ""}, {"no_id": True}]}).encode()
+
+    def urlopen(url: str, timeout: float) -> object:
+        requested.append(url)
+        return Response()
+
+    monkeypatch.setenv("THERA_LOCAL_BASE_URL", "https://example.invalid/v1/")
+    monkeypatch.setattr("therapist.cli.urlopen", urlopen)
+
+    assert _local_model_names() == ["small"]
+    assert requested == ["https://example.invalid/v1/models"]
+
+
+def test_local_model_names_is_empty_when_the_server_is_unreachable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def urlopen(url: str, timeout: float) -> object:
+        raise OSError("unreachable")
+
+    monkeypatch.setattr("therapist.cli.urlopen", urlopen)
+
+    assert _local_model_names() == []
+
+
+def test_local_conversation_model_targets_the_configured_server_with_high_effort(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("THERA_LOCAL_BASE_URL", "https://example.invalid/v1")
+    monkeypatch.delenv("THERA_LOCAL_API_KEY", raising=False)
+
+    model = _conversation_model(MemoryStore(tmp_path), "local:qwen")
+
+    assert isinstance(model, OpenAIChatModel)
+    assert model.model_name == "qwen"
+    assert model.base_url == "https://example.invalid/v1/"
+    assert model.settings == {"openai_reasoning_effort": "xhigh"}
 
 
 def test_setup_builds_questionary_selects_with_available_defaults(
@@ -620,24 +696,26 @@ def test_telegram_service_install_uses_saved_configuration(
     state.telegram_allowed_user_id = 42
     store.save_secret("telegram_bot_token", b"secret")
     store.save_app_state(state)
-    captured: list[tuple[list[str], Path]] = []
+    captured: list[tuple[list[str], Path, dict[str, str]]] = []
     monkeypatch.setattr(
         "therapist.cli.telegram_service.install",
-        lambda command, data_dir: (
-            captured.append((command, data_dir)) or tmp_path / "service.plist"
+        lambda command, data_dir, environment: (
+            captured.append((command, data_dir, environment)) or tmp_path / "service.plist"
         ),
     )
+    monkeypatch.setenv("THERA_LOCAL_BASE_URL", "http://rig.invalid:8080/v1")
     monkeypatch.setattr("therapist.cli.sys.argv", [str(tmp_path / "thera")])
     (tmp_path / "thera").write_text("#!/bin/sh\n")
     (tmp_path / "thera").chmod(0o755)
 
     assert main(["--data-dir", str(tmp_path), "telegram-service", "install"]) == 0
 
-    command, data_dir = captured[0]
+    command, data_dir, environment = captured[0]
     assert command[0] == str((tmp_path / "thera").resolve())
     assert command[-1] == "telegram"
     assert command[1:3] == ["--data-dir", str(tmp_path.resolve())]
     assert data_dir == tmp_path.resolve()
+    assert environment == {"THERA_LOCAL_BASE_URL": "http://rig.invalid:8080/v1"}
     assert "installed and started" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 
@@ -824,7 +902,7 @@ def test_setup_can_install_telegram_background_service(
     monkeypatch.setattr("therapist.cli.sys.argv", [str(executable)])
     monkeypatch.setattr(
         "therapist.cli.telegram_service.install",
-        lambda command, _: installed.append(command) or "native service",
+        lambda command, _, environment: installed.append(command) or "native service",
     )
 
     assert main(["--data-dir", str(tmp_path), "setup"]) == 0

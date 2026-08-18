@@ -64,6 +64,73 @@ def test_linux_service_uses_user_systemd_and_quotes_arguments(tmp_path: Path) ->
     assert runner.commands[-1] == ["systemctl", "--user", "daemon-reload"]
 
 
+def test_macos_service_carries_the_local_endpoint_into_the_background_agent(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    home = tmp_path / "home"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    path = install(
+        ["/opt/thera", "telegram"],
+        data_dir,
+        environment={"THERA_LOCAL_BASE_URL": "http://rig.invalid:8080/v1", "EMPTY": ""},
+        platform="darwin",
+        home=home,
+        runner=runner,
+    )
+
+    payload = plistlib.loads(path.read_bytes())
+    assert payload["EnvironmentVariables"] == {"THERA_LOCAL_BASE_URL": "http://rig.invalid:8080/v1"}
+
+
+def test_linux_service_carries_the_local_endpoint_into_the_background_unit(
+    tmp_path: Path,
+) -> None:
+    runner = FakeRunner()
+    home = tmp_path / "home"
+
+    path = install(
+        ["/opt/thera", "telegram"],
+        tmp_path,
+        environment={"THERA_LOCAL_BASE_URL": 'http://rig.invalid:8080/v1"'},
+        platform="linux",
+        home=home,
+        runner=runner,
+    )
+
+    unit = path.read_text()
+    assert 'Environment="THERA_LOCAL_BASE_URL=http://rig.invalid:8080/v1\\""\n' in unit
+    assert unit.index("Environment=") < unit.index("Restart=on-failure")
+
+
+def test_service_without_environment_writes_no_settings(tmp_path: Path) -> None:
+    runner = FakeRunner()
+
+    path = install(
+        ["/opt/thera", "telegram"],
+        tmp_path,
+        platform="linux",
+        home=tmp_path / "home",
+        runner=runner,
+    )
+
+    assert "Environment=" not in path.read_text()
+
+
+def test_service_rejects_control_characters_in_the_environment(tmp_path: Path) -> None:
+    with pytest.raises(TelegramServiceError, match="control characters"):
+        install(
+            ["/opt/thera", "telegram"],
+            tmp_path,
+            environment={"THERA_LOCAL_BASE_URL": "http://rig.invalid/v1\nRestart=always"},
+            platform="linux",
+            home=tmp_path / "home",
+            runner=FakeRunner(),
+        )
+
+
 def test_service_reports_native_manager_failure(tmp_path: Path) -> None:
     command = ["systemctl", "--user", "daemon-reload"]
     runner = FakeRunner({tuple(command): 1})

@@ -6,7 +6,7 @@ import os
 import plistlib
 import subprocess
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,11 +31,13 @@ def install(
     command: list[str],
     data_dir: Path,
     *,
+    environment: Mapping[str, str] | None = None,
     platform: str = sys.platform,
     home: Path | None = None,
     runner: Runner = subprocess.run,
 ) -> Path | str:
     home = home or Path.home()
+    environment = _validated_environment(environment)
     if platform == "darwin":
         path = home / "Library" / "LaunchAgents" / f"{SERVICE_LABEL}.plist"
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -48,7 +50,7 @@ def install(
         )
         if current.returncode == 0:
             _run(runner, ["launchctl", "bootout", f"{domain}/{SERVICE_LABEL}"])
-        payload = {
+        payload: dict[str, object] = {
             "Label": SERVICE_LABEL,
             "ProgramArguments": command,
             "RunAtLoad": True,
@@ -57,6 +59,8 @@ def install(
             "StandardOutPath": str(log_path),
             "StandardErrorPath": str(log_path),
         }
+        if environment:
+            payload["EnvironmentVariables"] = dict(environment)
         _atomic_write(path, plistlib.dumps(payload))
         _run(runner, ["launchctl", "bootstrap", domain, str(path)])
         return path
@@ -70,6 +74,7 @@ def install(
             "[Service]\n"
             "Type=simple\n"
             f"ExecStart={_systemd_command(command)}\n"
+            f"{_systemd_environment(environment)}"
             "Restart=on-failure\n"
             "RestartSec=3\n\n"
             "[Install]\n"
@@ -230,6 +235,29 @@ def _atomic_write(path: Path, payload: bytes) -> None:
 def _systemd_command(arguments: list[str]) -> str:
     _validate_command(arguments)
     return " ".join(f'"{value.replace("\\", "\\\\").replace('"', '\\"')}"' for value in arguments)
+
+
+def _systemd_environment(environment: Mapping[str, str]) -> str:
+    return "".join(
+        f'Environment="{name}={_systemd_quote(value)}"\n' for name, value in environment.items()
+    )
+
+
+def _systemd_quote(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def _validated_environment(environment: Mapping[str, str] | None) -> dict[str, str]:
+    """Keep only non-empty, single-line settings safe to write into a service file."""
+    if not environment:
+        return {}
+    for name, value in environment.items():
+        if not name or any(character in f"{name}{value}" for character in "\0\r\n"):
+            raise TelegramServiceError(
+                "Service environment names and values cannot be empty or contain "
+                "control characters."
+            )
+    return {name: value for name, value in environment.items() if value}
 
 
 def _validate_command(arguments: list[str]) -> None:

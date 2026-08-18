@@ -137,8 +137,11 @@ thera doctor
 ```
 
 The supported first-alpha provider is a personal ChatGPT Plus/Pro account through the experimental
-`codex:` OAuth path. Other PydanticAI providers remain technical escape hatches. Telegram checks
-private-chat type and numeric allowlist and keeps configuration secrets out of process arguments.
+`codex:` OAuth path. Setup also lists the models of an OpenAI-compatible `local:` server when one is
+reachable, so conversations can stay on your own hardware; set `THERA_LOCAL_BASE_URL` when that
+server is not on `http://localhost:8080/v1`. That path carries no support claim, and the remaining
+PydanticAI providers stay technical escape hatches. Telegram checks private-chat type and numeric
+allowlist and keeps configuration secrets out of process arguments.
 
 ## Clean-break storage
 
