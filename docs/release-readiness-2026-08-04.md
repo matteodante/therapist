@@ -166,3 +166,55 @@ Candidate commit at the time of this addendum: `38eb6dd8a367d16b4ce01767dbc36a04
 (documentation commits follow it; the tagged commit is authoritative). Artifact checksums are
 produced by the manual `Release candidate` workflow from the exact tagged commit; local builds are
 pre-release evidence only.
+
+## Addendum — 2026-08-18: `v0.3.0` candidate
+
+**Tagged GitHub prerelease:** **GO**  
+**Public installer switch to `v0.3.0`:** **GO** after the tag exists and CI is green.
+
+`v0.3.0` adds a `local:` OpenAI-compatible conversation provider, carries the resolved model endpoint
+into the Telegram background service, and fixes a macOS reinstall that failed with `Bootstrap failed:
+5: Input/output error` because `launchctl bootout` returns before launchd releases the label.
+
+### Scope of re-verification
+
+The behavior pack is untouched: `git diff v0.2.0..HEAD` is empty for `protocols/` and
+`src/therapist/protocols/`, and protocol hash validation passes. `src/therapist/memory.py` is
+unchanged and `SCHEMA_VERSION` stays `b"3"`, so a `v0.2.0` store is accepted without migration. The
+supported inference configuration remains `codex:gpt-5.6-sol`.
+
+The live gates were therefore not re-run. The 2026-08-11 role-play, longitudinal-memory, and
+three-repeat bilingual safety results stand as the current evidence for the supported configuration,
+because this candidate changes no protocol text, prompt assembly, or memory behavior that those gates
+exercise. This is a scoped reuse of existing evidence, not a fresh pass.
+
+The `local:` provider is unevaluated. No role-play, memory, or safety result exists for any
+self-hosted model, and the release notes state that plainly and attach no support claim to it.
+
+### Gates on 2026-08-18 (all on the candidate tree)
+
+| Gate | Result |
+| --- | --- |
+| Locked environment sync | Passed; 108 packages resolved |
+| Ruff formatting and lint | Passed on 99 files |
+| `ty` on `src/therapist` | Passed |
+| Offline deterministic suite | 206 passed, 5 live deselected |
+| Total coverage | 76%; configured 75% floor passed |
+| Protocol validation | Passed; hash identical to `v0.2.0` |
+| Locked dependency audit | No known vulnerabilities in 107 packages |
+| Installer syntax | `sh -n install.sh` passed |
+| Build, twine metadata | Passed for wheel and sdist |
+| Candidate wheel as user tool | Installed with `--force`; `protocol validate` and `doctor` pass |
+| Telegram service on the candidate | Reinstalled on the updated tool; the running job carries `THERA_LOCAL_BASE_URL` in its process environment and polls without new log errors |
+
+Local build checksums (pre-release evidence only; the tagged workflow bundle is authoritative):
+
+```text
+21b3516a4eead2b6b65b34dfaa04b83f51daa5fc0d0f6a1f47bd7d7389bed075  therapist_cli-0.3.0-py3-none-any.whl
+ed1a4254b225b029d2bf779325bedc40fc60bae68270948379690705cd4980c2  therapist_cli-0.3.0.tar.gz
+```
+
+### Open after this release
+
+- A real Telegram message round-trip is still undocumented.
+- The `local:` provider has no live baseline on any safety floor.

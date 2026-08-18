@@ -107,9 +107,9 @@ operation.
 Known gaps in the current state of the repository. Close them or record why they stay open; do not
 let them accumulate silently.
 
-- The `v0.2.0` mandatory gates closed on 2026-08-11 and that version is tagged; the addendum in
-  `docs/release-readiness-2026-08-04.md` holds the evidence. The entries that told a reader to
-  withhold that publication are resolved and were removed here.
+- `v0.2.0` and `v0.3.0` are released. The 2026-08-11 and 2026-08-18 addenda in
+  `docs/release-readiness-2026-08-04.md` hold their evidence, including which `v0.3.0` gates reused
+  the earlier live results and why.
 - A real Telegram message round-trip is still undocumented. The 2026-08-11 evidence reaches an
   established polling connection, not a delivered exchange, and the bot is now configured on the
   maintainer machine, so complete the smoke and record it.
