@@ -17,13 +17,25 @@ from therapist.telegram_service import (
 
 
 class FakeRunner:
-    def __init__(self, responses: dict[tuple[str, ...], int] | None = None) -> None:
+    """Stand-in for `subprocess.run` that tracks whether launchd holds the job."""
+
+    def __init__(
+        self, responses: dict[tuple[str, ...], int] | None = None, *, loaded: bool = True
+    ) -> None:
         self.commands: list[list[str]] = []
         self.responses = responses or {}
+        self.loaded = loaded
 
     def __call__(self, command: list[str], **_: object) -> subprocess.CompletedProcess[str]:
         self.commands.append(command)
-        code = self.responses.get(tuple(command), 0)
+        default = 0
+        if command[:2] == ["launchctl", "bootout"]:
+            self.loaded = False
+        elif command[:2] == ["launchctl", "bootstrap"]:
+            self.loaded = True
+        elif command[:2] == ["launchctl", "print"]:
+            default = 0 if self.loaded else 1
+        code = self.responses.get(tuple(command), default)
         return subprocess.CompletedProcess(command, code, stdout="active\n", stderr="")
 
 
@@ -129,6 +141,18 @@ def test_service_rejects_control_characters_in_the_environment(tmp_path: Path) -
             home=tmp_path / "home",
             runner=FakeRunner(),
         )
+
+
+def test_macos_reinstall_waits_for_launchd_to_release_the_label(tmp_path: Path) -> None:
+    runner = FakeRunner()
+    home = tmp_path / "home"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+
+    install(["/opt/thera", "telegram"], data_dir, platform="darwin", home=home, runner=runner)
+
+    verbs = [command[1] for command in runner.commands if command[0] == "launchctl"]
+    assert verbs == ["print", "bootout", "print", "bootstrap"]
 
 
 def test_service_reports_native_manager_failure(tmp_path: Path) -> None:

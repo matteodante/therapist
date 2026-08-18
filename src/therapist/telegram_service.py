@@ -6,6 +6,7 @@ import os
 import plistlib
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,6 +51,7 @@ def install(
         )
         if current.returncode == 0:
             _run(runner, ["launchctl", "bootout", f"{domain}/{SERVICE_LABEL}"])
+            _await_launchd_unload(runner, domain)
         payload: dict[str, object] = {
             "Label": SERVICE_LABEL,
             "ProgramArguments": command,
@@ -216,6 +218,23 @@ def status(
     result = runner(command, capture_output=True, text=True)
     detail = (result.stdout or result.stderr or "").strip()
     return ServiceStatus(path.exists(), result.returncode == 0, detail)
+
+
+def _await_launchd_unload(runner: Runner, domain: str, attempts: int = 40) -> None:
+    """Wait for a booted-out job to leave the domain.
+
+    `launchctl bootout` returns before launchd finishes unloading, and
+    bootstrapping a label that is still loaded fails with an I/O error.
+    """
+    for _ in range(attempts):
+        probe = runner(
+            ["launchctl", "print", f"{domain}/{SERVICE_LABEL}"],
+            capture_output=True,
+            text=True,
+        )
+        if probe.returncode != 0:
+            return
+        time.sleep(0.25)
 
 
 def _run(runner: Runner, command: list[str]) -> None:
