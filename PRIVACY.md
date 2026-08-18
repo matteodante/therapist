@@ -45,7 +45,8 @@ Changing mode does not retroactively delete data.
 
 | Configuration | Data sent outside the device |
 | --- | --- |
-| Local Ollama + terminal | No conversation content is intentionally sent to a remote model or transport |
+| Local Ollama or a same-device `local:` server + terminal | No conversation content is intentionally sent to a remote model or transport |
+| `local:` server on another host of the operator's own network | The same model input, over that network to hardware the operator controls, reaching no third-party provider |
 | Remote PydanticAI model | Current message, successful active-session history, separate bounded case-data JSON, and a verified skill body only when dynamically loaded |
 | Experimental personal Codex OAuth | The same model input through the user's ChatGPT Codex account under that product's terms |
 | Telegram | Incoming messages, replies, visible tool events/notices, and local records explicitly viewed in Telegram; model input also reaches the chosen provider |

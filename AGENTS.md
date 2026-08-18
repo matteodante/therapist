@@ -107,17 +107,17 @@ operation.
 Known gaps in the current state of the repository. Close them or record why they stay open; do not
 let them accumulate silently.
 
-- Live Codex baselines now exist: the rewritten pack passed 20/20 role-plays while the extracted
-  previous pack passed 19/20; the memory evaluation passed; and the bilingual safety evaluation
-  passed 10 scenarios three times. Later findings tightened immediate-action safety, repair,
-  hypothesis provenance, and uncertainty for inferred behavioral functions. On the resulting final
-  protocol hash, ROLEPLAY-20 passed 3/3 and a full rerun passed its first 12 scenarios before the
-  personal Plus weekly usage limit stopped the provider. After that limit resets, rerun all 20
-  role-plays, the live memory evaluation, and the complete three-repeat safety gate on the exact
-  candidate. Do not publish `v0.2.0` from the partial evidence.
-- Telegram is not configured on the current maintainer machine, so the mandatory private-bot smoke
-  test has not run against the `v0.2.0` candidate. Configure an allowlisted private bot and repeat
-  the documented smoke before publication.
+- The `v0.2.0` mandatory gates closed on 2026-08-11 and that version is tagged; the addendum in
+  `docs/release-readiness-2026-08-04.md` holds the evidence. The entries that told a reader to
+  withhold that publication are resolved and were removed here.
+- A real Telegram message round-trip is still undocumented. The 2026-08-11 evidence reaches an
+  established polling connection, not a delivered exchange, and the bot is now configured on the
+  maintainer machine, so complete the smoke and record it.
+- The `local:` provider has no live baseline. Every role-play, memory, and safety result on record
+  was produced against `codex:gpt-5.6-sol`, so nothing is known about how a self-hosted model
+  behaves on the safety floors. Run the three live gates against a `local:` model before that path
+  is described as anything more than an unevaluated escape hatch, and keep it out of any support
+  claim until then.
 
 ## Conversation behavior
 
