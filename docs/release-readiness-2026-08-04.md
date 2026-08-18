@@ -207,12 +207,18 @@ self-hosted model, and the release notes state that plainly and attach no suppor
 | Candidate wheel as user tool | Installed with `--force`; `protocol validate` and `doctor` pass |
 | Telegram service on the candidate | Reinstalled on the updated tool; the running job carries `THERA_LOCAL_BASE_URL` in its process environment and polls without new log errors |
 
-Local build checksums (pre-release evidence only; the tagged workflow bundle is authoritative):
+Authoritative checksums, from the `Release candidate` workflow bundle built on the tagged commit
+`2b0b25ba43d6a69ff4d2f3d8782f610d50f9ba69` and attached to the prerelease:
 
 ```text
 21b3516a4eead2b6b65b34dfaa04b83f51daa5fc0d0f6a1f47bd7d7389bed075  therapist_cli-0.3.0-py3-none-any.whl
-ed1a4254b225b029d2bf779325bedc40fc60bae68270948379690705cd4980c2  therapist_cli-0.3.0.tar.gz
+cd43ba8219444314d8343007a42219b02f22da45a27ac3e89d2a07de5367535a  therapist_cli-0.3.0.tar.gz
+3a80ac86270c7126ac4f3695f73a4e8f05a591a1177d6d66a69af4df7e3ee764  therapist-0.3.0.cdx.json
 ```
+
+The wheel digest matches the local build; the source distribution differs, as its archive metadata is
+not reproducible across environments. `gh attestation verify` accepts both against the
+`release-candidate.yml` signer workflow and resolves the same source repository digest.
 
 ### Open after this release
 
