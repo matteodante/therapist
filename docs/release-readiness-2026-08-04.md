@@ -224,3 +224,48 @@ not reproducible across environments. `gh attestation verify` accepts both again
 
 - A real Telegram message round-trip is still undocumented.
 - The `local:` provider has no live baseline on any safety floor.
+
+## Addendum — 2026-08-18: `v0.3.1` candidate
+
+**Tagged GitHub prerelease:** **GO**  
+**Public installer switch to `v0.3.1`:** **GO** after the tag exists and CI is green.
+
+`v0.3.1` makes one failure mode diagnosable. On macOS 15 and later a Telegram listener installed as a
+launchd agent cannot reach a `local:` server on the operator's own network, while the same binary
+reaches it from a terminal: Apple grants local network access to command-line tools and to launchd
+daemons but not to agents (TN3179). The block arrives as `EHOSTUNREACH` inside the provider SDK, so
+the listener stayed responsive on Telegram, logged nothing unusual, and replied only that it could
+not respond.
+
+The cause was confirmed on the maintainer machine: the identical interpreter reached the server from
+a shell and failed with `[Errno 65] No route to host` under launchd, and the bot resumed working when
+run from a terminal.
+
+### Scope of re-verification
+
+No protocol, prompt, memory, or storage change. `protocols/` and `src/therapist/protocols/` are
+unchanged since `v0.2.0`, protocol hash validation passes, and `SCHEMA_VERSION` stays `b"3"`. The
+supported inference configuration remains `codex:gpt-5.6-sol`. The live gates were therefore not
+re-run and the 2026-08-11 results stand as current evidence for that configuration, on the same
+reasoning recorded for `v0.3.0`.
+
+### Gates on 2026-08-18 (all on the candidate tree)
+
+| Gate | Result |
+| --- | --- |
+| Locked environment sync | Passed |
+| Ruff formatting and lint | Passed on 100 files |
+| `ty` on `src/therapist` | Passed |
+| Offline deterministic suite | 208 passed, 5 live deselected |
+| Total coverage | 76%; configured 75% floor passed |
+| Protocol validation | Passed; hash identical to `v0.2.0` |
+| Locked dependency audit | No known vulnerabilities in 107 packages |
+| Installer syntax | `sh -n install.sh` passed |
+| Build, twine metadata | Passed for wheel and sdist |
+| Candidate wheel as user tool | Installed with `--force`; `protocol validate` and `doctor` pass, and `doctor` reports the local endpoint as reachable |
+| Telegram round-trip | A live exchange succeeded against the real bot once the listener ran outside launchd, which is the first recorded round-trip |
+
+### Open after this release
+
+- The Telegram round-trip is confirmed in practice but not yet a repeatable recorded gate.
+- The `local:` provider has no live baseline on any safety floor.
