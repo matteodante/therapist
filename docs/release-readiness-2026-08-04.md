@@ -265,7 +265,20 @@ reasoning recorded for `v0.3.0`.
 | Candidate wheel as user tool | Installed with `--force`; `protocol validate` and `doctor` pass, and `doctor` reports the local endpoint as reachable |
 | Telegram round-trip | A live exchange succeeded against the real bot once the listener ran outside launchd, which is the first recorded round-trip |
 
+Authoritative checksums, from the `Release candidate` workflow bundle built on the tagged commit
+`fa55fed70f0bad9dfa4d6167ae020560a5b6e1f8` and attached to the prerelease:
+
+```text
+ffbf4b4ecb4067e9a03dcf64ec9d25d90a93117263bd7adca0b8da659bcf0eed  therapist_cli-0.3.1-py3-none-any.whl
+10d6d1810b5d0f95974d6ad1d950f4800547c88756cd59a5a11c28c4f3676776  therapist_cli-0.3.1.tar.gz
+41e881cdeaada9732172098c4b115ba4ed42c007cb14533f44e50ce426ca655f  therapist-0.3.1.cdx.json
+```
+
+`gh attestation verify` accepts them against the `release-candidate.yml` signer workflow.
+
 ### Open after this release
 
 - The Telegram round-trip is confirmed in practice but not yet a repeatable recorded gate.
 - The `local:` provider has no live baseline on any safety floor.
+- Reinstalling the tool under a running listener leaves it executing replaced files; the release
+  notes say to reinstall the service afterwards, and the same applies to a listener started by hand.
