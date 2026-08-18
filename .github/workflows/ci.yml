@@ -95,9 +95,21 @@ jobs:
         shell: bash
         run: |
           tool_python="$(uv tool dir)/therapist-cli/bin/python"
-          output="$(
-            sh -c 'sleep 0.2; printf "ok\n"' |
-              script -q -e /dev/null "$tool_python" -c \
-                'from prompt_toolkit import prompt; print("PROMPT_RESULT=" + prompt(""))'
-          )"
-          printf '%s\n' "$output" | grep -q 'PROMPT_RESULT=ok'
+          # A fixed short write races prompt_toolkit's terminal setup on a
+          # loaded runner. A real user types seconds later, so that race is an
+          # artifact of the harness: wait longer and retry instead of reporting
+          # lost timing as an installer defect.
+          for attempt in 1 2 3; do
+            output="$(
+              sh -c 'sleep 1; printf "ok\n"' |
+                script -q -e /dev/null "$tool_python" -c \
+                  'from prompt_toolkit import prompt; print("PROMPT_RESULT=" + prompt(""))'
+            )" || true
+            if printf '%s\n' "$output" | grep -q 'PROMPT_RESULT=ok'; then
+              exit 0
+            fi
+            echo "attempt $attempt did not observe the prompt result"
+            sleep 2
+          done
+          echo "prompt_toolkit never returned piped input inside a pseudoterminal"
+          exit 1
