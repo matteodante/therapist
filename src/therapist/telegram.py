@@ -317,7 +317,21 @@ class TelegramChannel:
         try:
             turn = self.session.respond(text, on_event=render)
         except Exception as error:  # Provider SDKs expose different error types.
-            print(f"Model error while handling Telegram message: {type(error).__name__}")
+            # The class name alone cannot separate a refused request from an
+            # unreachable provider. Add the HTTP status when the SDK exposes
+            # one, and keep the body out: it can echo conversation content.
+            status = getattr(error, "status_code", None)
+            status_note = f" (HTTP {status})" if status else ""
+            # The type alone cannot separate a refused request from a dropped
+            # connection. Bound the message: a provider can echo prompt content
+            # back in an error, and conversations must not reach the log.
+            summary = " ".join(str(error).split())[:200]
+            cause = error.__cause__
+            cause_note = f" <- {type(cause).__name__}" if cause is not None else ""
+            print(
+                f"Model error while handling Telegram message: "
+                f"{type(error).__name__}{status_note}{cause_note}: {summary}"
+            )
             reply = self._model_error()
             notice = None
         else:

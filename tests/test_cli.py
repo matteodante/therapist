@@ -1,7 +1,9 @@
+import errno
 import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.error import URLError
 
 import pytest
 from pydantic_ai import ModelRequest, ModelResponse, UserPromptPart
@@ -18,6 +20,7 @@ from therapist.cli import (
     _chat_command,
     _conversation_model,
     _ensure_chat_consent,
+    _local_endpoint_report,
     _local_model_names,
     _model_context_window,
     _select_model,
@@ -106,6 +109,35 @@ def test_local_model_names_is_empty_when_the_server_is_unreachable(
     monkeypatch.setattr("therapist.cli.urlopen", urlopen)
 
     assert _local_model_names() == []
+
+
+def test_local_endpoint_report_names_the_local_network_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def urlopen(url: str, timeout: float) -> object:
+        raise URLError(OSError(errno.EHOSTUNREACH, "No route to host"))
+
+    monkeypatch.setenv("THERA_LOCAL_BASE_URL", "http://rig.invalid:8080/v1")
+    monkeypatch.setattr("therapist.cli.urlopen", urlopen)
+
+    report = _local_endpoint_report()
+
+    assert "no route to host" in report
+    assert "local network permission" in report
+
+
+def test_local_endpoint_report_separates_other_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def urlopen(url: str, timeout: float) -> object:
+        raise URLError(OSError(errno.ECONNREFUSED, "Connection refused"))
+
+    monkeypatch.setattr("therapist.cli.urlopen", urlopen)
+
+    report = _local_endpoint_report()
+
+    assert "local network permission" not in report
+    assert "URLError" in report
 
 
 def test_local_conversation_model_targets_the_configured_server_with_high_effort(
@@ -715,7 +747,10 @@ def test_telegram_service_install_uses_saved_configuration(
     assert command[-1] == "telegram"
     assert command[1:3] == ["--data-dir", str(tmp_path.resolve())]
     assert data_dir == tmp_path.resolve()
-    assert environment == {"THERA_LOCAL_BASE_URL": "http://rig.invalid:8080/v1"}
+    assert environment == {
+        "THERA_LOCAL_BASE_URL": "http://rig.invalid:8080/v1",
+        "PYTHONUNBUFFERED": "1",
+    }
     assert "installed and started" in capsys.readouterr().out  # type: ignore[attr-defined]
 
 

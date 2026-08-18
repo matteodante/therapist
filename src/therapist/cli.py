@@ -1,6 +1,7 @@
 """Minimal command-line interface for chat and user-controlled memory."""
 
 import argparse
+import errno
 import json
 import os
 import secrets
@@ -270,6 +271,8 @@ def _main(argv: Sequence[str] | None = None) -> int:
         print(f"Semantic model: {semantic_model}")
         telegram = "configured" if store and _telegram_config(store) else "not configured"
         print(f"Telegram: {telegram}")
+        if model.startswith(LOCAL_PREFIX):
+            print(f"Local server: {_local_endpoint_report()}")
         return 0
 
     if args.command == "setup" and not _prepare_semantic_memory():
@@ -478,7 +481,12 @@ def _install_telegram_service(args: argparse.Namespace) -> Path | str:
     return telegram_service.install(
         command,
         args.data_dir.resolve(),
-        environment={LOCAL_BASE_URL_ENV: _local_base_url()},
+        environment={
+            LOCAL_BASE_URL_ENV: _local_base_url(),
+            # Service output goes to a file, where Python block-buffers it and
+            # diagnostics surface minutes late or vanish on a crash.
+            "PYTHONUNBUFFERED": "1",
+        },
     )
 
 
@@ -684,6 +692,31 @@ def _local_model(model_name: str) -> OpenAIChatModel:
         ),
         settings=OpenAIChatModelSettings(openai_reasoning_effort=LOCAL_REASONING_EFFORT),
     )
+
+
+def _local_endpoint_report() -> str:
+    """Describe whether the configured `local:` server answers.
+
+    A background service reaches this code path with a permission a terminal
+    never lacks: macOS grants local network access to command-line tools and to
+    launchd daemons, but not to launchd agents, which is how the Telegram
+    listener is installed. The block surfaces as EHOSTUNREACH against an address
+    that answers fine from a shell, so name it rather than leaving it to
+    reappear later as an opaque model error.
+    """
+    base = _local_base_url()
+    try:
+        with urlopen(f"{base.rstrip('/')}/models", timeout=5):
+            return f"{base} reachable"
+    except OSError as error:
+        reason = getattr(error, "reason", None)
+        code = getattr(reason, "errno", None) or getattr(error, "errno", None)
+        if code == errno.EHOSTUNREACH:
+            return (
+                f"{base} unreachable — no route to host. A background service may "
+                "lack macOS local network permission; see AGENTS.md."
+            )
+        return f"{base} unreachable — {type(error).__name__}"
 
 
 def _local_model_names() -> list[str]:

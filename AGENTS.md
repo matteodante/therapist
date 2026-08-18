@@ -573,6 +573,24 @@ definitions are plaintext on disk; a local server that requires a key must run t
 environment instead, so a Windows endpoint has to be set with `setx` rather than only in the current
 console.
 
+macOS 15 and later block the background listener from reaching a `local:` server on the operator's
+own network, while the same binary reaches it from a terminal. Apple grants local network access to
+command-line tools and to launchd daemons but explicitly not to launchd agents, which is how this
+service installs (TN3179, *Understanding local network privacy*). The block surfaces as
+`EHOSTUNREACH` inside the provider SDK, so the listener answers on Telegram, logs nothing unusual,
+and only ever replies that it could not respond. `thera doctor` reports the endpoint and names this
+cause. The operator resolves it by exempting the server's address, which needs a restart:
+
+```bash
+sudo defaults write com.apple.network.local-network AllowedWiFiLocalNetworkAddresses -array "<ip>/32"
+sudo defaults write com.apple.network.local-network AllowedEthernetLocalNetworkAddresses -array "<ip>/32"
+```
+
+Prefer a single address over a whole subnet: the preference removes the protection for every listed
+address for every program on the machine. Granting the permission in System Settings is unreliable
+here, because macOS tracks identity by code signature and an ad-hoc signed interpreter does not hold
+a stable one.
+
 Minimal setup:
 
 1. Create a bot with Telegram's `@BotFather`, keep its token private, and disable group joins as
